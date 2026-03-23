@@ -1,0 +1,48 @@
+(defun c:UpdateAttributesInFolder (/ folder files file)
+  (setq folder "C:/path/to/your/folder/") ; Change this to your folder path
+  (setq files (vl-directory-files folder "*.dwg" 1))
+  (foreach file files
+    (setq file (strcat folder file))
+    (if (not (vl-catch-all-error-p (vl-catch-all-apply 'vla-open (list (vla-get-documents (vlax-get-acad-object)) file))))
+      (progn
+        (vla-activate (vla-get-activeDocument (vlax-get-acad-object)))
+        (UpdateAttributes)
+        (vla-save (vla-get-activeDocument (vlax-get-acad-object)))
+        (vla-close (vla-get-activeDocument (vlax-get-acad-object)))
+      )
+    )
+  )
+  (princ)
+)
+
+(defun c:UpdateAttributes (/ ss i en ed att)
+  (setq ss (ssget "X" '((2 . "RAS-TBLOCK-ATT"))))
+  (if ss
+    (progn
+      (setq i 0)
+      (while (< i (sslength ss))
+        (setq en (ssname ss i))
+        (setq ed (entget en))
+        (setq att (entnext en))
+        (while (and att (/= (cdr (assoc 0 (entget att))) "SEQEND"))
+          (if (member (cdr (assoc 2 (entget att))) '("DESIGNED_BY" "DRAWN_BY" "CHECKED_BY" "PROJ_MANAGER"))
+            (cond
+              ((= (cdr (assoc 2 (entget att))) "DESIGNED_BY")
+               (entmod (subst (cons 1 "Designer") (assoc 1 (entget att)) (entget att))))
+              ((= (cdr (assoc 2 (entget att))) "DRAWN_BY")
+               (entmod (subst (cons 1 "Drafter") (assoc 1 (entget att)) (entget att))))
+              ((= (cdr (assoc 2 (entget att))) "CHECKED_BY")
+               (entmod (subst (cons 1 "Checker") (assoc 1 (entget att)) (entget att))))
+              ((= (cdr (assoc 2 (entget att))) "PROJ_MANAGER")
+               (entmod (subst (cons 1 "PM") (assoc 1 (entget att)) (entget att))))
+            )
+          )
+          (setq att (entnext att))
+        )
+        (setq i (1+ i))
+      )
+    )
+  )
+  (princ)
+)
+

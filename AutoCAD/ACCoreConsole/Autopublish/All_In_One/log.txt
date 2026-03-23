@@ -1,0 +1,34 @@
+[DBG] ACCoreConsole = C:\Program Files\Autodesk\AutoCAD 2025\accoreconsole.exe
+
+Paste DWG source folder path (or press Enter to browse): C:\Users\lynkcn\Downloads\231628_Columbia_Blvd
+[INF] Source = C:\Users\lynkcn\Downloads\231628_Columbia_Blvd
+
+Standards Mode:
+ 1) Auto (use most popular page setup found in drawings)
+ 2) Client Standard (choose CTB + page size)
+Select 1 or 2: 2
+[INF] DWG count = 2
+[INF] Workers = 4
+[DBG] TempRoot = C:\Users\lynkcn\AppData\Local\Temp\Overhauled_Publish_COMFree_20251004-115206
+[INF] Mode = Client Standard
+
+Select CTB:
+ 1) C:\Users\lynkcn\AppData\Roaming\Autodesk\AutoCAD 2022\R24.1\enu\Plotters\Plot Styles\483-SIGMA.ctb
+ 2) C:\Users\lynkcn\AppData\Roaming\Autodesk\AutoCAD 2022\R24.1\enu\Plotters\Plot Styles\483-SIGMA-COL.ctb
+ 3) C:\Users\lynkcn\AppData\Roaming\Autodesk\AutoCAD 2022\R24.1\enu\Plotters\Plot Styles\BES_FULL.ctb
+ 4) C:\Users\lynkcn\AppData\Roaming\Autodesk\AutoCAD 2022\R24.1\enu\Plotters\Plot Styles\BES_HALF.ctb
+...
+ 77) C:\Users\LYNKCN\Documents\AutoCAD Macros_Lisp_VBA\AutoCAD_Onboarding_Package\Plotters\Plot Styles\CDMS_Mono.ctb
+ 78) Browse...
+Enter number: 4
+
+Select Page Size:
+ 1) ANSI D (34 x 22)   [default]
+ 2) ARCH D (36 x 24)
+ 3) Custom (enter canonical or WxH inches, e.g., 34x22)
+Enter 1/2/3: 1
+[INF] Creating Page Setup library (command-only -PAGESETUP)...
+[INF] Waiting for layout workers...
+[INF] Enumerated layouts count = 0
+No paper layouts found to publish.
+[Overhauled_Publish_COMFree] Exit code: 11

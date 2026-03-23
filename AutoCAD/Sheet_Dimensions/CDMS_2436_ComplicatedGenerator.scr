@@ -1,0 +1,61 @@
+-PSETUPIN
+"C:/Users/lynkcn/Documents/AutoCAD Macros_Lisp_VBA/AutoCAD Sheet Templates/CDMS_2436_PID_Template.dwt"
+CDMS_Pdf_2436_Mono
+;
+;
+;
+-LAYOUT
+T
+"C:/Users/lynkcn/Documents/AutoCAD Macros_Lisp_VBA/AutoCAD Sheet Templates/CDMS_2436_PID_Template.dwt"
+"PID ARCH D Title Block"
+;
+;
+;
+LAYOUT
+D
+Layout1
+;
+;
+;
+LAYOUT
+D
+Layout2
+;
+;
+CTAB
+"PID ARCH D Title Block"
+;
+;
+;
+;-PAGESETUP
+;MasterPwPdf.pc3
+;ARCH full bleed D (36.00 x 24.00 Inches)
+;I
+;L
+;N
+;L
+;1:1
+;0.00,0.00
+;Y
+;CDMS_Mono.ctb
+;Y
+;N
+;N
+;N
+;
+;
+;
+;IMPORTFILEPATH
+;	C:\Users\lynkcn\Documents\AutoCAD Macros_Lisp_VBA\I034PIDI.dwg
+;	C:\Users\lynkcn\Documents\AutoCAD Macros_Lisp_VBA\AutoCAD Sheet Templates\CDMS_2234_PID_Template.dwt
+;	C:\Users\lynkcn\Documents\AutoCAD Macros_Lisp_VBA\AutoCAD Sheet Templates\CDMS_2436_PID_Template.dwt
+;	C:\Users\lynkcn\Documents\AutoCAD Macros_Lisp_VBA\AutoCAD Sheet Templates\CDMS_3042_PID_Template.dwt
+;	C:\Users\lynkcn\Documents\AutoCAD Macros_Lisp_VBA\PDF_2436.dwt
+;IMPORTFILENAMES
+;	CDMS_Pdf_1117_Figure_Mono
+;	CDMS_Pdf_1117_Mono
+;	CDMS_Pdf_1218_Mono
+;	CDMS_2234_PID_Template
+;	CDMS_2436_PID_Template
+;	CDMS_3042_PID_Template
+;	PDF_2436

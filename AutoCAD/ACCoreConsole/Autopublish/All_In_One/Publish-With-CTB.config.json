@@ -1,0 +1,13 @@
+{
+  "AccorePath": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\accoreconsole.exe",
+  "Device": "MasterPwPdf.pc3",
+  "DefaultTiePref": "ARCH",
+  "DefaultOutPdf": "%USERPROFILE%\\Documents\\AutoCAD Plots\\All_Layouts.pdf",
+  "FavoriteCtbDirs": [
+    "C:\\Users\\lynkcn\\Documents\\AutoCAD Macros_Lisp_VBA\\AutoCAD Plotting\\Plot Styles"
+  ],
+  "ExtraCtbDirs": [
+    "C:\\TeamShare\\Plot Styles",
+    "D:\\CompanyCAD\\CTB"
+  ]
+}
