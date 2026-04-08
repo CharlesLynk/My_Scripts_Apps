@@ -263,8 +263,8 @@ Public Function StandardizeSymbols(ByVal s As String) As String
     End If
     
     ' ===== DASHES: Standardize ALL to hyphen-minus (ASCII 45, keyboard "-") =====
-    t = Replace$(t, ChrW$(8211), "-")    ' En dash (–)
-    t = Replace$(t, ChrW$(8212), "-")    ' Em dash (—)
+    t = Replace$(t, ChrW$(8211), "-")    ' En dash
+    t = Replace$(t, ChrW$(8212), "-")    ' Em dash
     t = Replace$(t, ChrW$(8210), "-")    ' Figure dash
     t = Replace$(t, ChrW$(8213), "-")    ' Horizontal bar
     t = Replace$(t, ChrW$(8722), "-")    ' Minus sign (-) - looks like hyphen but different!
@@ -473,9 +473,10 @@ End Sub
 '================== SHARED WORKBOOK DETECTION ==================
 
 ' Detect if workbook is in traditional shared mode
-Public Function IsWorkbookShared() As Boolean
+Public Function IsWorkbookShared(Optional ByVal wb As Workbook) As Boolean
     On Error Resume Next
-    IsWorkbookShared = ThisWorkbook.MultiUserEditing
+    If wb Is Nothing Then Set wb = ActiveWorkbook
+    IsWorkbookShared = wb.MultiUserEditing
     If Err.Number <> 0 Then
         Err.Clear
         IsWorkbookShared = False
@@ -484,19 +485,23 @@ Public Function IsWorkbookShared() As Boolean
 End Function
 
 ' Detect number of active users (Excel 2016+ co-authoring)
-Public Function GetActiveUserCount() As Long
+Public Function GetActiveUserCount(Optional ByVal wb As Workbook) As Long
     On Error Resume Next
     Dim userCount As Long
-    Dim wb As Object  ' Late-bound to avoid compile error on local files
+    Dim wbObj As Object  ' Late-bound to avoid compile error on local files
     
-    Set wb = ThisWorkbook
+    If wb Is Nothing Then
+        Set wbObj = ActiveWorkbook
+    Else
+        Set wbObj = wb
+    End If
     
     ' Try to access co-authoring users collection (Office 365/2016+)
     ' Use late binding to avoid compile-time error when Users property doesn't exist
-    If Not wb.IsInplace Then
+    If Not wbObj.IsInplace Then
         ' Workbook is not embedded, check for co-authors
         ' This will fail gracefully on local files or older Excel versions
-        userCount = wb.Users.count
+        userCount = wbObj.Users.count
     Else
         userCount = 1
     End If
@@ -674,9 +679,16 @@ Public Sub StandardizeAllWorkbookText(Optional ByVal targetSheets As Variant)
     Dim state As CalcState: state = PushAppState()
     On Error GoTo CleanFail
     
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "No active workbook found.", vbExclamation
+        GoTo CleanExit
+    End If
+    
     ' Safety Gate 1: Check for other active users
-    Dim userCount As Long: userCount = GetActiveUserCount()
-    Dim isShared As Boolean: isShared = IsWorkbookShared()
+    Dim userCount As Long: userCount = GetActiveUserCount(wb)
+    Dim isShared As Boolean: isShared = IsWorkbookShared(wb)
     Dim msg As String
     Dim userConfirm As VbMsgBoxResult
     
@@ -715,7 +727,7 @@ Public Sub StandardizeAllWorkbookText(Optional ByVal targetSheets As Variant)
     
     If IsMissing(targetSheets) Then
         ' Process all visible sheets
-        For Each ws In ThisWorkbook.Worksheets
+        For Each ws In wb.Worksheets
             If ws.Visible = xlSheetVisible Then
                 sheetList.Add ws.Name, ws
             End If
@@ -841,6 +853,7 @@ Private Function StandardizeSheetText(ws As Worksheet) As Long
         cleanedValue = CStr(originalValue)
         
         ' Apply full cleaning pipeline
+        cleanedValue = CleanText(cleanedValue)
         cleanedValue = StandardizeSymbols(cleanedValue)
         cleanedValue = CleanWhitespace(cleanedValue)
         
