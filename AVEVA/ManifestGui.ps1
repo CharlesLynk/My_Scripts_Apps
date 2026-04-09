@@ -371,12 +371,12 @@ $tree.AddHandler(
 # Normalize after any Check/Uncheck in the tree (mouse or keyboard)
 $tree.AddHandler(
     [System.Windows.Controls.Primitives.ToggleButton]::CheckedEvent,
-    [System.Windows.RoutedEventHandler]{ if ($script:TreeNodeType::BulkUpdateDepth -eq 0) { Normalize-All $script:HiddenRoot } },
+    [System.Windows.RoutedEventHandler]{ if ($script:TreeNodeType::BulkUpdateDepth -eq 0) { Update-All $script:HiddenRoot } },
     $true
 )
 $tree.AddHandler(
     [System.Windows.Controls.Primitives.ToggleButton]::UncheckedEvent,
-    [System.Windows.RoutedEventHandler]{ if ($script:TreeNodeType::BulkUpdateDepth -eq 0) { Normalize-All $script:HiddenRoot } },
+    [System.Windows.RoutedEventHandler]{ if ($script:TreeNodeType::BulkUpdateDepth -eq 0) { Update-All $script:HiddenRoot } },
     $true
 )
 
@@ -430,14 +430,14 @@ function Find-7Zip {
 function Invoke-7Zip {
     param(
         [string]$SevenZip,
-        [string[]]$Args
+        [string[]]$SevenZipArgs
     )
     if (-not $SevenZip) { throw "7-Zip not found." }
 
     # Capture output to help debug but do not spam UI
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $SevenZip
-    $psi.Arguments = ($Args | ForEach-Object {
+    $psi.Arguments = ($SevenZipArgs | ForEach-Object {
         if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\\"') + '"' } else { $_ }
     }) -join ' '
     $psi.RedirectStandardOutput = $true
@@ -463,12 +463,12 @@ function Invoke-7Zip {
 function Invoke-7ZipCapture {
     param(
         [string]$SevenZip,
-        [string[]]$Args
+        [string[]]$SevenZipArgs
     )
     if (-not $SevenZip) { throw "7-Zip not found." }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $SevenZip
-    $quoted = $Args | ForEach-Object {
+    $quoted = $SevenZipArgs | ForEach-Object {
         if ($_ -match '[\s"]') {
             '"' + ($_ -replace '"', '\\"') + '"'
         } else { $_ }
@@ -511,7 +511,7 @@ function Expand-ZipWithDotNet {
     }
 }
 
-function Normalize-AapkgPath {
+function Resolve-AapkgPath {
     param(
         [Parameter(Mandatory)][string]$Path
     )
@@ -590,7 +590,7 @@ function Get-ManifestRelPath {
     return $manifestRel
 }
 
-function Extract-ManifestFromCab {
+function Expand-ManifestFromCab {
     param(
         [Parameter(Mandatory)][string]$SevenZip,
         [Parameter(Mandatory)][string]$CabPath,
@@ -651,7 +651,7 @@ function Resolve-ManifestFromAapkg {
     $sevenZip = Find-7Zip
     if (-not $sevenZip) { throw "7-Zip is required to open .aapkg files." }
 
-    $resolvedAapkg = Normalize-AapkgPath -Path $AapkgPath
+    $resolvedAapkg = Resolve-AapkgPath -Path $AapkgPath
 
     $tempRoot = Join-Path $env:TEMP ("aapkg_extract_{0}" -f ([DateTime]::Now.ToString("yyyyMMdd_HHmmss")))
     if (-not (Test-Path $tempRoot)) { New-Item -ItemType Directory -Path $tempRoot | Out-Null }
@@ -664,7 +664,7 @@ function Resolve-ManifestFromAapkg {
     if (-not $cabPath) { throw "No CAB found inside AAPKG." }
 
     $manifestOut = Join-Path $tempRoot "manifest"
-    $manifestPath = Extract-ManifestFromCab -SevenZip $sevenZip -CabPath $cabPath.FullName -ManifestOut $manifestOut
+    $manifestPath = Expand-ManifestFromCab -SevenZip $sevenZip -CabPath $cabPath.FullName -ManifestOut $manifestOut
 
     return @{ ManifestPath=$manifestPath; CabPath=$cabPath.FullName; TempRoot=$tempRoot; SevenZip=$sevenZip }
 }
@@ -788,7 +788,7 @@ function Get-NextVersionedPath {
     return $candidate
 }
 
-function Repack-AapkgFromFolder {
+function Compress-AapkgFromFolder {
     param(
         [string]$SevenZip,
         [string]$ExtractRoot,
@@ -865,7 +865,7 @@ function Get-InstanceFolderSegments([System.Xml.XmlNode]$node) {
     return $parts
 }
 
-function Ensure-FolderChild {
+function Get-FolderChild {
     param(
         [object]$ParentNode,
         [string]$FolderName
@@ -890,19 +890,19 @@ function Add-InstanceNodeToGroup {
     $cursor = $GroupNode
     if ($FolderSegments -and $FolderSegments.Count -gt 0) {
         foreach ($seg in $FolderSegments) {
-            $cursor = Ensure-FolderChild -ParentNode $cursor -FolderName $seg
+            $cursor = Get-FolderChild -ParentNode $cursor -FolderName $seg
         }
     }
     $cursor.Attach($InstanceNode)
 }
 
-function Sort-ChildrenAlphabetically {
+function Set-ChildrenAlphabetically {
     param([object]$Node)
     if (-not $Node -or -not $Node.Children) { return }
     $sorted = @($Node.Children | Sort-Object -Property Name)
     $Node.Children.Clear()
     foreach ($c in $sorted) { $Node.Children.Add($c) }
-    foreach ($c in $Node.Children) { Sort-ChildrenAlphabetically $c }
+    foreach ($c in $Node.Children) { Set-ChildrenAlphabetically $c }
 }
 
 function Get-NodeIndexPath([System.Xml.XmlNode]$node) {
@@ -940,7 +940,7 @@ function Resolve-NodeByIndexPath {
     return $current
 }
 
-function Try-Parse-CommentElement {
+function ConvertFrom-CommentElement {
     param(
         [System.Xml.XmlComment]$Comment,
         [ref]$ElementOut
@@ -984,7 +984,7 @@ function Find-MatchingTemplateNode {
             if ((Get-NodeLabel $child) -eq $targetName) { return $child }
         } elseif ($child.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
             $el = $null
-            if (Try-Parse-CommentElement -Comment $child -ElementOut ([ref]$el)) {
+            if (ConvertFrom-CommentElement -Comment $child -ElementOut ([ref]$el)) {
                 if ($el.Name -eq "template" -and (Get-NodeLabel $el) -eq $targetName) {
                     return $child
                 }
@@ -1007,7 +1007,7 @@ function Find-MatchingInstanceNode {
             if ((Get-NodeLabel $child) -eq $targetName) { return $child }
         } elseif ($child.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
             $el = $null
-            if (Try-Parse-CommentElement -Comment $child -ElementOut ([ref]$el)) {
+            if (ConvertFrom-CommentElement -Comment $child -ElementOut ([ref]$el)) {
                 if ($el.Name -eq "instance" -and (Get-NodeLabel $el) -eq $targetName) {
                     return $child
                 }
@@ -1033,7 +1033,7 @@ function Find-MatchingDerivedInstancesNode {
     if ($sourceXml) {
         foreach ($comment in $TemplateElement.SelectNodes('./comment()')) {
             $el = $null
-            if (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
+            if (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
                 if ($el.Name -eq 'derived_instances' -and $el.OuterXml -eq $sourceXml) {
                     return $comment
                 }
@@ -1050,7 +1050,7 @@ function Find-MatchingDerivedInstancesNode {
     return $null
 }
 
-function Replace-Node-With-Comment {
+function ConvertTo-CommentNode {
     param(
         [xml]$Doc,
         [System.Xml.XmlNode]$Node,
@@ -1064,7 +1064,7 @@ function Replace-Node-With-Comment {
     return $comment
 }
 
-function Replace-Comment-With-Element {
+function ConvertTo-ElementNode {
     param(
         [xml]$Doc,
         [System.Xml.XmlNode]$CommentNode,
@@ -1092,10 +1092,10 @@ function Expand-ParseableXmlComments {
         foreach ($comment in $comments) {
             if (-not $comment) { continue }
             $el = $null
-            if (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
+            if (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
                 $raw = $comment.Value
                 if ($raw) {
-                    $repl = Replace-Comment-With-Element -Doc $Doc -CommentNode $comment -XmlText $raw
+                    $repl = ConvertTo-ElementNode -Doc $Doc -CommentNode $comment -XmlText $raw
                     if ($repl) { $changed = $true }
                 }
             }
@@ -1103,7 +1103,7 @@ function Expand-ParseableXmlComments {
     } while ($changed)
 }
 
-function Ensure-ContainerElement {
+function Get-ContainerElement {
     param(
         [xml]$Doc,
         [System.Xml.XmlNode]$ParentElement,
@@ -1115,7 +1115,7 @@ function Ensure-ContainerElement {
     if ($ContainerCommentPath) {
         $commentNode = Resolve-NodeByIndexPath -Doc $Doc -Path $ContainerCommentPath
         if ($commentNode -and $commentNode.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
-            $repl = Replace-Comment-With-Element -Doc $Doc -CommentNode $commentNode -XmlText $ContainerSourceXml
+            $repl = ConvertTo-ElementNode -Doc $Doc -CommentNode $commentNode -XmlText $ContainerSourceXml
             if ($repl) { return $repl }
         }
     }
@@ -1176,7 +1176,7 @@ function Build-TemplateNode {
                 Add-InstanceNodeToGroup -GroupNode $grp -InstanceNode $in -FolderSegments $segments
             } elseif ($child.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
                 $el = $null
-                if (Try-Parse-CommentElement -Comment $child -ElementOut ([ref]$el)) {
+                if (ConvertFrom-CommentElement -Comment $child -ElementOut ([ref]$el)) {
                     if ($el.Name -eq "instance") {
                         $in         = New-Object $script:TreeNodeType.FullName
                         $in.Name    = Get-NodeLabel $el
@@ -1196,7 +1196,7 @@ function Build-TemplateNode {
 
     foreach ($comment in $templateNode.SelectNodes("./comment()")) {
         $el = $null
-        if (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
+        if (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
             if ($el.Name -eq "derived_instances") {
                 $grp        = New-Object $script:TreeNodeType.FullName
                 $grp.Name   = "Instances"
@@ -1222,7 +1222,7 @@ function Build-TemplateNode {
     }
 
     foreach ($g in $groupNodes) { 
-        Sort-ChildrenAlphabetically $g
+        Set-ChildrenAlphabetically $g
         $tn.Attach($g) 
     }
 
@@ -1233,7 +1233,7 @@ function Build-TemplateNode {
     }
     foreach ($comment in $templateNode.SelectNodes("./derived_templates/comment()")) {
         $el = $null
-        if (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
+        if (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
             if ($el.Name -eq "template") {
                 $derivedList.Add(@{ Element=$el; IsCommented=$true; IndexPath=(Get-NodeIndexPath $comment); SourceXml=$el.OuterXml })
             }
@@ -1241,7 +1241,7 @@ function Build-TemplateNode {
     }
     foreach ($comment in $templateNode.SelectNodes("./comment()")) {
         $el = $null
-        if (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
+        if (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el)) {
             if ($el.Name -eq "template") {
                 $derivedList.Add(@{ Element=$el; IsCommented=$true; IndexPath=(Get-NodeIndexPath $comment); SourceXml=$el.OuterXml })
             } elseif ($el.Name -eq "derived_templates") {
@@ -1262,7 +1262,7 @@ function Build-TemplateNode {
         $tn.SetIsChecked($false, $true, $false)
     }
 
-    Sort-ChildrenAlphabetically $tn
+    Set-ChildrenAlphabetically $tn
     return $tn
 }
 
@@ -1284,7 +1284,7 @@ function Build-TreeFromManifest {
             $topNodes.Add($tNode)
         } elseif ($node.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
             $el = $null
-            if (Try-Parse-CommentElement -Comment $node -ElementOut ([ref]$el)) {
+            if (ConvertFrom-CommentElement -Comment $node -ElementOut ([ref]$el)) {
                 if ($el.Name -eq "template") {
                     $tNode = Build-TemplateNode -templateNode $el -isCommented:$true -sourceXml $el.OuterXml -indexPath (Get-NodeIndexPath $node)
                     $topNodes.Add($tNode)
@@ -1297,13 +1297,13 @@ function Build-TreeFromManifest {
         $script:HiddenRoot.Attach($tNode)
         $script:RootNodes.Add($tNode)
     }
-    Sort-ChildrenAlphabetically $script:HiddenRoot
-    Normalize-All $script:HiddenRoot
+    Set-ChildrenAlphabetically $script:HiddenRoot
+    Update-All $script:HiddenRoot
 }
 
-function Normalize-All {
+function Update-All {
     param([object]$node)
-    foreach ($c in $node.Children) { Normalize-All $c }
+    foreach ($c in $node.Children) { Update-All $c }
     # Recompute this node from its direct children
     $node.RecomputeFromChildren()
 }
@@ -1380,7 +1380,7 @@ function Remove-CommentedUncheckedNodesAndCollectFiles {
         if (-not $comment -or -not $comment.ParentNode) { continue }
 
         $el = $null
-        if (-not (Try-Parse-CommentElement -Comment $comment -ElementOut ([ref]$el))) { continue }
+        if (-not (ConvertFrom-CommentElement -Comment $comment -ElementOut ([ref]$el))) { continue }
         if (-not $el) { continue }
 
         $name = $el.Name
@@ -1475,7 +1475,7 @@ function Update-Cab-WithManifestAndDeletes {
     return $removedCount
 }
 
-function Apply-InstanceNode {
+function Set-InstanceNode {
     param(
         [object]$InstNode,
         [System.Xml.XmlNode]$ContainerElement,
@@ -1488,7 +1488,7 @@ function Apply-InstanceNode {
 
     if ($InstNode.IsChecked -eq $false) {
         if ($target -and $target.NodeType -eq [System.Xml.XmlNodeType]::Element) {
-            Replace-Node-With-Comment -Doc $WorkingDoc -Node $target -XmlText ($target.OuterXml) | Out-Null
+            ConvertTo-CommentNode -Doc $WorkingDoc -Node $target -XmlText ($target.OuterXml) | Out-Null
         } elseif (-not $target -and $InstNode.SourceXml) {
             if ($InstNode.SourceXml -like "*--*") { throw "Cannot create XML comment because content contains '--'." }
             [void]$ContainerElement.AppendChild($WorkingDoc.CreateComment($InstNode.SourceXml))
@@ -1497,14 +1497,14 @@ function Apply-InstanceNode {
     }
 
     if ($target -and $target.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
-        $target = Replace-Comment-With-Element -Doc $WorkingDoc -CommentNode $target -XmlText $InstNode.SourceXml
+        $target = ConvertTo-ElementNode -Doc $WorkingDoc -CommentNode $target -XmlText $InstNode.SourceXml
     } elseif (-not $target -and $InstNode.SourceXml) {
         $el = New-ElementFromXml -Doc $WorkingDoc -XmlText $InstNode.SourceXml
         if ($el) { [void]$ContainerElement.AppendChild($el) }
     }
 }
 
-function Apply-InstanceGroup {
+function Set-InstanceGroup {
     param(
         [object]$GroupNode,
         [System.Xml.XmlNode]$TemplateElement,
@@ -1517,7 +1517,7 @@ function Apply-InstanceGroup {
 
     if ($GroupNode.IsChecked -eq $false) {
         if ($container -and $container.NodeType -eq [System.Xml.XmlNodeType]::Element) {
-            Replace-Node-With-Comment -Doc $WorkingDoc -Node $container -XmlText ($container.OuterXml) | Out-Null
+            ConvertTo-CommentNode -Doc $WorkingDoc -Node $container -XmlText ($container.OuterXml) | Out-Null
         } elseif (-not $container -and $GroupNode.SourceXml) {
             if ($GroupNode.SourceXml -like "*--*") { throw "Cannot create XML comment because content contains '--'." }
             [void]$TemplateElement.AppendChild($WorkingDoc.CreateComment($GroupNode.SourceXml))
@@ -1526,9 +1526,9 @@ function Apply-InstanceGroup {
     }
 
     if ($container -and $container.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
-        $container = Replace-Comment-With-Element -Doc $WorkingDoc -CommentNode $container -XmlText $GroupNode.SourceXml
+        $container = ConvertTo-ElementNode -Doc $WorkingDoc -CommentNode $container -XmlText $GroupNode.SourceXml
     } elseif (-not $container) {
-        $container = Ensure-ContainerElement -Doc $WorkingDoc -ParentElement $TemplateElement -ContainerName "derived_instances"
+        $container = Get-ContainerElement -Doc $WorkingDoc -ParentElement $TemplateElement -ContainerName "derived_instances"
     }
 
     $stack = New-Object System.Collections.Generic.Stack[object]
@@ -1536,14 +1536,14 @@ function Apply-InstanceGroup {
     while ($stack.Count -gt 0) {
         $n = $stack.Pop()
         if ($n.Kind -eq $script:NodeKind_Instance) {
-            Apply-InstanceNode -InstNode $n -ContainerElement $container -WorkingDoc $WorkingDoc
+            Set-InstanceNode -InstNode $n -ContainerElement $container -WorkingDoc $WorkingDoc
         } else {
             foreach ($c in $n.Children) { $stack.Push($c) }
         }
     }
 }
 
-function Apply-TemplateNode {
+function Set-TemplateNode {
     param(
         [object]$TemplateNode,
         [xml]$WorkingDoc,
@@ -1557,7 +1557,7 @@ function Apply-TemplateNode {
 
     if ($TemplateNode.IsChecked -eq $false) {
         if ($target -and $target.NodeType -eq [System.Xml.XmlNodeType]::Element) {
-            Replace-Node-With-Comment -Doc $WorkingDoc -Node $target -XmlText ($target.OuterXml) | Out-Null
+            ConvertTo-CommentNode -Doc $WorkingDoc -Node $target -XmlText ($target.OuterXml) | Out-Null
         } elseif (-not $target -and $TemplateNode.SourceXml) {
             if ($TemplateNode.SourceXml -like "*--*") { throw "Cannot create XML comment because content contains '--'." }
             [void]$ParentElement.AppendChild($WorkingDoc.CreateComment($TemplateNode.SourceXml))
@@ -1566,7 +1566,7 @@ function Apply-TemplateNode {
     }
 
     if ($target -and $target.NodeType -eq [System.Xml.XmlNodeType]::Comment) {
-        $target = Replace-Comment-With-Element -Doc $WorkingDoc -CommentNode $target -XmlText $TemplateNode.SourceXml
+        $target = ConvertTo-ElementNode -Doc $WorkingDoc -CommentNode $target -XmlText $TemplateNode.SourceXml
     } elseif (-not $target) {
         $el = New-ElementFromXml -Doc $WorkingDoc -XmlText $TemplateNode.SourceXml
         if ($el) {
@@ -1578,15 +1578,15 @@ function Apply-TemplateNode {
     if (-not $target) { return }
 
     foreach ($grp in $TemplateNode.Children | Where-Object { $_.Kind -eq $script:NodeKind_InstanceGroup }) {
-        Apply-InstanceGroup -GroupNode $grp -TemplateElement $target -WorkingDoc $WorkingDoc
+        Set-InstanceGroup -GroupNode $grp -TemplateElement $target -WorkingDoc $WorkingDoc
     }
 
     $childTemplates = @($TemplateNode.Children | Where-Object { $_.Kind -eq $script:NodeKind_Template })
     if ($childTemplates.Count -gt 0) {
         $containerName = "derived_templates"
         foreach ($child in $childTemplates) {
-            $container = Ensure-ContainerElement -Doc $WorkingDoc -ParentElement $target -ContainerName $containerName -ContainerCommentPath $child.ContainerCommentPath -ContainerSourceXml $child.ContainerSourceXml
-            Apply-TemplateNode -TemplateNode $child -WorkingDoc $WorkingDoc -ParentElement $container
+            $container = Get-ContainerElement -Doc $WorkingDoc -ParentElement $target -ContainerName $containerName -ContainerCommentPath $child.ContainerCommentPath -ContainerSourceXml $child.ContainerSourceXml
+            Set-TemplateNode -TemplateNode $child -WorkingDoc $WorkingDoc -ParentElement $container
         }
     }
 }
@@ -1663,7 +1663,7 @@ $btnSave.Add_Click({
         #    unchecked entries.
         Expand-ParseableXmlComments -Doc $working
         foreach ($root in $script:RootNodes) {
-            Apply-TemplateNode -TemplateNode $root -WorkingDoc $working -ParentElement $working.DocumentElement
+            Set-TemplateNode -TemplateNode $root -WorkingDoc $working -ParentElement $working.DocumentElement
         }
 
         $hardDeleteMode = ($script:SourceAapkgPath -and $chkHardDeleteAapkg -and $chkHardDeleteAapkg.IsChecked -eq $true)
@@ -1695,7 +1695,7 @@ $btnSave.Add_Click({
             }
 
             if ($script:SourceTempRoot) {
-                Repack-AapkgFromFolder -SevenZip $script:SevenZipPath -ExtractRoot $script:SourceTempRoot -AapkgPath $targetAapkgPath -ExcludeFolders @("manifest")
+                Compress-AapkgFromFolder -SevenZip $script:SevenZipPath -ExtractRoot $script:SourceTempRoot -AapkgPath $targetAapkgPath -ExcludeFolders @("manifest")
             } else {
                 throw "AAPKG source folder is not available for repack. Reload the AAPKG and save again."
             }
@@ -1729,3 +1729,4 @@ $btnSave.Add_Click({
 # Show window
 # ------------------------------------------------------------
 $window.ShowDialog() | Out-Null
+
