@@ -1,12 +1,17 @@
 Attribute VB_Name = "ReloadManager"
-' XLAM to be saved at %APPDATA%\Microsoft\AddIns
-' Managed through File -> Options -> Add-Ins
-' Available as VBAProject(Global).ReloadManager
-
-'==========================================
 Option Explicit
 
-' === CONFIG ===
+'==========================================
+' Module: ReloadManager
+' Purpose: Sync workbook VBA standard modules from repo BAS sources.
+' Scope: Workbook type tagging, signature checks, and module re-import.
+' Notes:
+' - XLAM is expected in %APPDATA%\Microsoft\AddIns.
+' - Managed from File -> Options -> Add-Ins.
+' - Available as VBAProject(Global).ReloadManager.
+'==========================================
+
+'================== CONFIGURATION ==================
 Private Const REPO_ROOT As String = "D:\Utilities\My_Scripts_Apps\Excel"
 
 ' Document properties used in target workbooks
@@ -14,7 +19,7 @@ Private Const PROP_TYPE_ID As String = "WB_TYPE_ID"
 Private Const PROP_SRC_SIG As String = "WB_SRC_SIGNATURE"
 Private Const PROP_LAST_SYNC As String = "WB_LAST_SYNC_UTC"
 
-' === PUBLIC ENTRY POINTS ===
+'================== PUBLIC ENTRY POINTS ==================
 
 ' Sync the active workbook against the central repo for its type id.
 Public Sub SyncActiveWorkbook(Optional ByVal Force As Boolean = False)
@@ -93,7 +98,7 @@ Public Sub SetActiveWorkbookTypeId()
 End Sub
 
 
-' === CORE IMPORT LOGIC ===
+'================== CORE IMPORT LOGIC ==================
 
 Private Sub ImportBasFolder(ByVal wb As Workbook, ByVal folderPath As String)
     Dim f As String
@@ -127,7 +132,7 @@ Private Sub RemoveStdModuleIfExists(ByVal wb As Workbook, ByVal compName As Stri
 End Sub
 
 
-' === SIGNATURE / VERSION CHECK ===
+'================== SIGNATURE / VERSION CHECK ==================
 ' Creates a stable signature based on file name + size + modified time (UTC-ish).
 ' This avoids re-importing when nothing changed.
 
@@ -226,7 +231,7 @@ Private Sub QuickSort(arr() As String, ByVal first As Long, ByVal last As Long)
 End Sub
 
 
-' === DOC PROPERTY HELPERS ===
+'================== DOCUMENT PROPERTY HELPERS ==================
 
 Private Function GetDocProp(ByVal wb As Workbook, ByVal propName As String) As String
     On Error Resume Next

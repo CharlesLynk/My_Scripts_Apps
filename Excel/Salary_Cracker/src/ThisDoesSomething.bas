@@ -1,32 +1,37 @@
 Attribute VB_Name = "ThisDoesSomething"
+'==========================================
+' Module: ThisDoesSomething
+' Purpose: Advance a formula reference and refresh table filters.
+' Scope: Salary_Cracker workbook automation helper.
+'==========================================
+
 Private Sub ThisDoesSomething() 'ByVal Target As Range)
 Attribute ThisDoesSomething.VB_ProcData.VB_Invoke_Func = "k\n14"
-    ' Define the cell that contains the formula you want to change
+    ' Cell containing the formula to advance.
     Dim FormulaCell As Range
     Set FormulaCell = ThisWorkbook.Sheets("GuessAndCheck1").Range("B4")
 
-    ' Check if the changed cell is the one that triggers the formula change
+    ' Event trigger check kept for future worksheet-change wiring.
     'If Not Intersect(Target, FormulaCell) Is Nothing Then
-        ' Get the current formula from the cell
+        ' Read current formula.
         Dim CurrentFormula As String
         CurrentFormula = FormulaCell.Formula
 
-        ' Extract the current row number from the formula
+        ' Extract row number from the existing B-reference.
         Dim CurrentRow As Long
         CurrentRow = Mid(CurrentFormula, InStrRev(CurrentFormula, "B") + 1)
 
-        ' Increment the row number
+        ' Advance to the next row.
         CurrentRow = CurrentRow + 1
 
-        ' Build the new formula
+        ' Build and apply updated formula.
         Dim NewFormula As String
         NewFormula = "=Semiprimes!B" & CurrentRow
 
-        ' Update the cell with the new formula
         FormulaCell.Formula = NewFormula
     'End If
 
-    ' Apply the filter
+    ' Reapply table filter after formula update.
     With ActiveWorkbook.Worksheets("GuessAndCheck1").ListObjects("Table4")
          .AutoFilter.ApplyFilter
     End With

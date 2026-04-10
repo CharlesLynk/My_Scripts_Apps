@@ -2,12 +2,17 @@ Attribute VB_Name = "GlobalUtilities"
 Option Explicit
 
 '==========================================
-' GENERIC UTILITIES MODULE
-' Purpose: Reusable helper functions for any VBA project
+' Module: GlobalUtilities
+' Purpose: Shared helper routines used by XLAM and workbook projects.
+' Scope: General worksheet helpers, normalization, and workbook text cleanup.
 ' Dependencies: None
+' Notes:
+' - XLAM is expected in %APPDATA%\Microsoft\AddIns.
+' - Managed from File -> Options -> Add-Ins.
+' - Available as VBAProject(Global).ReloadManager.
 '
-' CLEANUP ARCHITECTURE NOTES:
-' ---------------------------
+' CLEANUP ARCHITECTURE NOTES
+'---------------------------
 ' 1. READ OPERATIONS (CollectUniquePLCs, BuildSummary, PLC_RebuildPLCList):
 '    - Use RAW cell values (no cleaning applied)
 '    - Matching is done via NormalizeKey() which applies full cleaning pipeline

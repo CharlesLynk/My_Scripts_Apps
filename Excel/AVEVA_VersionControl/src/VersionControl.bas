@@ -1,9 +1,13 @@
-' ============================
-' Module: modManifestUpsert
-' ============================
+Attribute VB_Name = "VersionControl"
 Option Explicit
 
-' ===== User-Configurable Settings =====
+'==========================================
+' Module: VersionControl
+' Purpose: Manage manifest imports, diff generation, and backup handling.
+' Scope: Primary/Secondary/Diff sheet maintenance for AVEVA workflows.
+'==========================================
+
+'================== USER CONFIGURATION ==================
 
 ' Standard sheet names (change here if you use different names)
 Private Const SHEET_PRIMARY   As String = "Primary Galaxy"
@@ -22,7 +26,7 @@ Private Const BACKUP_MAX_COUNT        As Long = 50
 ' Allow slight timestamp drift (minutes) before marking stale
 Private Const STALE_TOLERANCE_MINUTES As Long = 5
 
-' ===== Internal Constants (Do Not Change) =====
+'================== INTERNAL CONSTANTS ==================
 
 Private Const DEBUG_AAPKG As Boolean = False
 
@@ -75,7 +79,7 @@ Private Const MODE_INSTANCE           As String = "INSTANCE"
 Private Const MODE_GRAPHIC            As String = "GRAPHIC"
 Private Const MANIFEST_XML_NAME       As String = "Manifest.xml"
 
-' ========= Entry Points =========
+'================== ENTRY POINTS ==================
 
 ' Prompts for XML and target sheet; performs upsert + dating
 Public Sub ManifestUpsert_Run()

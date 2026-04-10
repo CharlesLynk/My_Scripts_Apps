@@ -1,5 +1,12 @@
 Attribute VB_Name = "StringWrapVBA"
 
+'==========================================
+' Module: StringWrapVBA
+' Purpose: Wrap long delimiter-separated strings into VBA continuation lines.
+' Scope: String formatting helper for code-generation style text blocks.
+'==========================================
+
+'================== PUBLIC FUNCTIONS ==================
 Function StringWrapVBA(txt As String, pos As Long) As String
     Dim delim As String: delim = ""","""
     Dim nearest As Long: nearest = -1
@@ -43,7 +50,8 @@ Function StringWrapVBA(txt As String, pos As Long) As String
     End If
 End Function
 
-' Helper function to trim trailing comma
+'================== PRIVATE HELPERS ==================
+' Remove a trailing comma when present.
 Private Function TrimTrailingComma(s As String) As String
     If Right(s, 1) = "," Then
         TrimTrailingComma = Left(s, Len(s) - 1)
