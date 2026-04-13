@@ -1,4 +1,3 @@
-Attribute VB_Name = "ReloadManager"
 Option Explicit
 
 '==========================================
@@ -22,7 +21,7 @@ Private Const PROP_LAST_SYNC As String = "WB_LAST_SYNC_UTC"
 '================== PUBLIC ENTRY POINTS ==================
 
 ' Sync the active workbook against the central repo for its type id.
-Public Sub SyncActiveWorkbook(Optional ByVal Force As Boolean = False)
+Public Sub SyncActiveWorkbook()
     Dim wb As Workbook
     Set wb = ActiveWorkbook
 
@@ -58,11 +57,9 @@ Public Sub SyncActiveWorkbook(Optional ByVal Force As Boolean = False)
     Dim wbSig As String
     wbSig = GetDocProp(wb, PROP_SRC_SIG)
 
-    If (Not Force) Then
-        If StrComp(repoSig, wbSig, vbBinaryCompare) = 0 Then
-            ' Up-to-date
-            Exit Sub
-        End If
+    If StrComp(repoSig, wbSig, vbBinaryCompare) = 0 Then
+        ' Up-to-date
+        Exit Sub
     End If
 
     ' Perform sync: remove + import standard modules
@@ -79,10 +76,6 @@ CleanExit:
     Application.ScreenUpdating = True
 End Sub
 
-' Force sync regardless of signature
-Public Sub ForceSyncActiveWorkbook()
-    SyncActiveWorkbook True
-End Sub
 
 ' Helper: set the workbook type id once (stores as a custom doc property)
 Public Sub SetActiveWorkbookTypeId()
@@ -269,4 +262,3 @@ Private Function GetTimeZoneBiasMinutes() As Long
 Fail:
     GetTimeZoneBiasMinutes = 0
 End Function
-``
