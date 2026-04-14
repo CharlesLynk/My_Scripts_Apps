@@ -95,6 +95,18 @@ Public Sub ManifestUpsert_Run()
     confirmText = BuildImportConfirmText(paths, targetSheetName)
     If MsgBox(confirmText, vbYesNo + vbQuestion, "Confirm import") <> vbYes Then Exit Sub
 
+    Dim resolvedImports As Collection
+    Dim precheckError As String
+    If Not BuildResolvedImportItems(paths, resolvedImports, precheckError) Then
+        MsgBox precheckError, vbExclamation
+        Exit Sub
+    End If
+
+    Dim expectedByTag As Object
+    Dim mismatchItems As Collection
+    Dim mismatchDetails As Object
+    If Not ResolveBatchTagVersionChoice(resolvedImports, expectedByTag, mismatchItems, mismatchDetails) Then Exit Sub
+
     BuildDiffSheet
     Dim wsPrimary As Worksheet, wsSecondary As Worksheet, wsDiff As Worksheet
     Set wsPrimary = GetWorksheetByName(SHEET_PRIMARY)
@@ -118,17 +130,15 @@ Public Sub ManifestUpsert_Run()
     If showSkipMessage And Not createdNew And Len(skipMessage) > 0 Then MsgBox skipMessage, vbInformation
 
     Dim i As Long
-    For i = 1 To paths.Count
+    For i = 1 To resolvedImports.Count
+        Dim importItem As Object
         Dim sourcePath As String, xmlPath As String
         Dim importTime As Date
         Dim errMessage As String
-        sourcePath = CStr(paths(i))
-        xmlPath = ResolveSelectedManifest(sourcePath, importTime)
-        If Len(xmlPath) = 0 Then
-            errMessage = "Failed to resolve manifest from: " & SourceDisplayName(sourcePath)
-            HandleImportFailure wsBackup, createdNew, errMessage
-            Exit Sub
-        End If
+        Set importItem = resolvedImports(i)
+        sourcePath = CStr(importItem("SourcePath"))
+        xmlPath = CStr(importItem("XmlPath"))
+        importTime = CDate(importItem("ImportTime"))
 
         If Not ManifestUpsert_IntoSheet(xmlPath, targetSheetName, importTime, errMessage, False, False) Then
             HandleImportFailure wsBackup, createdNew, "Import failed for " & SourceDisplayName(sourcePath) & ": " & errMessage
@@ -142,6 +152,12 @@ Public Sub ManifestUpsert_Run()
     Else
         MsgBox "Batch import complete - " & CStr(paths.Count) & " files", vbInformation
         If Not createdNew And Len(skipMessage) > 0 Then MsgBox skipMessage, vbInformation
+    End If
+
+    If Not mismatchItems Is Nothing Then
+        If mismatchItems.Count > 0 Then
+            MsgBox BuildTagVersionMismatchSummary(mismatchItems, mismatchDetails), vbExclamation, "Version mismatch summary"
+        End If
     End If
 
     If createdNew Then
@@ -789,6 +805,357 @@ Private Function BuildImportConfirmText(ByVal paths As Collection, ByVal targetS
     End If
 
     BuildImportConfirmText = header & s & vbCrLf & "Destination: " & targetSheetName & vbCrLf & vbCrLf & "Proceed?"
+End Function
+
+Private Function BuildResolvedImportItems(ByVal paths As Collection, ByRef imports As Collection, ByRef errMessage As String) As Boolean
+    Set imports = New Collection
+
+    Dim i As Long
+    For i = 1 To paths.Count
+        Dim sourcePath As String
+        Dim xmlPath As String
+        Dim importTime As Date
+        Dim importItem As Object
+        Dim detectedVersion As String
+        Dim rowsData As Variant
+        Dim tagVersions As Object
+
+        sourcePath = CStr(paths(i))
+        xmlPath = ResolveSelectedManifest(sourcePath, importTime)
+        If Len(xmlPath) = 0 Then
+            errMessage = "Failed to resolve manifest from: " & SourceDisplayName(sourcePath)
+            Exit Function
+        End If
+
+        rowsData = ParseManifestToRows(xmlPath)
+        Set tagVersions = BuildTagVersionMapFromRows(rowsData)
+
+        If tagVersions Is Nothing Then
+            errMessage = "Failed to parse tag/version data from: " & SourceDisplayName(sourcePath)
+            Exit Function
+        End If
+
+        If IsEmpty(rowsData) Then
+            detectedVersion = "(unknown)"
+        Else
+            detectedVersion = MostCommonVersionInRows(rowsData)
+        End If
+
+        Set importItem = CreateObject("Scripting.Dictionary")
+        importItem.CompareMode = 1
+        importItem("SourcePath") = sourcePath
+        importItem("DisplayName") = SourceDisplayName(sourcePath)
+        importItem("XmlPath") = xmlPath
+        importItem("ImportTime") = importTime
+        importItem("Version") = detectedVersion
+        Set importItem("TagVersions") = tagVersions
+        imports.Add importItem
+    Next i
+
+    BuildResolvedImportItems = True
+End Function
+
+Private Function ResolveBatchTagVersionChoice(ByVal imports As Collection, ByRef expectedByTag As Object, ByRef mismatchItems As Collection, ByRef mismatchDetails As Object) As Boolean
+    Set expectedByTag = CreateObject("Scripting.Dictionary")
+    expectedByTag.CompareMode = 1
+    Set mismatchItems = New Collection
+    Set mismatchDetails = CreateObject("Scripting.Dictionary")
+    mismatchDetails.CompareMode = 1
+
+    If imports Is Nothing Then
+        ResolveBatchTagVersionChoice = True
+        Exit Function
+    End If
+
+    Dim tagOrder As Collection
+    Set tagOrder = New Collection
+
+    Dim knownTags As Object
+    Set knownTags = CreateObject("Scripting.Dictionary")
+    knownTags.CompareMode = 1
+
+    Dim i As Long
+    For i = 1 To imports.Count
+        Dim tagVersions As Object
+        Set tagVersions = imports(i)("TagVersions")
+
+        Dim tagKey As Variant
+        For Each tagKey In tagVersions.Keys
+            Dim tagName As String
+            tagName = CStr(tagKey)
+            If Not knownTags.Exists(tagName) Then
+                knownTags(tagName) = True
+                tagOrder.Add tagName
+            End If
+        Next tagKey
+    Next i
+
+    If tagOrder.Count = 0 Then
+        ResolveBatchTagVersionChoice = True
+        Exit Function
+    End If
+
+    For i = 1 To tagOrder.Count
+        Dim versionOrder As Collection
+        Dim versionCounts As Object
+        Dim currentTag As String
+        Dim j As Long
+
+        currentTag = CStr(tagOrder(i))
+        Set versionOrder = New Collection
+        Set versionCounts = CreateObject("Scripting.Dictionary")
+        versionCounts.CompareMode = 1
+
+        For j = 1 To imports.Count
+            If ImportContainsTag(imports(j), currentTag) Then
+                Dim versionText As String
+                versionText = GetImportTagVersion(imports(j), currentTag)
+                If Not versionCounts.Exists(versionText) Then
+                    versionCounts(versionText) = 0
+                    versionOrder.Add versionText
+                End If
+                versionCounts(versionText) = CLng(versionCounts(versionText)) + 1
+            End If
+        Next j
+
+        If versionOrder.Count = 0 Then
+            GoTo NextTag
+        End If
+
+        If versionCounts.Count <= 1 Then
+            expectedByTag(currentTag) = CStr(versionOrder(1))
+        Else
+            Dim defaultIdx As Long
+            defaultIdx = 1
+            Dim maxCount As Long
+            maxCount = -1
+
+            For j = 1 To versionOrder.Count
+                Dim countForVersion As Long
+                countForVersion = CLng(versionCounts(CStr(versionOrder(j))))
+                If countForVersion > maxCount Then
+                    maxCount = countForVersion
+                    defaultIdx = j
+                End If
+            Next j
+
+            Dim prompt As String
+            prompt = BuildTagVersionSelectionPrompt(currentTag, imports, versionOrder, versionCounts, defaultIdx)
+
+            Dim choice As String
+            Dim chosenIdx As Long
+            Do
+                choice = InputBox(prompt, "Version mismatch detected", CStr(defaultIdx))
+                choice = Trim$(choice)
+                If Len(choice) = 0 Then Exit Function
+
+                If IsNumeric(choice) Then
+                    chosenIdx = CLng(choice)
+                    If chosenIdx >= 1 And chosenIdx <= versionOrder.Count Then Exit Do
+                End If
+
+                MsgBox "Invalid selection. Enter one number from the list.", vbExclamation
+            Loop
+
+            expectedByTag(currentTag) = CStr(versionOrder(chosenIdx))
+        End If
+NextTag:
+    Next i
+
+    For i = 1 To imports.Count
+        Dim importItem As Object
+        Dim fileDetails As String
+        Set importItem = imports(i)
+
+        Dim expectedTag As Variant
+        For Each expectedTag In expectedByTag.Keys
+            Dim expectedVersion As String
+            Dim foundVersion As String
+
+            expectedVersion = CStr(expectedByTag(CStr(expectedTag)))
+            If ImportContainsTag(importItem, CStr(expectedTag)) Then
+                foundVersion = GetImportTagVersion(importItem, CStr(expectedTag))
+                If StrComp(foundVersion, expectedVersion, vbTextCompare) <> 0 Then
+                    If Len(fileDetails) > 0 Then fileDetails = fileDetails & "; "
+                    fileDetails = fileDetails & CStr(expectedTag) & " [expected: " & expectedVersion & ", found: " & foundVersion & "]"
+                End If
+            End If
+        Next expectedTag
+
+        If Len(fileDetails) > 0 Then
+            mismatchItems.Add importItem
+            mismatchDetails(CStr(importItem("DisplayName"))) = fileDetails
+        End If
+    Next i
+
+    ResolveBatchTagVersionChoice = True
+End Function
+
+Private Function BuildTagVersionSelectionPrompt(ByVal tagName As String, ByVal imports As Collection, ByVal versionOrder As Collection, ByVal versionCounts As Object, ByVal defaultIdx As Long) As String
+    Dim s As String
+    Dim i As Long
+
+    s = "Version disagreement detected for tag: " & tagName & vbCrLf & vbCrLf
+    s = s & "Choose the expected (correct) config_version for this tag:" & vbCrLf
+
+    For i = 1 To versionOrder.Count
+        Dim versionText As String
+        versionText = CStr(versionOrder(i))
+        s = s & CStr(i) & ") " & versionText & "  [" & CStr(versionCounts(versionText)) & " file(s)]"
+        If i = defaultIdx Then s = s & "  <-- majority"
+        s = s & vbCrLf
+    Next i
+
+    s = s & vbCrLf & "Enter the number to continue, or leave blank to cancel."
+
+    Dim details As String
+    details = BuildTagVersionBreakdown(tagName, imports, versionOrder)
+    If Len(details) > 0 Then
+        s = s & vbCrLf & vbCrLf & details
+    End If
+
+    BuildTagVersionSelectionPrompt = s
+End Function
+
+Private Function BuildTagVersionBreakdown(ByVal tagName As String, ByVal imports As Collection, ByVal versionOrder As Collection) As String
+    Dim s As String
+    Dim i As Long, j As Long
+
+    For i = 1 To versionOrder.Count
+        Dim versionText As String
+        versionText = CStr(versionOrder(i))
+        s = s & "config_version " & versionText & ":" & vbCrLf
+
+        For j = 1 To imports.Count
+            If StrComp(GetImportTagVersion(imports(j), tagName), versionText, vbTextCompare) = 0 Then
+                s = s & "- " & CStr(imports(j)("DisplayName")) & vbCrLf
+            End If
+        Next j
+    Next i
+
+    BuildTagVersionBreakdown = s
+End Function
+
+Private Function BuildTagVersionMismatchSummary(ByVal mismatchItems As Collection, ByVal mismatchDetails As Object) As String
+    Dim s As String
+    Dim i As Long
+
+    s = "Files with non-matching tag config_version values:" & vbCrLf
+
+    For i = 1 To mismatchItems.Count
+        Dim displayName As String
+        displayName = CStr(mismatchItems(i)("DisplayName"))
+        s = s & "- " & displayName
+        If Not mismatchDetails Is Nothing Then
+            If mismatchDetails.Exists(displayName) Then
+                s = s & " -> " & CStr(mismatchDetails(displayName))
+            End If
+        End If
+        s = s & vbCrLf
+    Next i
+
+    BuildTagVersionMismatchSummary = s
+End Function
+
+Private Function GetImportTagVersion(ByVal importItem As Object, ByVal tagName As String) As String
+    Dim tagVersions As Object
+    Set tagVersions = importItem("TagVersions")
+
+    If tagVersions.Exists(tagName) Then
+        GetImportTagVersion = CStr(tagVersions(tagName))
+    Else
+        GetImportTagVersion = "(missing)"
+    End If
+End Function
+
+Private Function ImportContainsTag(ByVal importItem As Object, ByVal tagName As String) As Boolean
+    Dim tagVersions As Object
+    Set tagVersions = importItem("TagVersions")
+
+    ImportContainsTag = tagVersions.Exists(tagName)
+End Function
+
+Private Function BuildTagVersionMapFromRows(ByVal rowsData As Variant) As Object
+    Dim tagVersions As Object
+    Set tagVersions = CreateObject("Scripting.Dictionary")
+    tagVersions.CompareMode = 1
+
+    If IsEmpty(rowsData) Then
+        Set BuildTagVersionMapFromRows = tagVersions
+        Exit Function
+    End If
+
+    Dim i As Long
+    For i = LBound(rowsData, 1) To UBound(rowsData, 1)
+        Dim tagName As String
+        Dim versionText As String
+
+        tagName = Trim$(CStr(rowsData(i, 1)))
+        If Len(tagName) = 0 Then GoTo NextRow
+
+        versionText = NormalizeVersionText(rowsData(i, 2))
+        tagVersions(tagName) = versionText
+NextRow:
+    Next i
+
+    Set BuildTagVersionMapFromRows = tagVersions
+End Function
+
+Private Function NormalizeVersionText(ByVal rawValue As Variant) As String
+    NormalizeVersionText = Trim$(CStr(rawValue))
+    If Len(NormalizeVersionText) = 0 Then NormalizeVersionText = "0"
+End Function
+
+Private Function DetectManifestVersion(ByVal xmlPath As String) As String
+    Dim rowsData As Variant
+    rowsData = ParseManifestToRows(xmlPath)
+
+    If IsEmpty(rowsData) Then
+        DetectManifestVersion = "(unknown)"
+        Exit Function
+    End If
+
+    DetectManifestVersion = MostCommonVersionInRows(rowsData)
+End Function
+
+Private Function MostCommonVersionInRows(ByVal rowsData As Variant) As String
+    Dim counts As Object
+    Set counts = CreateObject("Scripting.Dictionary")
+    counts.CompareMode = 1
+
+    Dim order As Collection
+    Set order = New Collection
+
+    Dim i As Long
+    For i = LBound(rowsData, 1) To UBound(rowsData, 1)
+        Dim versionText As String
+        versionText = Trim$(CStr(rowsData(i, 2)))
+        If Len(versionText) = 0 Then versionText = "(blank)"
+
+        If Not counts.Exists(versionText) Then
+            counts(versionText) = 0
+            order.Add versionText
+        End If
+        counts(versionText) = CLng(counts(versionText)) + 1
+    Next i
+
+    Dim bestVersion As String
+    Dim bestCount As Long
+    bestCount = -1
+
+    For i = 1 To order.Count
+        Dim currentVersion As String
+        Dim currentCount As Long
+        currentVersion = CStr(order(i))
+        currentCount = CLng(counts(currentVersion))
+        If currentCount > bestCount Then
+            bestCount = currentCount
+            bestVersion = currentVersion
+        End If
+    Next i
+
+    If Len(bestVersion) = 0 Then bestVersion = "(unknown)"
+    MostCommonVersionInRows = bestVersion
 End Function
 
 Private Function SourceDisplayName(ByVal sourcePath As String) As String
