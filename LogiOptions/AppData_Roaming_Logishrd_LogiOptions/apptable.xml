@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<profiles xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <profile>
+    <name>Revu</name>
+    <id>f25650ee-0aeb-451a-b439-85efb1a53df6</id>
+    <exe>Revu.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files\Bluebeam Software\Bluebeam Revu\20\Revu\Revu.exe</fullpath>
+    <iconpath>C:\Program Files\Bluebeam Software\Bluebeam Revu\20\Revu\Revu.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>AutoCAD 2019 Programs</name>
+    <id>e50d9fff-b37c-692b-f86b-3c3e071e8838</id>
+    <exe>acad.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files\Autodesk\AutoCAD 2021\acad.exe</fullpath>
+    <iconpath>C:\Program Files\Autodesk\Autodesk AutoCAD Plant 3D 2019 Object Enabler\Setup\SetupRes\PLNT3D.ico</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>AutoCAD 2021 Programs</name>
+    <id>60164d98-5953-4695-9e78-014f2be3e33a</id>
+    <exe>acad.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files\Autodesk\AutoCAD 2022\acad.exe</fullpath>
+    <iconpath>C:\Program Files\Autodesk\AutoCAD 2022\acad.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>AutoCAD 2022 Programs</name>
+    <id>27c83891-5831-4515-969f-66a05580ab01</id>
+    <exe>acad.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files\Autodesk\AutoCAD 2025\acad.exe</fullpath>
+    <iconpath>C:\Program Files\Autodesk\AutoCAD 2025\acad.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>Microsoft Word</name>
+    <id>ca7c0911-fbf7-4e87-9c23-25987358303b</id>
+    <exe>WINWORD.EXE</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files (x86)\Microsoft Office\Root\Office16\WINWORD.EXE</fullpath>
+    <iconpath>C:\Program Files (x86)\Microsoft Office\Root\Office16\WINWORD.EXE</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>Microsoft Teams</name>
+    <id>190ff3c4-36ad-41e6-a0b7-47c25f182ece</id>
+    <exe>Teams.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Users\lynkcn\AppData\Local\Microsoft\Teams\current\Teams.exe</fullpath>
+    <iconpath>C:\Users\lynkcn\AppData\Local\Microsoft\Teams\current\Teams.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>Microsoft Excel</name>
+    <id>4caa44eb-cdf0-4ecd-b823-38b28187e59a</id>
+    <exe>EXCEL.EXE</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files (x86)\Microsoft Office\root\Office16\EXCEL.EXE</fullpath>
+    <iconpath>C:\Program Files (x86)\Microsoft Office\root\Office16\EXCEL.EXE</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>Notepad++ : a free (GPL) source code editor</name>
+    <id>28515261-d1ac-4016-a01a-f7ec012142de</id>
+    <exe>notepad++.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files\Notepad++\notepad++.exe</fullpath>
+    <iconpath>C:\Program Files\Notepad++\notepad++.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>VMware Workstation</name>
+    <id>542de15b-7bfb-4c57-970a-9c8f222350eb</id>
+    <exe>vmware.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files (x86)\VMware\VMware Workstation\vmware.exe</fullpath>
+    <iconpath>C:\Program Files (x86)\VMware\VMware Workstation\vmware.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>Windows Explorer</name>
+    <id>571fb943-b0de-44c1-899e-4bece2c140b3</id>
+    <exe>explorer.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Windows\explorer.exe</fullpath>
+    <iconpath>C:\Windows\explorer.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+  <profile>
+    <name>ProjectWise Explorer</name>
+    <id>8cc6a99d-eced-4718-a304-88ed742d05b0</id>
+    <exe>pwc.exe</exe>
+    <altfullpath />
+    <fullpath>C:\Program Files (x86)\Bentley\ProjectWise\bin\pwc.exe</fullpath>
+    <iconpath>C:\Program Files (x86)\Bentley\ProjectWise\bin\pwc.exe</iconpath>
+    <iconindex>0</iconindex>
+  </profile>
+</profiles>
