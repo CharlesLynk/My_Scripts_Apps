@@ -1,3 +1,0 @@
-Add userDefineLang_AHK.xml to User Defined Languages using menus.
-
-Add Autohotkey.xml to C:\Program Files\Notepad++\autoCompletion
