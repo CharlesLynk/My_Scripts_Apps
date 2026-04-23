@@ -6,17 +6,30 @@
   For each .js/.mjs/.cjs (and optionally .css) file under -Root:
    1) Look for //# sourceMappingURL=... or /*# sourceMappingURL=... */
    2) If the map is local and exists, record it.
-     3) If missing, attempt to download:
+   3) If missing, attempt to download:
        - If sourceMappingURL is absolute http(s), download directly.
-       - If relative and BaseUrl is provided at prompt time, resolve relative to the generated file URL.
+       - If relative and BaseUrl is provided (arg or prompt), resolve relative to the generated file URL.
    4) If no sourceMappingURL, try heuristic: "<filename>.map" in the same directory,
       and optionally download it if BaseUrl is provided.
 
 .PARAMETER Root
   Root directory containing downloaded JS/CSS files.
 
+.PARAMETER BaseUrl
+  Optional site base URL (e.g., https://example.com). If omitted, the script can
+  prompt for it (interactive mode) and then attempt automatic inference.
+
 .PARAMETER IncludeCss
   Also process .css files.
+
+.PARAMETER WriteReport
+  Write sourcemap_report.csv in the Root directory.
+
+.PARAMETER NonInteractive
+  Do not prompt for input or confirmation. Useful for automation.
+
+.PARAMETER Help
+  Show short usage text.
 
 .PARAMETER DryRun
   Print what would happen without downloading.
@@ -28,7 +41,7 @@
   Retry count for downloads.
 
 .OUTPUTS
-  Writes a CSV report "sourcemap_report.csv" in the current directory.
+  Optionally writes a CSV report "sourcemap_report.csv" in Root when -WriteReport is used.
 #>
 
 [CmdletBinding()]
@@ -36,17 +49,75 @@ param(
   [Parameter(Mandatory=$true)]
   [string]$Root,
 
+  [string]$BaseUrl,
+
   [switch]$IncludeCss,
+
+  [switch]$WriteReport,
+
+  [switch]$NonInteractive,
 
   [switch]$DryRun,
 
   [int]$TimeoutSec = 25,
 
-  [int]$MaxRetries = 2
+  [int]$MaxRetries = 2,
+
+  [Alias('h')]
+  [switch]$Help
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Show-Usage {
+  Write-Host "Usage:"
+  Write-Host "  pwsh -File .\MapFinder.ps1 -Root <path> [options]"
+  Write-Host ""
+  Write-Host "Options:"
+  Write-Host "  -BaseUrl <url>      Optional base URL used to resolve relative sourceMappingURL values."
+  Write-Host "  -IncludeCss         Also process .css files."
+  Write-Host "  -WriteReport        Write sourcemap_report.csv in Root."
+  Write-Host "  -DryRun             Simulate downloads without writing files."
+  Write-Host "  -NonInteractive     Do not prompt for BaseUrl or confirmation."
+  Write-Host "  -TimeoutSec <int>   Request timeout (default: 25)."
+  Write-Host "  -MaxRetries <int>   Download retry count (default: 2)."
+  Write-Host "  -Help               Show this help."
+}
+
+function Confirm-ExecutionPlan {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RootValue,
+    [string]$BaseUrlValue,
+    [Parameter(Mandatory = $true)]
+    [bool]$WillIncludeCss,
+    [Parameter(Mandatory = $true)]
+    [bool]$WillDryRun,
+    [Parameter(Mandatory = $true)]
+    [bool]$WillWriteReport
+  )
+
+  Write-Host "Run configuration:"
+  Write-Host "  Root: $RootValue"
+  Write-Host "  BaseUrl: $(if ($BaseUrlValue) { $BaseUrlValue } else { '<none>' })"
+  Write-Host "  Include CSS: $WillIncludeCss"
+  Write-Host "  Dry run: $WillDryRun"
+  Write-Host "  Write report CSV: $WillWriteReport"
+
+  while ($true) {
+    $confirmation = Read-Host "Proceed? [y/N]"
+    if ([string]::IsNullOrWhiteSpace($confirmation) -or $confirmation -match '^(?i)n(?:o)?$') {
+      return $false
+    }
+
+    if ($confirmation -match '^(?i)y(?:es)?$') {
+      return $true
+    }
+
+    Write-Host "Please enter 'y' or 'n'."
+  }
+}
 
 function Get-RelativePath([string]$basePath, [string]$fullPath) {
   $base = (Resolve-Path $basePath).Path.TrimEnd('\')
@@ -230,6 +301,18 @@ function Invoke-Download([string]$url, [string]$destFile) {
   return $false
 }
 
+if ($Help) {
+  Show-Usage
+  exit 0
+}
+
+if (-not (Test-Path -LiteralPath $Root)) {
+  Write-Warning "Root not found: $Root"
+  Write-Host ""
+  Show-Usage
+  exit 1
+}
+
 # Regex for either //# sourceMappingURL=... or /*# sourceMappingURL=... */
 $rx = [regex]'(?im)^\s*(?://#|/\*#)\s*sourceMappingURL\s*=\s*(?<url>.+?)\s*(?:\*/)?\s*$'
 
@@ -238,12 +321,14 @@ if ($IncludeCss) { $exts += "*.css" }
 
 $rootResolved = (Resolve-Path $Root).Path.TrimEnd('\')
 $baseUrlNorm = $null
-$baseUrlInput = $null
+$baseUrlInput = $BaseUrl
 
-try {
-  $baseUrlInput = Read-Host "BaseUrl (optional, e.g. https://example.com). Press Enter to auto-infer"
-} catch {
-  $baseUrlInput = $null
+if (-not $baseUrlInput -and -not $NonInteractive) {
+  try {
+    $baseUrlInput = Read-Host "BaseUrl (optional, e.g. https://example.com). Press Enter to auto-infer"
+  } catch {
+    $baseUrlInput = $null
+  }
 }
 
 if ($baseUrlInput) {
@@ -261,6 +346,14 @@ if (-not $baseUrlNorm) {
   if ($inferredHost) {
     $baseUrlNorm = "https://$inferredHost"
     Write-Host "Inferred BaseUrl from path: $baseUrlNorm"
+  }
+}
+
+if (-not $NonInteractive) {
+  $confirmed = Confirm-ExecutionPlan -RootValue $rootResolved -BaseUrlValue $baseUrlNorm -WillIncludeCss $IncludeCss.IsPresent -WillDryRun $DryRun.IsPresent -WillWriteReport $WriteReport.IsPresent
+  if (-not $confirmed) {
+    Write-Host "Cancelled by user."
+    exit 0
   }
 }
 
@@ -343,7 +436,7 @@ Get-ChildItem -Path $rootResolved -Recurse -File -Include $exts | ForEach-Object
           $status = if ($ok) { "Downloaded" } else { "DownloadFailed" }
         } else {
           $status = "MissingNoBaseUrl"
-          $note = "Relative sourceMappingURL but no -BaseUrl supplied to resolve it."
+          $note = "Relative sourceMappingURL but no BaseUrl was supplied or inferred to resolve it."
         }
       }
     }
@@ -379,6 +472,23 @@ Get-ChildItem -Path $rootResolved -Recurse -File -Include $exts | ForEach-Object
   }) | Out-Null
 }
 
-$report = Join-Path (Get-Location) "sourcemap_report.csv"
-$results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $report
-Write-Host "Done. Report: $report"
+$processedCount = $results.Count
+$downloadedCount = ($results | Where-Object { $_.Status -in @('Downloaded','DownloadedGuess') }).Count
+$failedCount = ($results | Where-Object { $_.Status -in @('DownloadFailed','DownloadFailedGuess') }).Count
+
+Write-Host "Processed files: $processedCount"
+Write-Host "Downloaded maps: $downloadedCount"
+Write-Host "Download failures: $failedCount"
+
+if ($WriteReport) {
+  $report = Join-Path $rootResolved "sourcemap_report.csv"
+  if ($DryRun) {
+    Write-Host "Dry run: report generation skipped"
+    Write-Host "Report path (if generated): $report"
+  } else {
+    $results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $report
+    Write-Host "Report: $report"
+  }
+} else {
+  Write-Host "Report: skipped (pass -WriteReport to generate CSV)"
+}
