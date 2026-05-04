@@ -1,6 +1,6 @@
 Attribute VB_Name = "GlobalUtilities"
 Option Explicit
-
+'
 '==========================================
 ' Module: GlobalUtilities
 ' Purpose: Shared helper routines used by XLAM and workbook projects.

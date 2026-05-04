@@ -1,5 +1,5 @@
 Attribute VB_Name = "StringWrapVBA"
-
+'
 '==========================================
 ' Module: StringWrapVBA
 ' Purpose: Wrap long delimiter-separated strings into VBA continuation lines.

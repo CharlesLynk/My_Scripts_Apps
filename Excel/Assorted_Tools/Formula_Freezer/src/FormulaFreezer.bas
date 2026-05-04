@@ -1,10 +1,11 @@
-VBA Module (Reusable Formula Freeze/Refresh)
+Attribute VB_Name = "FormulaFreezer"
+' VBA Module (Reusable Formula Freeze/Refresh)
 Option Explicit
 
 ' Default wrapper target for a button-assigned macro in this workbook.
 ' You can use either a structured reference like TableName[Column Name]
 ' or a normal worksheet/name reference like Sheet1!D2:D500 or MyNamedRange.
-Private Const DEFAULT_TARGET_REFERENCE As String = "MASTERV2_MASK_DB[ADDRESS]"
+Private Const DEFAULT_TARGET_REFERENCES As String = "MASTERV3_MASK_DB[ADDRESS]"
 
 ' Hidden worksheet used to store one formula template per target reference.
 ' This lets the refresh macro restore formulas after a target range has been frozen to values.
@@ -12,7 +13,58 @@ Private Const FORMULA_STATE_SHEET_NAME As String = "__FrozenFormulaState"
 
 ' Button-friendly wrapper for this workbook.
 Public Sub RefreshDefaultFrozenColumn()
-   RefreshFrozenFormulaTarget DEFAULT_TARGET_REFERENCE
+   RefreshFrozenFormulaTargets DEFAULT_TARGET_REFERENCES
+End Sub
+
+' Batch-friendly wrapper for multiple targets.
+' Delimiters supported in targetReferences:
+' 1. Pipe (|)
+' 2. Semicolon (;)
+' 3. New line
+Public Sub RefreshFrozenFormulaTargets(ByVal targetReferences As String)
+   Dim normalized As String
+   Dim parts() As String
+   Dim i As Long
+   Dim targetRef As String
+   Dim failed As String
+   Dim processedCount As Long
+   Dim totalCount As Long
+
+   normalized = Replace(targetReferences, vbCrLf, "|")
+   normalized = Replace(normalized, vbLf, "|")
+   normalized = Replace(normalized, ";", "|")
+
+   parts = Split(normalized, "|")
+
+   For i = LBound(parts) To UBound(parts)
+      If Len(Trim$(parts(i))) > 0 Then totalCount = totalCount + 1
+   Next i
+
+   For i = LBound(parts) To UBound(parts)
+      targetRef = Trim$(parts(i))
+      If Len(targetRef) > 0 Then
+         processedCount = processedCount + 1
+         SetProgressStatus "Refreshing frozen formulas: target " & CStr(processedCount) & " of " & CStr(totalCount) & "..."
+         If Not RefreshFrozenFormulaTargetCore(targetRef, False) Then
+            If Len(failed) > 0 Then failed = failed & vbCrLf
+            failed = failed & targetRef
+         End If
+      End If
+   Next i
+
+   If processedCount = 0 Then
+      ClearProgressStatus
+      MsgBox "No target references were provided.", vbExclamation
+      Exit Sub
+   End If
+
+   ClearProgressStatus
+
+   If Len(failed) = 0 Then
+      MsgBox "Refreshed " & CStr(processedCount) & " frozen formula target(s).", vbInformation
+   Else
+      MsgBox "Some targets failed to refresh:" & vbCrLf & failed, vbExclamation
+   End If
 End Sub
 
 ' Generic entry point.
@@ -29,6 +81,11 @@ End Sub
 ' Important: this assumes the target range uses one uniform formula pattern.
 ' Multiple different formulas within the same target range are not supported.
 Public Sub RefreshFrozenFormulaTarget(ByVal targetReference As String)
+   Call RefreshFrozenFormulaTargetCore(targetReference, True)
+End Sub
+
+' Single-target refresh implementation with optional user prompts.
+Private Function RefreshFrozenFormulaTargetCore(ByVal targetReference As String, ByVal showMessages As Boolean) As Boolean
    Dim targetRng As Range
    Dim formulaText As String
    Dim storeKey As String
@@ -37,25 +94,28 @@ Public Sub RefreshFrozenFormulaTarget(ByVal targetReference As String)
 
    Set targetRng = ResolveTargetRange(targetReference)
    If targetRng Is Nothing Then
-      MsgBox "Target range not found or empty: " & targetReference, vbExclamation
-      Exit Sub
+      If showMessages Then MsgBox "Target range not found or empty: " & targetReference, vbExclamation
+      Exit Function
    End If
 
    formulaText = ReadFormulaTemplate(targetRng, storeKey)
    If Len(formulaText) = 0 Then
-      MsgBox "No stored formula template found. Put formula back in first target cell, then run again.", vbExclamation
-      Exit Sub
+      If showMessages Then MsgBox "No stored formula template found. Put formula back in first target cell, then run again.", vbExclamation
+      Exit Function
    End If
 
    WriteFormulaTemplate storeKey, formulaText
+   SetProgressStatus "Restoring formulas for " & targetReference & "..."
    RestoreColumnFormulasIfNeeded targetRng, formulaText
 
    Application.ScreenUpdating = False
    Application.EnableEvents = False
    On Error GoTo SafeExit
 
+   ReleaseStatusBarForCalculation
    Application.CalculateFull
    WaitForCalcDone
+   SetProgressStatus "Freezing calculated values for " & targetReference & "..."
    targetRng.Value2 = targetRng.Value2
 
 SafeExit:
@@ -63,9 +123,12 @@ SafeExit:
    Application.ScreenUpdating = True
 
    If Err.Number <> 0 Then
-      MsgBox "Refresh failed: " & Err.Description, vbExclamation
+      If showMessages Then MsgBox "Refresh failed: " & Err.Description, vbExclamation
+      Exit Function
    End If
-End Sub
+
+   RefreshFrozenFormulaTargetCore = True
+End Function
 
 ' Convenience wrapper if you prefer passing table and column separately in VBA.
 Public Sub RefreshFrozenFormulaColumn(ByVal tableName As String, ByVal targetColumnName As String)
@@ -199,6 +262,7 @@ End Sub
 Private Sub WriteFormulaTemplate(ByVal storeKey As String, ByVal formulaText As String)
    Dim ws As Worksheet
    Dim keyCell As Range
+   Dim formulaCell As Range
 
    Set ws = GetFormulaStateSheet()
    Set keyCell = FindStoredFormulaKeyCell(ws, storeKey)
@@ -209,7 +273,9 @@ Private Sub WriteFormulaTemplate(ByVal storeKey As String, ByVal formulaText As 
       keyCell.Value2 = storeKey
    End If
 
-   keyCell.Offset(0, 1).Value2 = formulaText
+   Set formulaCell = keyCell.Offset(0, 1)
+   formulaCell.NumberFormat = "@"
+   formulaCell.Value2 = "'" & formulaText
 End Sub
 
 ' Reads the stored template for a specific target reference.
@@ -259,3 +325,29 @@ Private Function GetFormulaStateSheet() As Worksheet
 
    Set GetFormulaStateSheet = ws
 End Function
+
+' Shows lightweight progress feedback without needing a custom form.
+Private Sub SetProgressStatus(ByVal messageText As String)
+   On Error Resume Next
+   Application.Cursor = xlWait
+   Application.StatusBar = messageText
+   DoEvents
+   On Error GoTo 0
+End Sub
+
+' Releases the status bar so Excel can show its own calculation progress UI.
+Private Sub ReleaseStatusBarForCalculation()
+   On Error Resume Next
+   Application.StatusBar = False
+   DoEvents
+   On Error GoTo 0
+End Sub
+
+' Restores the default Excel UI after work completes.
+Private Sub ClearProgressStatus()
+   On Error Resume Next
+   Application.StatusBar = False
+   Application.Cursor = xlDefault
+   DoEvents
+   On Error GoTo 0
+End Sub
