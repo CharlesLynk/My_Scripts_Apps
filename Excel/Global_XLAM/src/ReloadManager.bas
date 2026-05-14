@@ -20,6 +20,7 @@ Private Const MSG_REQUEST_UPDATE As String = "Request updated VBA script from Ch
 ' Document properties used in target workbooks
 Private Const PROP_TYPE_ID As String = "WB_TYPE_ID"
 Private Const PROP_SRC_SIG As String = "WB_SRC_SIGNATURE"
+Private Const PROP_SRC_SIG_MAP As String = "WB_SRC_SIGNATURE_MAP"
 Private Const PROP_LAST_SYNC As String = "WB_LAST_SYNC_UTC"
 Private Const PROP_GLOBAL_SRC_SIG As String = "GLB_SRC_SIGNATURE"
 Private Const TYPE_LIST_DELIMITER As String = ";"
@@ -27,6 +28,13 @@ Private Const REPO_ADDIN_RELATIVE_PATH As String = "Global_XLAM\Global_CNL.xlam"
 Private Const REPO_ADDIN_SRC_RELATIVE_PATH As String = "Global_XLAM\src"
 Private Const MODULE_RELOAD_MANAGER As String = "ReloadManager"
 Private Const MODULE_RELOAD_MANAGER_BOOTSTRAP As String = "ReloadManagerBootstrap"
+Private Const TEST_PICKER_FORM_NAME As String = "RM_TypePickerTestForm"
+Private Const TEST_PICKER_LIST_NAME As String = "lstEntries"
+Private Const TEST_PICKER_OK_NAME As String = "btnOK"
+Private Const TEST_PICKER_CANCEL_NAME As String = "btnCancel"
+Private Const TEST_PICKER_INFO_NAME As String = "lblInfo"
+Private Const MAX_FOLDER_SCAN_DEPTH As Long = 64
+Private Const FILE_ATTR_REPARSE_POINT As Long = 1024
 
 Private mStartupSyncComplete As Boolean
 Private mGlobalAddInPublishedThisSession As Boolean
@@ -355,8 +363,11 @@ End Sub
 Private Sub CheckWorkbookForOpenTimeDrift(ByVal wb As Workbook)
     Dim typeSummary As String
     Dim srcPaths As Collection
+    Dim changedSrcPaths As Collection
+    Dim driftTypeSummary As String
     Dim repoSig As String
     Dim wbSig As String
+    Dim typeSigMapText As String
     Dim reason As String
 
     On Error GoTo SafeExit
@@ -365,11 +376,13 @@ Private Sub CheckWorkbookForOpenTimeDrift(ByVal wb As Workbook)
     If IsAddInWorkbook(wb) Then Exit Sub
 
     ' Keep open-time checks quiet unless actionable drift is found.
-    If Not PrepareSyncContext(wb, typeSummary, srcPaths, repoSig, wbSig, reason) Then Exit Sub
+    If Not PrepareSyncContext(wb, typeSummary, srcPaths, changedSrcPaths, driftTypeSummary, _
+                              repoSig, wbSig, typeSigMapText, reason) Then Exit Sub
     If StrComp(repoSig, wbSig, vbBinaryCompare) = 0 Then Exit Sub
+    If Len(driftTypeSummary) = 0 Then Exit Sub
 
-    If ConfirmDriftImport(wb, typeSummary) Then
-        SyncWorkbook wb, True, False
+    If ConfirmDriftImport(wb, driftTypeSummary) Then
+        SyncWorkbook wb, False, False
     End If
 
 SafeExit:
@@ -379,6 +392,59 @@ End Sub
 ' Single visible macro entry point for users.
 Public Sub ManageActiveWorkbookTypes()
     ShowReloadManagerCommandCenter
+End Sub
+
+' Proof-of-concept userform picker to evaluate layout/width before full conversion.
+Public Sub TestWorkbookTypePickerUserForm()
+    Dim wb As Workbook
+    Dim typeMap As Object
+    Dim availableTypeIds As Collection
+    Dim displayLines As Collection
+    Dim ownerTypeIds As Collection
+    Dim selectedIndex As Long
+    Dim reason As String
+
+    Set wb = GetForegroundWorkbook()
+    If wb Is Nothing Then
+        MsgBox "No workbook is currently available.", vbExclamation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
+    If IsAddInWorkbook(wb) Then
+        MsgBox "Select a regular workbook before running picker test.", vbExclamation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
+    If Not CanAccessVBProject(ThisWorkbook, reason) Then
+        MsgBox reason, vbExclamation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
+    Set availableTypeIds = GetAvailableTypeIdsCollection()
+    If availableTypeIds.Count = 0 Then
+        MsgBox "No valid type IDs were found in local VBA sources." & vbCrLf & _
+               MSG_REQUEST_UPDATE, vbInformation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
+    Set typeMap = GetWorkbookTypeMap(wb)
+    Set displayLines = New Collection
+    Set ownerTypeIds = New Collection
+    BuildUserFormPickerPreview availableTypeIds, typeMap, displayLines, ownerTypeIds
+
+    If displayLines.Count = 0 Then
+        MsgBox "No .bas entries were found for available type IDs.", vbInformation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
+    selectedIndex = ShowTypePickerTestUserForm(displayLines, ownerTypeIds, "Workbook Type Picker Test")
+    If selectedIndex <= 0 Then Exit Sub
+    If selectedIndex > ownerTypeIds.Count Then Exit Sub
+
+    MsgBox "Selected preview entry:" & vbCrLf & _
+           CStr(displayLines(selectedIndex)) & vbCrLf & vbCrLf & _
+           "Owning Type ID:" & vbCrLf & _
+           CStr(ownerTypeIds(selectedIndex)), vbInformation, SYNC_DIALOG_TITLE
 End Sub
 
 Private Sub ShowReloadManagerCommandCenter()
@@ -458,8 +524,8 @@ Private Sub ManageActiveWorkbookTypesPrompt()
     Dim menuText As String
 
     menuText = "Manage Workbook Types" & vbCrLf & String$(24, "=") & vbCrLf & vbCrLf & _
-               "1 - Add assigned types" & vbCrLf & _
-               "2 - Remove assigned type" & vbCrLf & _
+               "1 - Add type(s)" & vbCrLf & _
+               "2 - Remove type(s)" & vbCrLf & _
                "3 - Clear all assigned types" & vbCrLf & _
                "0 - Exit"
 
@@ -483,9 +549,12 @@ End Sub
 Private Sub AddActiveWorkbookTypeId()
     Dim wb As Workbook
     Dim typeMap As Object
-    Dim selectedTypeId As String
+    Dim candidateTypeIds As Collection
+    Dim selectedTypeIds As Collection
+    Dim typeId As Variant
     Dim normalizedTypeId As String
     Dim availableTypeIds As Collection
+    Dim addedCount As Long
 
     Set wb = GetForegroundWorkbook()
     If wb Is Nothing Then
@@ -506,32 +575,44 @@ Private Sub AddActiveWorkbookTypeId()
         Exit Sub
     End If
 
-    selectedTypeId = PromptSelectAvailableTypeId(availableTypeIds, typeMap)
-    If Len(selectedTypeId) = 0 Then Exit Sub
-
-    normalizedTypeId = NormalizeTypeId(selectedTypeId)
-
-    If typeMap.Exists(normalizedTypeId) Then
-        MsgBox "Type already assigned: " & normalizedTypeId, vbInformation, SYNC_DIALOG_TITLE
+    Set candidateTypeIds = FilterUnassignedTypeIds(availableTypeIds, typeMap)
+    If candidateTypeIds.Count = 0 Then
+        MsgBox "All eligible workbook types are already assigned.", vbInformation, SYNC_DIALOG_TITLE
         Exit Sub
     End If
 
-    typeMap(normalizedTypeId) = normalizedTypeId
+    Set selectedTypeIds = PromptSelectTypeIdsUserForm(candidateTypeIds, _
+                                                      "Add Workbook Types", _
+                                                      "Check one or more .bas entries to add workbook types.")
+    If selectedTypeIds.Count = 0 Then Exit Sub
+
+    For Each typeId In selectedTypeIds
+        normalizedTypeId = NormalizeTypeId(CStr(typeId))
+        If Len(normalizedTypeId) > 0 Then
+            If Not typeMap.Exists(normalizedTypeId) Then
+                typeMap(normalizedTypeId) = normalizedTypeId
+                addedCount = addedCount + 1
+            End If
+        End If
+    Next typeId
+
+    If addedCount = 0 Then
+        MsgBox "No new types were added.", vbInformation, SYNC_DIALOG_TITLE
+        Exit Sub
+    End If
+
     SaveWorkbookTypeMap wb, typeMap
 
-    MsgBox "Type added: " & normalizedTypeId, vbInformation, SYNC_DIALOG_TITLE
+    MsgBox CStr(addedCount) & " workbook type(s) added.", vbInformation, SYNC_DIALOG_TITLE
 End Sub
 
 Private Sub RemoveActiveWorkbookTypeId()
     Dim wb As Workbook
     Dim typeMap As Object
-    Dim typeId As String
+    Dim selectedTypeIds As Collection
+    Dim typeId As Variant
     Dim normalizedTypeId As String
-    Dim sortedTypes() As String
-    Dim selectedIndex As Long
-    Dim menuText As String
-    Dim i As Long
-    Dim userInput As String
+    Dim removedCount As Long
 
     Set wb = GetForegroundWorkbook()
     If wb Is Nothing Then
@@ -549,40 +630,71 @@ Private Sub RemoveActiveWorkbookTypeId()
         Exit Sub
     End If
 
-    sortedTypes = GetSortedTypeIds(typeMap)
+    Set selectedTypeIds = PromptSelectTypeIdsUserForm(GetSortedTypeIdCollectionFromMap(typeMap), _
+                                                      "Remove Workbook Types", _
+                                                      "Check one or more .bas entries to remove workbook types.")
+    If selectedTypeIds.Count = 0 Then Exit Sub
 
-    menuText = "Remove Assigned Type" & vbCrLf & String$(24, "=") & vbCrLf & vbCrLf
-    For i = LBound(sortedTypes) To UBound(sortedTypes)
-        menuText = menuText & CStr(i - LBound(sortedTypes) + 1) & " - " & sortedTypes(i) & vbCrLf
-    Next i
-    menuText = menuText & vbCrLf & "Enter a number (or 0 to cancel)."
+    For Each typeId In selectedTypeIds
+        normalizedTypeId = NormalizeTypeId(CStr(typeId))
+        If Len(normalizedTypeId) > 0 Then
+            If typeMap.Exists(normalizedTypeId) Then
+                typeMap.Remove normalizedTypeId
+                removedCount = removedCount + 1
+            End If
+        End If
+    Next typeId
 
-    userInput = Trim$(InputBox(menuText, "Remove Workbook Type", "0"))
-    If Len(userInput) = 0 Or userInput = "0" Then Exit Sub
-    If Not IsNumeric(userInput) Then
-        MsgBox "Please enter a valid number.", vbExclamation, SYNC_DIALOG_TITLE
+    If removedCount = 0 Then
+        MsgBox "No assigned types were removed.", vbInformation, SYNC_DIALOG_TITLE
         Exit Sub
     End If
 
-    selectedIndex = CLng(userInput)
-    If selectedIndex < 1 Or selectedIndex > (UBound(sortedTypes) - LBound(sortedTypes) + 1) Then
-        MsgBox "Selection out of range.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    typeId = sortedTypes(LBound(sortedTypes) + selectedIndex - 1)
-
-    normalizedTypeId = NormalizeTypeId(typeId)
-    If Not typeMap.Exists(normalizedTypeId) Then
-        MsgBox "Type not assigned: " & normalizedTypeId, vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    typeMap.Remove normalizedTypeId
     SaveWorkbookTypeMap wb, typeMap
-
-    MsgBox "Type removed: " & normalizedTypeId, vbInformation, SYNC_DIALOG_TITLE
+    MsgBox CStr(removedCount) & " workbook type(s) removed.", vbInformation, SYNC_DIALOG_TITLE
 End Sub
+
+Private Function GetSortedTypeIdCollectionFromMap(ByVal typeMap As Object) As Collection
+    Dim sortedTypes() As String
+    Dim i As Long
+    Dim results As New Collection
+
+    If typeMap Is Nothing Then
+        Set GetSortedTypeIdCollectionFromMap = results
+        Exit Function
+    End If
+
+    If typeMap.count = 0 Then
+        Set GetSortedTypeIdCollectionFromMap = results
+        Exit Function
+    End If
+
+    sortedTypes = GetSortedTypeIds(typeMap)
+    For i = LBound(sortedTypes) To UBound(sortedTypes)
+        results.Add CStr(sortedTypes(i))
+    Next i
+
+    Set GetSortedTypeIdCollectionFromMap = results
+End Function
+
+Private Function FilterUnassignedTypeIds(ByVal availableTypeIds As Collection, ByVal assignedTypeMap As Object) As Collection
+    Dim results As New Collection
+    Dim typeId As Variant
+    Dim normalizedTypeId As String
+
+    For Each typeId In availableTypeIds
+        normalizedTypeId = NormalizeTypeId(CStr(typeId))
+        If Len(normalizedTypeId) > 0 Then
+            If assignedTypeMap Is Nothing Then
+                results.Add normalizedTypeId
+            ElseIf Not assignedTypeMap.Exists(normalizedTypeId) Then
+                results.Add normalizedTypeId
+            End If
+        End If
+    Next typeId
+
+    Set FilterUnassignedTypeIds = results
+End Function
 
 Private Sub ClearActiveWorkbookTypeIds()
     Dim wb As Workbook
@@ -621,14 +733,18 @@ Private Sub SyncWorkbook(ByVal wb As Workbook, _
                          Optional ByVal PromptOnDrift As Boolean = True)
     Dim typeSummary As String
     Dim srcPaths As Collection
+    Dim changedSrcPaths As Collection
+    Dim driftTypeSummary As String
     Dim repoSig As String
     Dim wbSig As String
+    Dim typeSigMapText As String
     Dim reason As String
     Dim previousEnableEvents As Boolean
     Dim previousScreenUpdating As Boolean
     Dim srcPath As Variant
 
-    If Not PrepareSyncContext(wb, typeSummary, srcPaths, repoSig, wbSig, reason) Then
+    If Not PrepareSyncContext(wb, typeSummary, srcPaths, changedSrcPaths, driftTypeSummary, _
+                              repoSig, wbSig, typeSigMapText, reason) Then
         MsgBox reason, vbExclamation, SYNC_DIALOG_TITLE
         Exit Sub
     End If
@@ -638,8 +754,15 @@ Private Sub SyncWorkbook(ByVal wb As Workbook, _
             Exit Sub
         End If
 
+        If changedSrcPaths.Count = 0 Then
+            Exit Sub
+        End If
+
         If PromptOnDrift Then
-            If Not ConfirmDriftImport(wb, typeSummary) Then
+            If Len(driftTypeSummary) = 0 Then
+                driftTypeSummary = typeSummary
+            End If
+            If Not ConfirmDriftImport(wb, driftTypeSummary) Then
                 Exit Sub
             End If
         End If
@@ -657,11 +780,18 @@ Private Sub SyncWorkbook(ByVal wb As Workbook, _
         Err.Raise vbObjectError + 7000, "ReloadManager.SyncWorkbook", reason
     End If
 
-    For Each srcPath In srcPaths
-        ImportBasFolder wb, CStr(srcPath)
-    Next srcPath
+    If Force Then
+        For Each srcPath In srcPaths
+            ImportBasFolder wb, CStr(srcPath)
+        Next srcPath
+    Else
+        For Each srcPath In changedSrcPaths
+            ImportBasFolder wb, CStr(srcPath)
+        Next srcPath
+    End If
 
     SetDocProp wb, PROP_SRC_SIG, repoSig
+    SetDocProp wb, PROP_SRC_SIG_MAP, typeSigMapText
     SetDocProp wb, PROP_LAST_SYNC, Format$(NowUTC(), "yyyy-mm-dd\THH:NN:SS\Z")
 
 SyncExit:
@@ -687,25 +817,63 @@ Private Function PromptSelectAvailableTypeId(ByVal availableTypeIds As Collectio
     Dim selectedIndex As Long
     Dim marker As String
     Dim normalizedTypeId As String
+    Dim selectableTypeIds As Collection
+    Dim selectableEntryPaths As Collection
+    Dim basFiles As Collection
+    Dim basFile As Variant
+    Dim numberWidth As Long
+    Dim numberLabel As String
     Dim parts() As String
-    Dim depth As Long
-    Dim leaf As String
+    Dim previousParts() As String
+    Dim hasPrevious As Boolean
+    Dim commonDepth As Long
+    Dim leafIndex As Long
+    Dim j As Long
 
-    menuText = "Add Workbook Type" & vbCrLf & String$(24, "=") & vbCrLf & vbCrLf
+    Set selectableTypeIds = New Collection
+    Set selectableEntryPaths = New Collection
+
     For i = 1 To availableTypeIds.Count
         typeId = CStr(availableTypeIds(i))
-        If assignedTypeMap.Exists(typeId) Then
+        normalizedTypeId = NormalizeTypeId(typeId)
+        Set basFiles = GetBasFileNamesInTypeSource(normalizedTypeId)
+        For Each basFile In basFiles
+            selectableTypeIds.Add normalizedTypeId
+            selectableEntryPaths.Add normalizedTypeId & Application.PathSeparator & CStr(basFile)
+        Next basFile
+    Next i
+
+    If selectableEntryPaths.Count = 0 Then Exit Function
+
+    menuText = "Add Workbook Type" & vbCrLf & String$(24, "=") & vbCrLf & vbCrLf
+    numberWidth = Len(CStr(selectableEntryPaths.Count))
+    If numberWidth < 2 Then numberWidth = 2
+
+    For i = 1 To selectableEntryPaths.Count
+        parts = Split(CStr(selectableEntryPaths(i)), Application.PathSeparator)
+        leafIndex = UBound(parts)
+
+        If hasPrevious Then
+            commonDepth = GetCommonFolderDepth(previousParts, parts)
+        Else
+            commonDepth = 0
+        End If
+
+        For j = commonDepth To leafIndex - 1
+            menuText = menuText & String$(j * 3, " ") & parts(j) & vbCrLf
+        Next j
+
+        If assignedTypeMap.Exists(CStr(selectableTypeIds(i))) Then
             marker = "[Assigned]"
         Else
             marker = "[Available]"
         End If
 
-        normalizedTypeId = NormalizeTypeId(typeId)
-        parts = Split(normalizedTypeId, Application.PathSeparator)
-        depth = UBound(parts)
-        leaf = parts(UBound(parts))
+        numberLabel = "[" & Right$(String$(numberWidth, " ") & CStr(i), numberWidth) & "]"
+        menuText = menuText & String$(leafIndex * 3, " ") & numberLabel & " " & parts(leafIndex) & " " & marker & vbCrLf
 
-        menuText = menuText & CStr(i) & " - " & marker & "  " & String$(depth * 4, " ") & leaf & vbCrLf
+        previousParts = parts
+        hasPrevious = True
     Next i
     menuText = menuText & vbCrLf & "Enter a number (or 0 to cancel)."
 
@@ -717,12 +885,910 @@ Private Function PromptSelectAvailableTypeId(ByVal availableTypeIds As Collectio
     End If
 
     selectedIndex = CLng(userInput)
-    If selectedIndex < 1 Or selectedIndex > availableTypeIds.Count Then
+    If selectedIndex < 1 Or selectedIndex > selectableEntryPaths.Count Then
         MsgBox "Selection out of range.", vbExclamation, SYNC_DIALOG_TITLE
         Exit Function
     End If
 
-    PromptSelectAvailableTypeId = CStr(availableTypeIds(selectedIndex))
+    PromptSelectAvailableTypeId = CStr(selectableTypeIds(selectedIndex))
+End Function
+
+Private Function PromptSelectTypeIdsUserForm(ByVal typeIds As Collection, _
+                                             ByVal formCaption As String, _
+                                             ByVal infoText As String) As Collection
+    Dim displayLines As Collection
+    Dim ownerTypeIds As Collection
+    Dim uncheckedTypeMap As Object
+    Dim selectedTypeIds As Collection
+
+    Set selectedTypeIds = New Collection
+    If typeIds Is Nothing Then
+        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+        Exit Function
+    End If
+    If typeIds.Count = 0 Then
+        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+        Exit Function
+    End If
+
+    Set displayLines = New Collection
+    Set ownerTypeIds = New Collection
+    Set uncheckedTypeMap = CreateObject("Scripting.Dictionary")
+    uncheckedTypeMap.CompareMode = vbTextCompare
+
+    BuildTypePickerTreeLines typeIds, uncheckedTypeMap, displayLines, ownerTypeIds
+
+    If displayLines.Count = 0 Then
+        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+        Exit Function
+    End If
+
+    Set selectedTypeIds = ShowTypePickerCheckedTypeIdsUserForm(displayLines, ownerTypeIds, formCaption, infoText)
+    Set PromptSelectTypeIdsUserForm = selectedTypeIds
+End Function
+
+Private Sub BuildUserFormPickerPreview(ByVal availableTypeIds As Collection, _
+                                       ByVal assignedTypeMap As Object, _
+                                       ByRef displayLines As Collection, _
+                                       ByRef ownerTypeIds As Collection)
+    BuildTypePickerTreeLines availableTypeIds, assignedTypeMap, displayLines, ownerTypeIds
+End Sub
+
+Private Sub BuildTypePickerTreeLines(ByVal typeIds As Collection, _
+                                     ByVal checkedTypeMap As Object, _
+                                     ByRef displayLines As Collection, _
+                                     ByRef ownerTypeIds As Collection)
+    Dim i As Long
+    Dim j As Long
+    Dim typeId As String
+    Dim normalizedTypeId As String
+    Dim basFiles As Collection
+    Dim basFile As Variant
+    Dim marker As String
+    Dim parts() As String
+    Dim previousParts() As String
+    Dim hasPrevious As Boolean
+    Dim commonDepth As Long
+    Dim leafIndex As Long
+
+    For i = 1 To typeIds.Count
+        typeId = CStr(typeIds(i))
+        normalizedTypeId = NormalizeTypeId(typeId)
+        If Len(normalizedTypeId) = 0 Then GoTo NextType
+
+        parts = Split(normalizedTypeId, Application.PathSeparator)
+        leafIndex = UBound(parts)
+
+        If hasPrevious Then
+            commonDepth = GetCommonFolderDepth(previousParts, parts)
+        Else
+            commonDepth = 0
+        End If
+
+        For j = commonDepth To leafIndex
+            displayLines.Add String$(j * 2, " ") & parts(j)
+            ownerTypeIds.Add vbNullString
+        Next j
+
+        Set basFiles = GetBasFileNamesInTypeSource(normalizedTypeId)
+
+        If (Not checkedTypeMap Is Nothing) And checkedTypeMap.Exists(normalizedTypeId) Then
+            marker = "[x]"
+        Else
+            marker = "[ ]"
+        End If
+
+        For Each basFile In basFiles
+            displayLines.Add String$((leafIndex + 1) * 2, " ") & marker & " " & CStr(basFile)
+            ownerTypeIds.Add normalizedTypeId
+        Next basFile
+
+        previousParts = parts
+        hasPrevious = True
+NextType:
+    Next i
+End Sub
+
+Private Function ShowTypePickerTestUserForm(ByVal displayLines As Collection, _
+                                            ByVal ownerTypeIds As Collection, _
+                                            ByVal formCaption As String) As Long
+    Dim vbComp As Object
+    Dim frm As Object
+    Dim entriesHost As Object
+    Dim lbl As Object
+    Dim reason As String
+    Dim stage As String
+
+    On Error GoTo Fail
+
+    stage = "EnsureTypePickerTestFormComponent"
+    Set vbComp = EnsureTypePickerTestFormComponent(ThisWorkbook, reason)
+    If vbComp Is Nothing Then
+        MsgBox "Unable to open test userform." & vbCrLf & _
+               "Reason: " & reason & vbCrLf & vbCrLf & _
+               "Fallback: create a manual UserForm named '" & TEST_PICKER_FORM_NAME & _
+               "' in the Global_CNL VBA project with controls:" & vbCrLf & _
+               "- " & TEST_PICKER_INFO_NAME & " (Label)" & vbCrLf & _
+             "- " & TEST_PICKER_LIST_NAME & " (Frame)" & vbCrLf & _
+               "- " & TEST_PICKER_OK_NAME & " (CommandButton)" & vbCrLf & _
+               "- " & TEST_PICKER_CANCEL_NAME & " (CommandButton)", vbExclamation, SYNC_DIALOG_TITLE
+        Exit Function
+    End If
+
+    stage = "UserForms.Add"
+    Set frm = VBA.UserForms.Add(vbComp.Name)
+    frm.Caption = formCaption
+    frm.Tag = "0"
+
+    stage = "Find info label"
+    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
+    If lbl Is Nothing Then Err.Raise vbObjectError + 8101, "ReloadManager.ShowTypePickerTestUserForm", _
+                                    "Missing control: " & TEST_PICKER_INFO_NAME
+    lbl.Caption = "Select .bas entries using checkboxes. Folder rows are context only."
+
+    stage = "Find entries host"
+    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
+    If entriesHost Is Nothing Then Err.Raise vbObjectError + 8102, "ReloadManager.ShowTypePickerTestUserForm", _
+                                    "Missing control: " & TEST_PICKER_LIST_NAME
+
+    stage = "AutoSize form"
+    AutoSizeTypePickerTestForm frm, displayLines
+
+    stage = "Build checkbox entries"
+    PopulateTypePickerChecklist entriesHost, displayLines, ownerTypeIds
+
+    stage = "Show form"
+    frm.Show vbModal
+
+    stage = "Read selection"
+    On Error Resume Next
+    If StrComp(CStr(frm.Tag), "OK", vbTextCompare) = 0 Then
+        ShowTypePickerTestUserForm = GetFirstCheckedChecklistLineIndex(entriesHost, ownerTypeIds)
+    ElseIf Len(CStr(frm.Tag)) > 0 And IsNumeric(CStr(frm.Tag)) Then
+        ShowTypePickerTestUserForm = CLng(Val(CStr(frm.Tag)))
+    End If
+    Err.Clear
+    On Error GoTo Fail
+
+    stage = "Cleanup form"
+    On Error Resume Next
+    Unload frm
+    Set frm = Nothing
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+
+Fail:
+    MsgBox "UserForm test failed at stage: " & stage & vbCrLf & _
+           "Error " & CStr(Err.Number) & ": " & Err.Description, vbExclamation, SYNC_DIALOG_TITLE
+    On Error Resume Next
+    If Not frm Is Nothing Then Unload frm
+End Function
+
+Private Function ShowTypePickerCheckedTypeIdsUserForm(ByVal displayLines As Collection, _
+                                                      ByVal ownerTypeIds As Collection, _
+                                                      ByVal formCaption As String, _
+                                                      ByVal infoText As String) As Collection
+    Dim vbComp As Object
+    Dim frm As Object
+    Dim entriesHost As Object
+    Dim lbl As Object
+    Dim reason As String
+    Dim stage As String
+    Dim selectedTypeIds As New Collection
+
+    On Error GoTo Fail
+
+    stage = "EnsureTypePickerTestFormComponent"
+    Set vbComp = EnsureTypePickerTestFormComponent(ThisWorkbook, reason)
+    If vbComp Is Nothing Then
+        MsgBox "Unable to open type picker." & vbCrLf & _
+               "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
+        Set ShowTypePickerCheckedTypeIdsUserForm = selectedTypeIds
+        Exit Function
+    End If
+
+    stage = "UserForms.Add"
+    Set frm = VBA.UserForms.Add(vbComp.Name)
+    frm.Caption = formCaption
+    frm.Tag = "0"
+
+    stage = "Find info label"
+    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
+    If lbl Is Nothing Then Err.Raise vbObjectError + 8111, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
+                                    "Missing control: " & TEST_PICKER_INFO_NAME
+    lbl.Caption = infoText
+
+    stage = "Find entries host"
+    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
+    If entriesHost Is Nothing Then Err.Raise vbObjectError + 8112, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
+                                    "Missing control: " & TEST_PICKER_LIST_NAME
+
+    stage = "AutoSize form"
+    AutoSizeTypePickerTestForm frm, displayLines
+
+    stage = "Build checkbox entries"
+    PopulateTypePickerChecklist entriesHost, displayLines, ownerTypeIds
+
+    stage = "Show form"
+    frm.Show vbModal
+
+    stage = "Collect checked selections"
+    If StrComp(CStr(frm.Tag), "OK", vbTextCompare) = 0 Then
+        CollectCheckedTypeIdsFromChecklist entriesHost, ownerTypeIds, selectedTypeIds
+    End If
+
+    stage = "Cleanup form"
+    On Error Resume Next
+    Unload frm
+    Set frm = Nothing
+    Err.Clear
+    On Error GoTo 0
+
+    Set ShowTypePickerCheckedTypeIdsUserForm = selectedTypeIds
+    Exit Function
+
+Fail:
+    MsgBox "Type picker failed at stage: " & stage & vbCrLf & _
+           "Error " & CStr(Err.Number) & ": " & Err.Description, vbExclamation, SYNC_DIALOG_TITLE
+    On Error Resume Next
+    If Not frm Is Nothing Then Unload frm
+    Set ShowTypePickerCheckedTypeIdsUserForm = selectedTypeIds
+End Function
+
+Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
+                                        ByVal displayLines As Collection, _
+                                        ByVal ownerTypeIds As Collection)
+    Dim i As Long
+    Dim lineText As String
+    Dim ownerTypeId As String
+    Dim indentChars As Long
+    Dim captionText As String
+    Dim rowTop As Double
+    Dim rowHeight As Double
+    Dim maxWidth As Double
+    Dim offsetLeft As Double
+    Dim ctl As Object
+
+    If entriesHost Is Nothing Then Exit Sub
+
+    ClearTypePickerDynamicControls entriesHost
+
+    rowTop = 4
+    rowHeight = 18
+    maxWidth = CDbl(entriesHost.Width) - 16
+    If maxWidth < 120 Then maxWidth = 120
+
+    For i = 1 To displayLines.Count
+        lineText = CStr(displayLines(i))
+        ownerTypeId = ""
+        If Not ownerTypeIds Is Nothing Then
+            If i <= ownerTypeIds.Count Then
+                ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(i)))
+            End If
+        End If
+
+        indentChars = CountLeadingSpaces(lineText)
+        offsetLeft = 6 + (indentChars * 3)
+        captionText = StripChecklistMarker(LTrim$(lineText))
+
+        If Len(ownerTypeId) > 0 Then
+            Set ctl = entriesHost.Controls.Add("Forms.CheckBox.1", "chkEntry_" & CStr(i), True)
+            TrySetObjectProperty ctl, "Caption", captionText
+            TrySetObjectProperty ctl, "Value", IsChecklistLineChecked(lineText)
+            TrySetObjectProperty ctl, "Tag", CStr(i)
+            TrySetObjectProperty ctl, "Left", offsetLeft
+            TrySetObjectProperty ctl, "Top", rowTop
+            TrySetObjectProperty ctl, "Width", maxWidth - (indentChars * 3)
+            TrySetObjectProperty ctl, "Height", 16
+        Else
+            Set ctl = entriesHost.Controls.Add("Forms.Label.1", "lblEntry_" & CStr(i), True)
+            TrySetObjectProperty ctl, "Caption", LTrim$(lineText)
+            TrySetObjectProperty ctl, "Left", offsetLeft + 2
+            TrySetObjectProperty ctl, "Top", rowTop + 1
+            TrySetObjectProperty ctl, "Width", maxWidth - (indentChars * 3)
+            TrySetObjectProperty ctl, "Height", 15
+        End If
+
+        rowTop = rowTop + rowHeight
+    Next i
+
+    TrySetObjectProperty entriesHost, "ScrollBars", 2
+    TrySetObjectProperty entriesHost, "KeepScrollBarsVisible", 2
+    TrySetObjectProperty entriesHost, "ScrollHeight", rowTop + 4
+    TrySetObjectProperty entriesHost, "ScrollWidth", CDbl(entriesHost.Width)
+    On Error Resume Next
+    entriesHost.ScrollTop = 0
+    On Error GoTo 0
+End Sub
+
+Private Sub ClearTypePickerDynamicControls(ByVal entriesHost As Object)
+    Dim i As Long
+    Dim ctl As Object
+    Dim ctlName As String
+
+    If entriesHost Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    For i = entriesHost.Controls.Count - 1 To 0 Step -1
+        Set ctl = entriesHost.Controls.Item(i)
+        ctlName = CStr(ctl.Name)
+        If Left$(ctlName, 9) = "chkEntry_" Or Left$(ctlName, 9) = "lblEntry_" Then
+            entriesHost.Controls.Remove ctlName
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Sub CollectCheckedTypeIdsFromChecklist(ByVal entriesHost As Object, _
+                                               ByVal ownerTypeIds As Collection, _
+                                               ByRef selectedTypeIds As Collection)
+    Dim seen As Object
+    Dim i As Long
+    Dim ownerTypeId As String
+    Dim chk As Object
+
+    Set seen = CreateObject("Scripting.Dictionary")
+    seen.CompareMode = vbTextCompare
+
+    For i = 1 To ownerTypeIds.Count
+        ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(i)))
+        If Len(ownerTypeId) > 0 Then
+            Set chk = GetFormControlByName(entriesHost, "chkEntry_" & CStr(i))
+            If Not chk Is Nothing Then
+                On Error Resume Next
+                If CBool(chk.Value) Then
+                    If Not seen.Exists(ownerTypeId) Then
+                        seen(ownerTypeId) = True
+                        selectedTypeIds.Add ownerTypeId
+                    End If
+                End If
+                On Error GoTo 0
+            End If
+        End If
+    Next i
+End Sub
+
+Private Function GetFirstCheckedChecklistLineIndex(ByVal entriesHost As Object, _
+                                                   ByVal ownerTypeIds As Collection) As Long
+    Dim i As Long
+    Dim ownerTypeId As String
+    Dim chk As Object
+
+    If entriesHost Is Nothing Then Exit Function
+    If ownerTypeIds Is Nothing Then Exit Function
+
+    For i = 1 To ownerTypeIds.Count
+        ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(i)))
+        If Len(ownerTypeId) > 0 Then
+            Set chk = GetFormControlByName(entriesHost, "chkEntry_" & CStr(i))
+            If Not chk Is Nothing Then
+                On Error Resume Next
+                If CBool(chk.Value) Then
+                    GetFirstCheckedChecklistLineIndex = i
+                    Exit Function
+                End If
+                On Error GoTo 0
+            End If
+        End If
+    Next i
+End Function
+
+Private Function CountLeadingSpaces(ByVal textValue As String) As Long
+    CountLeadingSpaces = Len(textValue) - Len(LTrim$(textValue))
+End Function
+
+Private Function StripChecklistMarker(ByVal trimmedLine As String) As String
+    If Left$(trimmedLine, 3) = "[ ]" Or Left$(trimmedLine, 3) = "[x]" Or Left$(trimmedLine, 3) = "[X]" Then
+        If Len(trimmedLine) > 4 Then
+            StripChecklistMarker = Mid$(trimmedLine, 5)
+        Else
+            StripChecklistMarker = ""
+        End If
+    Else
+        StripChecklistMarker = trimmedLine
+    End If
+End Function
+
+Private Function IsChecklistLineCheckable(ByVal lineText As String) As Boolean
+    Dim trimmedLine As String
+
+    trimmedLine = LTrim$(lineText)
+    IsChecklistLineCheckable = (Left$(trimmedLine, 3) = "[ ]" Or _
+                                Left$(trimmedLine, 3) = "[x]" Or _
+                                Left$(trimmedLine, 3) = "[X]")
+End Function
+
+Private Function IsChecklistLineChecked(ByVal lineText As String) As Boolean
+    Dim trimmedLine As String
+
+    trimmedLine = LTrim$(lineText)
+    IsChecklistLineChecked = (Left$(trimmedLine, 3) = "[x]" Or Left$(trimmedLine, 3) = "[X]")
+End Function
+
+Private Function EnsureTypePickerTestFormComponent(ByVal wb As Workbook, ByRef reason As String) As Object
+    Dim vbComp As Object
+    Dim designer As Object
+    Dim stage As String
+    Dim createdNow As Boolean
+
+    On Error GoTo Fail
+
+    stage = "Find component"
+    Set vbComp = FindVBComponentByName(wb, TEST_PICKER_FORM_NAME)
+
+    If Not vbComp Is Nothing Then
+        If vbComp.Type <> 3 Then
+            reason = "A non-UserForm component already uses name '" & TEST_PICKER_FORM_NAME & "'." & vbCrLf & _
+                     "Rename it or create a UserForm with that name."
+            Exit Function
+        End If
+    End If
+
+    stage = "Create component"
+    If vbComp Is Nothing Then
+        Set vbComp = wb.VBProject.VBComponents.Add(3)
+        vbComp.Name = TEST_PICKER_FORM_NAME
+        createdNow = True
+    End If
+
+    stage = "Open designer"
+    Set designer = vbComp.Designer
+    If designer Is Nothing Then
+        reason = "Designer is unavailable for component '" & vbComp.Name & "'."
+        Exit Function
+    End If
+
+    stage = "Configure designer controls"
+    If createdNow Or (Not HasRequiredTypePickerControls(designer)) Then
+        ConfigureTypePickerTestFormDesigner designer
+    End If
+
+    stage = "Inject form code"
+    EnsureTypePickerTestFormCode vbComp.CodeModule
+
+    Set EnsureTypePickerTestFormComponent = vbComp
+    Exit Function
+
+Fail:
+    reason = "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
+End Function
+
+Private Function HasRequiredTypePickerControls(ByVal designer As Object) As Boolean
+    Dim entriesHost As Object
+
+    Set entriesHost = GetDesignerControlByName(designer, TEST_PICKER_LIST_NAME)
+    If entriesHost Is Nothing Then Exit Function
+    If StrComp(TypeName(entriesHost), "Frame", vbTextCompare) <> 0 Then Exit Function
+    If GetDesignerControlByName(designer, TEST_PICKER_OK_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TEST_PICKER_CANCEL_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TEST_PICKER_INFO_NAME) Is Nothing Then Exit Function
+    HasRequiredTypePickerControls = True
+End Function
+
+Private Function FindVBComponentByName(ByVal wb As Workbook, ByVal componentName As String) As Object
+    Dim vbComp As Object
+
+    For Each vbComp In wb.VBProject.VBComponents
+        If StrComp(vbComp.Name, componentName, vbTextCompare) = 0 Then
+            Set FindVBComponentByName = vbComp
+            Exit Function
+        End If
+    Next vbComp
+End Function
+
+Private Sub ConfigureTypePickerTestFormDesigner(ByVal designer As Object)
+    Dim lbl As Object
+    Dim lst As Object
+    Dim existingEntries As Object
+    Dim btnOk As Object
+    Dim btnCancel As Object
+    Dim stage As String
+
+    On Error GoTo Fail
+
+    stage = "Form properties"
+    TrySetObjectProperty designer, "Caption", "Workbook Type Picker Test"
+    TrySetObjectProperty designer, "Width", 780
+    TrySetObjectProperty designer, "Height", 460
+
+    stage = "Info label"
+    Set lbl = GetOrCreateFormControl(designer, "Forms.Label.1", TEST_PICKER_INFO_NAME)
+    TrySetObjectProperty lbl, "Left", 12
+    TrySetObjectProperty lbl, "Top", 12
+    TrySetObjectProperty lbl, "Width", 744
+    TrySetObjectProperty lbl, "Height", 24
+    TrySetObjectProperty lbl, "Caption", "POC: test readability and width with long paths before full conversion."
+    TrySetObjectProperty lbl, "WordWrap", True
+
+    stage = "Entries host"
+    Set existingEntries = GetDesignerControlByName(designer, TEST_PICKER_LIST_NAME)
+    If Not existingEntries Is Nothing Then
+        If StrComp(TypeName(existingEntries), "Frame", vbTextCompare) <> 0 Then
+            On Error Resume Next
+            designer.Controls.Remove TEST_PICKER_LIST_NAME
+            On Error GoTo Fail
+        End If
+    End If
+
+    Set lst = GetOrCreateFormControl(designer, "Forms.Frame.1", TEST_PICKER_LIST_NAME)
+    TrySetObjectProperty lst, "Left", 12
+    TrySetObjectProperty lst, "Top", 42
+    TrySetObjectProperty lst, "Width", 744
+    TrySetObjectProperty lst, "Height", 350
+    TrySetObjectProperty lst, "Caption", ""
+    TrySetObjectProperty lst, "ScrollBars", 2
+    TrySetObjectProperty lst, "KeepScrollBarsVisible", 2
+
+    stage = "OK button"
+    Set btnOk = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TEST_PICKER_OK_NAME)
+    TrySetObjectProperty btnOk, "Caption", "OK"
+    TrySetObjectProperty btnOk, "Left", 588
+    TrySetObjectProperty btnOk, "Top", 402
+    TrySetObjectProperty btnOk, "Width", 80
+    TrySetObjectProperty btnOk, "Height", 24
+
+    stage = "Cancel button"
+    Set btnCancel = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TEST_PICKER_CANCEL_NAME)
+    TrySetObjectProperty btnCancel, "Caption", "Cancel"
+    TrySetObjectProperty btnCancel, "Left", 676
+    TrySetObjectProperty btnCancel, "Top", 402
+    TrySetObjectProperty btnCancel, "Width", 80
+    TrySetObjectProperty btnCancel, "Height", 24
+    Exit Sub
+
+Fail:
+    Err.Raise vbObjectError + 8120, "ReloadManager.ConfigureTypePickerTestFormDesigner", _
+              "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
+End Sub
+
+Private Function GetOrCreateFormControl(ByVal designer As Object, _
+                                        ByVal progId As String, _
+                                        ByVal controlName As String) As Object
+    On Error Resume Next
+    Set GetOrCreateFormControl = GetDesignerControlByName(designer, controlName)
+
+    If GetOrCreateFormControl Is Nothing Then
+        Set GetOrCreateFormControl = designer.Controls.Add(progId, controlName, True)
+    End If
+
+    If GetOrCreateFormControl Is Nothing Then
+        Err.Clear
+        Set GetOrCreateFormControl = designer.Controls.Add(progId, controlName)
+    End If
+
+    If GetOrCreateFormControl Is Nothing Then
+        Err.Clear
+        Set GetOrCreateFormControl = designer.Controls.Add(progId)
+        If Not GetOrCreateFormControl Is Nothing Then
+            CallByName GetOrCreateFormControl, "Name", VbLet, controlName
+        End If
+    End If
+    On Error GoTo 0
+
+    If GetOrCreateFormControl Is Nothing Then
+        Err.Raise vbObjectError + 8121, "ReloadManager.GetOrCreateFormControl", _
+                  "Unable to add control '" & controlName & "' with ProgID '" & progId & "'."
+    End If
+End Function
+
+Private Sub TrySetObjectProperty(ByVal target As Object, ByVal propName As String, ByVal propValue As Variant)
+    On Error Resume Next
+    CallByName target, propName, VbLet, propValue
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Function GetDesignerControlByName(ByVal designer As Object, ByVal controlName As String) As Object
+    Dim ctl As Object
+
+    On Error Resume Next
+    Set GetDesignerControlByName = designer.Controls.Item(controlName)
+    If GetDesignerControlByName Is Nothing Then
+        Set GetDesignerControlByName = designer.Controls(controlName)
+    End If
+    On Error GoTo 0
+
+    If GetDesignerControlByName Is Nothing Then
+        For Each ctl In designer.Controls
+            On Error Resume Next
+            If StrComp(CStr(ctl.Name), controlName, vbTextCompare) = 0 Then
+                Set GetDesignerControlByName = ctl
+                On Error GoTo 0
+                Exit For
+            End If
+            On Error GoTo 0
+        Next ctl
+    End If
+End Function
+
+Private Function GetFormControlByName(ByVal frm As Object, ByVal controlName As String) As Object
+    Dim ctl As Object
+
+    On Error Resume Next
+    Set GetFormControlByName = frm.Controls.Item(controlName)
+    If GetFormControlByName Is Nothing Then
+        Set GetFormControlByName = frm.Controls(controlName)
+    End If
+    On Error GoTo 0
+
+    If GetFormControlByName Is Nothing Then
+        For Each ctl In frm.Controls
+            On Error Resume Next
+            If StrComp(CStr(ctl.Name), controlName, vbTextCompare) = 0 Then
+                Set GetFormControlByName = ctl
+                On Error GoTo 0
+                Exit For
+            End If
+            On Error GoTo 0
+        Next ctl
+    End If
+End Function
+
+Private Sub AutoSizeTypePickerTestForm(ByVal frm As Object, ByVal displayLines As Collection)
+    Dim lbl As Object
+    Dim entriesHost As Object
+    Dim btnOk As Object
+    Dim btnCancel As Object
+    Dim lineText As Variant
+    Dim longestLineWidth As Double
+    Dim measuredLineHeight As Double
+    Dim rowHeight As Double
+    Dim lineCount As Long
+    Dim listWidth As Double
+    Dim listHeight As Double
+    Dim formWidth As Double
+    Dim formHeight As Double
+    Dim btnTop As Double
+    Dim usableWidth As Double
+    Dim usableHeight As Double
+    Dim maxListWidth As Double
+    Dim maxListHeight As Double
+    Const LEFT_MARGIN As Double = 12
+    Const TOP_LABEL As Double = 12
+    Const LABEL_HEIGHT As Double = 24
+    Const LIST_TOP As Double = 42
+    Const RIGHT_MARGIN As Double = 12
+    Const BUTTON_GAP_TOP As Double = 10
+    Const BUTTON_WIDTH As Double = 80
+    Const BUTTON_HEIGHT As Double = 24
+    Const BUTTON_GAP As Double = 8
+    Const BOTTOM_MARGIN As Double = 34
+    Const LIST_HORIZONTAL_PADDING As Double = 26
+    Const LIST_VERTICAL_PADDING As Double = 8
+    Const MIN_VISIBLE_ROWS As Long = 8
+    Const MAX_VISIBLE_ROWS As Long = 36
+
+    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
+    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
+    Set btnOk = GetFormControlByName(frm, TEST_PICKER_OK_NAME)
+    Set btnCancel = GetFormControlByName(frm, TEST_PICKER_CANCEL_NAME)
+
+    If lbl Is Nothing Or entriesHost Is Nothing Or btnOk Is Nothing Or btnCancel Is Nothing Then Exit Sub
+
+    lineCount = displayLines.Count
+    If lineCount < 1 Then lineCount = 1
+
+    longestLineWidth = MeasureLongestCaptionWidth(lbl, displayLines)
+    measuredLineHeight = MeasureCaptionHeight(lbl)
+    If measuredLineHeight <= 0 Then measuredLineHeight = 11
+    rowHeight = measuredLineHeight
+    If rowHeight < 11 Then rowHeight = 11
+    rowHeight = rowHeight + 1
+
+    On Error Resume Next
+    usableWidth = CDbl(Application.UsableWidth)
+    usableHeight = CDbl(Application.UsableHeight)
+    On Error GoTo 0
+    If usableWidth <= 0 Then usableWidth = 1400
+    If usableHeight <= 0 Then usableHeight = 900
+
+    maxListWidth = (usableWidth * 0.85) - (LEFT_MARGIN + RIGHT_MARGIN)
+    If maxListWidth < 420 Then maxListWidth = 420
+    maxListHeight = (usableHeight * 0.78) - (LIST_TOP + BUTTON_GAP_TOP + BUTTON_HEIGHT + BOTTOM_MARGIN)
+    If maxListHeight < 220 Then maxListHeight = 220
+
+    listWidth = longestLineWidth + LIST_HORIZONTAL_PADDING
+    If listWidth < 320 Then listWidth = 320
+    If listWidth > maxListWidth Then listWidth = maxListWidth
+
+    If lineCount < MIN_VISIBLE_ROWS Then lineCount = MIN_VISIBLE_ROWS
+    If lineCount > MAX_VISIBLE_ROWS Then lineCount = MAX_VISIBLE_ROWS
+    listHeight = (lineCount * rowHeight) + LIST_VERTICAL_PADDING
+    If listHeight < 200 Then listHeight = 200
+    If listHeight > maxListHeight Then listHeight = maxListHeight
+
+    btnTop = LIST_TOP + listHeight + BUTTON_GAP_TOP
+    formWidth = LEFT_MARGIN + listWidth + RIGHT_MARGIN
+    formHeight = btnTop + BUTTON_HEIGHT + BOTTOM_MARGIN
+
+    If formWidth < 460 Then formWidth = 460
+    If formWidth > usableWidth * 0.9 Then formWidth = usableWidth * 0.9
+    If formHeight < 320 Then formHeight = 320
+    If formHeight > usableHeight * 0.9 Then formHeight = usableHeight * 0.9
+
+    ' Keep margins fixed; let list consume any extra width from form minimums.
+    listWidth = formWidth - LEFT_MARGIN - RIGHT_MARGIN
+    If listWidth < 320 Then listWidth = 320
+
+    frm.Width = formWidth
+    frm.Height = formHeight
+
+    lbl.Left = LEFT_MARGIN
+    lbl.Top = TOP_LABEL
+    lbl.Width = listWidth
+    lbl.Height = LABEL_HEIGHT
+
+    entriesHost.Left = LEFT_MARGIN
+    entriesHost.Top = LIST_TOP
+    entriesHost.Width = listWidth
+    entriesHost.Height = listHeight
+    On Error Resume Next
+    entriesHost.ScrollBars = 2
+    entriesHost.KeepScrollBarsVisible = 2
+    On Error GoTo 0
+
+    btnCancel.Width = BUTTON_WIDTH
+    btnCancel.Height = BUTTON_HEIGHT
+    btnCancel.Top = btnTop
+    btnCancel.Left = LEFT_MARGIN + listWidth - BUTTON_WIDTH
+
+    btnOk.Width = BUTTON_WIDTH
+    btnOk.Height = BUTTON_HEIGHT
+    btnOk.Top = btnTop
+    btnOk.Left = LEFT_MARGIN + listWidth - (BUTTON_WIDTH * 2) - BUTTON_GAP
+End Sub
+
+Private Function MeasureLongestCaptionWidth(ByVal measureLabel As Object, ByVal displayLines As Collection) As Double
+    Dim originalCaption As String
+    Dim originalAutoSize As Boolean
+    Dim originalWordWrap As Boolean
+    Dim originalWidth As Double
+    Dim originalHeight As Double
+    Dim lineText As Variant
+    Dim widthNow As Double
+
+    On Error Resume Next
+    originalCaption = CStr(measureLabel.Caption)
+    originalAutoSize = CBool(measureLabel.AutoSize)
+    originalWordWrap = CBool(measureLabel.WordWrap)
+    originalWidth = CDbl(measureLabel.Width)
+    originalHeight = CDbl(measureLabel.Height)
+
+    measureLabel.WordWrap = False
+    measureLabel.AutoSize = True
+
+    For Each lineText In displayLines
+        measureLabel.Caption = CStr(lineText)
+        widthNow = CDbl(measureLabel.Width)
+        If widthNow > MeasureLongestCaptionWidth Then
+            MeasureLongestCaptionWidth = widthNow
+        End If
+    Next lineText
+
+    measureLabel.Caption = originalCaption
+    measureLabel.AutoSize = originalAutoSize
+    measureLabel.WordWrap = originalWordWrap
+    measureLabel.Width = originalWidth
+    measureLabel.Height = originalHeight
+    On Error GoTo 0
+End Function
+
+Private Function MeasureCaptionHeight(ByVal measureLabel As Object) As Double
+    Dim originalCaption As String
+    Dim originalAutoSize As Boolean
+    Dim originalWordWrap As Boolean
+    Dim originalWidth As Double
+    Dim originalHeight As Double
+
+    On Error Resume Next
+    originalCaption = CStr(measureLabel.Caption)
+    originalAutoSize = CBool(measureLabel.AutoSize)
+    originalWordWrap = CBool(measureLabel.WordWrap)
+    originalWidth = CDbl(measureLabel.Width)
+    originalHeight = CDbl(measureLabel.Height)
+
+    measureLabel.WordWrap = False
+    measureLabel.AutoSize = True
+    measureLabel.Caption = "Ag"
+    MeasureCaptionHeight = CDbl(measureLabel.Height)
+
+    measureLabel.Caption = originalCaption
+    measureLabel.AutoSize = originalAutoSize
+    measureLabel.WordWrap = originalWordWrap
+    measureLabel.Width = originalWidth
+    measureLabel.Height = originalHeight
+    On Error GoTo 0
+End Function
+
+Private Sub EnsureTypePickerTestFormCode(ByVal codeModule As Object)
+    Dim codeText As String
+
+    codeText = ""
+    codeText = codeText & "Option Explicit" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub UserForm_Initialize()" & vbCrLf
+    codeText = codeText & "    Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub btnOK_Click()" & vbCrLf
+    codeText = codeText & "    Me.Tag = ""OK""" & vbCrLf
+    codeText = codeText & "    Me.Hide" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub btnCancel_Click()" & vbCrLf
+    codeText = codeText & "    Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "    Me.Hide" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)" & vbCrLf
+    codeText = codeText & "    If CloseMode = 0 Then" & vbCrLf
+    codeText = codeText & "        Cancel = True" & vbCrLf
+    codeText = codeText & "        Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "        Me.Hide" & vbCrLf
+    codeText = codeText & "    End If" & vbCrLf
+    codeText = codeText & "End Sub"
+
+    If codeModule.CountOfLines > 0 Then
+        codeModule.DeleteLines 1, codeModule.CountOfLines
+    End If
+    codeModule.InsertLines 1, codeText
+End Sub
+
+Private Function GetBasFileNamesInTypeSource(ByVal typeId As String) As Collection
+    Dim srcPath As String
+    Dim f As String
+    Dim names() As String
+    Dim i As Long
+    Dim count As Long
+    Dim results As New Collection
+
+    srcPath = EnsureTrailingPathSeparator(REPO_ROOT & Application.PathSeparator & _
+                                          NormalizeTypeId(typeId) & Application.PathSeparator & "src")
+
+    f = Dir(srcPath & "*.bas")
+    Do While Len(f) > 0
+        count = count + 1
+        ReDim Preserve names(1 To count)
+        names(count) = f
+        f = Dir()
+    Loop
+
+    If count > 1 Then
+        SortStringsCaseInsensitive names
+    End If
+
+    For i = 1 To count
+        results.Add names(i)
+    Next i
+
+    Set GetBasFileNamesInTypeSource = results
+End Function
+
+Private Function GetCommonFolderDepth(ByRef leftParts() As String, ByRef rightParts() As String) As Long
+    Dim leftLastFolder As Long
+    Dim rightLastFolder As Long
+    Dim maxFolderIndex As Long
+    Dim i As Long
+
+    leftLastFolder = UBound(leftParts) - 1
+    rightLastFolder = UBound(rightParts) - 1
+
+    If leftLastFolder < 0 Or rightLastFolder < 0 Then Exit Function
+
+    maxFolderIndex = leftLastFolder
+    If rightLastFolder < maxFolderIndex Then
+        maxFolderIndex = rightLastFolder
+    End If
+
+    For i = 0 To maxFolderIndex
+        If StrComp(leftParts(i), rightParts(i), vbTextCompare) <> 0 Then
+            GetCommonFolderDepth = i
+            Exit Function
+        End If
+    Next i
+
+    GetCommonFolderDepth = maxFolderIndex + 1
 End Function
 
 
@@ -731,15 +1797,25 @@ End Function
 Private Function PrepareSyncContext(ByVal wb As Workbook, _
                                     ByRef typeSummary As String, _
                                     ByRef srcPaths As Collection, _
+                                    ByRef changedSrcPaths As Collection, _
+                                    ByRef driftTypeSummary As String, _
                                     ByRef repoSig As String, _
                                     ByRef wbSig As String, _
+                                    ByRef typeSigMapText As String, _
                                     ByRef reason As String) As Boolean
     Dim typeMap As Object
     Dim sortedTypes() As String
     Dim signatureItems() As String
     Dim srcPathMap As Object
+    Dim changedSrcPathMap As Object
+    Dim currentTypeSigMap As Object
+    Dim previousTypeSigMap As Object
+    Dim typeToSrcPath As Object
+    Dim previousTypeSigMapText As String
     Dim srcPath As String
+    Dim srcPathItem As Variant
     Dim folderSig As String
+    Dim normalizedTypeId As String
     Dim i As Long
 
     If wb Is Nothing Then
@@ -768,8 +1844,15 @@ Private Function PrepareSyncContext(ByVal wb As Workbook, _
     typeSummary = JoinStringArray(sortedTypes, ", ")
 
     Set srcPaths = New Collection
+    Set changedSrcPaths = New Collection
     Set srcPathMap = CreateObject("Scripting.Dictionary")
     srcPathMap.CompareMode = vbTextCompare
+    Set changedSrcPathMap = CreateObject("Scripting.Dictionary")
+    changedSrcPathMap.CompareMode = vbTextCompare
+    Set currentTypeSigMap = CreateObject("Scripting.Dictionary")
+    currentTypeSigMap.CompareMode = vbTextCompare
+    Set typeToSrcPath = CreateObject("Scripting.Dictionary")
+    typeToSrcPath.CompareMode = vbTextCompare
     ReDim signatureItems(1 To UBound(sortedTypes))
 
     For i = LBound(sortedTypes) To UBound(sortedTypes)
@@ -782,6 +1865,9 @@ Private Function PrepareSyncContext(ByVal wb As Workbook, _
         End If
 
         signatureItems(i) = LCase$(sortedTypes(i)) & "|" & folderSig
+        normalizedTypeId = LCase$(sortedTypes(i))
+        currentTypeSigMap(normalizedTypeId) = folderSig
+        typeToSrcPath(normalizedTypeId) = srcPath
 
         If Not srcPathMap.Exists(srcPath) Then
             srcPathMap(srcPath) = True
@@ -796,8 +1882,62 @@ Private Function PrepareSyncContext(ByVal wb As Workbook, _
     repoSig = ComputeSignatureFromItems(signatureItems)
 
     wbSig = GetDocProp(wb, PROP_SRC_SIG)
+    typeSigMapText = JoinStringArray(signatureItems, vbLf)
+
+    previousTypeSigMapText = GetDocProp(wb, PROP_SRC_SIG_MAP)
+    If Len(previousTypeSigMapText) = 0 Then
+        If StrComp(repoSig, wbSig, vbBinaryCompare) <> 0 Then
+            driftTypeSummary = typeSummary
+            For Each srcPathItem In srcPaths
+                changedSrcPaths.Add CStr(srcPathItem)
+            Next srcPathItem
+        End If
+    Else
+        Set previousTypeSigMap = ParseTypeSignatureMap(previousTypeSigMapText)
+
+        For i = LBound(sortedTypes) To UBound(sortedTypes)
+            normalizedTypeId = LCase$(sortedTypes(i))
+            If (Not previousTypeSigMap.Exists(normalizedTypeId)) Or _
+               (StrComp(CStr(previousTypeSigMap(normalizedTypeId)), CStr(currentTypeSigMap(normalizedTypeId)), vbBinaryCompare) <> 0) Then
+                If Len(driftTypeSummary) > 0 Then driftTypeSummary = driftTypeSummary & ", "
+                driftTypeSummary = driftTypeSummary & sortedTypes(i)
+
+                srcPath = CStr(typeToSrcPath(normalizedTypeId))
+                If Not changedSrcPathMap.Exists(srcPath) Then
+                    changedSrcPathMap(srcPath) = True
+                    changedSrcPaths.Add srcPath
+                End If
+            End If
+        Next i
+    End If
 
     PrepareSyncContext = True
+End Function
+
+Private Function ParseTypeSignatureMap(ByVal rawMap As String) As Object
+    Dim d As Object
+    Dim lines() As String
+    Dim lineText As String
+    Dim sepPos As Long
+    Dim i As Long
+
+    Set d = CreateObject("Scripting.Dictionary")
+    d.CompareMode = vbTextCompare
+
+    If Len(rawMap) > 0 Then
+        lines = Split(rawMap, vbLf)
+        For i = LBound(lines) To UBound(lines)
+            lineText = Replace$(Trim$(CStr(lines(i))), vbCr, "")
+            If Len(lineText) > 0 Then
+                sepPos = InStr(1, lineText, "|", vbBinaryCompare)
+                If sepPos > 1 Then
+                    d(LCase$(Left$(lineText, sepPos - 1))) = Mid$(lineText, sepPos + 1)
+                End If
+            End If
+        Next i
+    End If
+
+    Set ParseTypeSignatureMap = d
 End Function
 
 Private Function ConfirmDriftImport(ByVal wb As Workbook, ByVal typeId As String) As Boolean
@@ -985,6 +2125,7 @@ Private Function ResolveTypeSourcePath(ByVal typeId As String, _
     Dim fso As Object
     Dim rootFolder As Object
     Dim matches As Object
+    Dim visited As Object
     Dim key As Variant
     Dim normalizedTypeId As String
     Dim directPath As String
@@ -1021,8 +2162,10 @@ Private Function ResolveTypeSourcePath(ByVal typeId As String, _
     Set rootFolder = fso.GetFolder(REPO_ROOT)
     Set matches = CreateObject("Scripting.Dictionary")
     matches.CompareMode = vbTextCompare
+    Set visited = CreateObject("Scripting.Dictionary")
+    visited.CompareMode = vbTextCompare
 
-    CollectTypeSourceMatches rootFolder, leafTypeId, fso, matches
+    CollectTypeSourceMatches rootFolder, leafTypeId, fso, matches, visited, 0
 
     If matches.count = 0 Then
         reason = "Type ID '" & typeId & "' was not found in local VBA source folders." & vbCrLf & _
@@ -1051,9 +2194,15 @@ End Function
 Private Sub CollectTypeSourceMatches(ByVal currentFolder As Object, _
                                      ByVal leafTypeId As String, _
                                      ByVal fso As Object, _
-                                     ByRef matches As Object)
+                                     ByRef matches As Object, _
+                                     ByRef visited As Object, _
+                                     ByVal depth As Long)
     Dim childFolder As Object
     Dim srcPath As String
+
+    If currentFolder Is Nothing Then Exit Sub
+    If depth > MAX_FOLDER_SCAN_DEPTH Then Exit Sub
+    If Not MarkFolderSeen(currentFolder, visited) Then Exit Sub
 
     For Each childFolder In currentFolder.SubFolders
         If StrComp(childFolder.Name, leafTypeId, vbTextCompare) = 0 Then
@@ -1063,7 +2212,7 @@ Private Sub CollectTypeSourceMatches(ByVal currentFolder As Object, _
             End If
         End If
 
-        CollectTypeSourceMatches childFolder, leafTypeId, fso, matches
+        CollectTypeSourceMatches childFolder, leafTypeId, fso, matches, visited, depth + 1
     Next childFolder
 End Sub
 
@@ -1096,8 +2245,11 @@ Private Function GetAvailableTypeIdsCollection() As Collection
     Dim fso As Object
     Dim rootFolder As Object
     Dim seen As Object
+    Dim visited As Object
+    Dim filtered As Object
     Dim values() As String
     Dim i As Long
+    Dim key As Variant
     Dim results As New Collection
 
     Set fso = CreateObject("Scripting.FileSystemObject")
@@ -1109,20 +2261,31 @@ Private Function GetAvailableTypeIdsCollection() As Collection
     Set rootFolder = fso.GetFolder(REPO_ROOT)
     Set seen = CreateObject("Scripting.Dictionary")
     seen.CompareMode = vbTextCompare
+    Set visited = CreateObject("Scripting.Dictionary")
+    visited.CompareMode = vbTextCompare
+    Set filtered = CreateObject("Scripting.Dictionary")
+    filtered.CompareMode = vbTextCompare
 
-    CollectAvailableTypeIdsRecursive rootFolder, fso, seen
+    CollectAvailableTypeIdsRecursive rootFolder, fso, seen, visited, 0
 
     If seen.count > 0 Then
-        ReDim values(1 To seen.count)
-        i = 0
-        Dim key As Variant
         For Each key In seen.Keys
+            If IsTypeIdAssignableCandidate(CStr(key), fso) Then
+                filtered(CStr(key)) = True
+            End If
+        Next key
+    End If
+
+    If filtered.count > 0 Then
+        ReDim values(1 To filtered.count)
+        i = 0
+        For Each key In filtered.Keys
             i = i + 1
             values(i) = CStr(key)
         Next key
 
         If UBound(values) > LBound(values) Then
-            QuickSort values, LBound(values), UBound(values)
+            SortStringsCaseInsensitive values
         End If
 
         For i = LBound(values) To UBound(values)
@@ -1137,13 +2300,77 @@ Fail:
     Set GetAvailableTypeIdsCollection = New Collection
 End Function
 
+Private Function IsTypeIdAssignableCandidate(ByVal typeId As String, ByVal fso As Object) As Boolean
+    Dim normalizedTypeId As String
+    Dim addInTypeId As String
+
+    normalizedTypeId = NormalizeTypeId(typeId)
+    If Len(normalizedTypeId) = 0 Then Exit Function
+
+    addInTypeId = GetGlobalAddInTypeId()
+    If Len(addInTypeId) > 0 Then
+        If StrComp(normalizedTypeId, addInTypeId, vbTextCompare) = 0 Then Exit Function
+    End If
+
+    If Not TypeSourceContainsBasFiles(normalizedTypeId, fso) Then Exit Function
+
+    IsTypeIdAssignableCandidate = True
+End Function
+
+Private Function GetGlobalAddInTypeId() As String
+    Dim addInTypeId As String
+
+    addInTypeId = NormalizeTypeId(Replace$(REPO_ADDIN_SRC_RELATIVE_PATH, "\", Application.PathSeparator))
+    If Len(addInTypeId) > 3 Then
+        If StrComp(Right$(addInTypeId, 3), "src", vbTextCompare) = 0 Then
+            addInTypeId = NormalizeTypeId(Left$(addInTypeId, Len(addInTypeId) - 3))
+        End If
+    End If
+
+    GetGlobalAddInTypeId = addInTypeId
+End Function
+
+Private Function TypeSourceContainsBasFiles(ByVal typeId As String, ByVal fso As Object) As Boolean
+    Dim srcPath As String
+
+    If fso Is Nothing Then Exit Function
+
+    srcPath = EnsureTrailingPathSeparator(REPO_ROOT & Application.PathSeparator & _
+                                          NormalizeTypeId(typeId) & Application.PathSeparator & "src")
+    If Not fso.FolderExists(srcPath) Then Exit Function
+
+    TypeSourceContainsBasFiles = (Len(Dir(srcPath & "*.bas")) > 0)
+End Function
+
+Private Sub SortStringsCaseInsensitive(ByRef values() As String)
+    Dim i As Long
+    Dim j As Long
+    Dim temp As String
+
+    For i = LBound(values) To UBound(values) - 1
+        For j = i + 1 To UBound(values)
+            If StrComp(values(i), values(j), vbTextCompare) > 0 Then
+                temp = values(i)
+                values(i) = values(j)
+                values(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
 Private Sub CollectAvailableTypeIdsRecursive(ByVal currentFolder As Object, _
                                              ByVal fso As Object, _
-                                             ByRef seen As Object)
+                                             ByRef seen As Object, _
+                                             ByRef visited As Object, _
+                                             ByVal depth As Long)
     Dim subFolder As Object
     Dim srcFolderPath As String
     Dim typeId As String
     Dim rootPrefix As String
+
+    If currentFolder Is Nothing Then Exit Sub
+    If depth > MAX_FOLDER_SCAN_DEPTH Then Exit Sub
+    If Not MarkFolderSeen(currentFolder, visited) Then Exit Sub
 
     rootPrefix = EnsureTrailingPathSeparator(REPO_ROOT)
 
@@ -1159,9 +2386,34 @@ Private Sub CollectAvailableTypeIdsRecursive(ByVal currentFolder As Object, _
             End If
         End If
 
-        CollectAvailableTypeIdsRecursive subFolder, fso, seen
+        CollectAvailableTypeIdsRecursive subFolder, fso, seen, visited, depth + 1
     Next subFolder
 End Sub
+
+Private Function MarkFolderSeen(ByVal folderObj As Object, ByRef visited As Object) As Boolean
+    Dim folderPath As String
+    Dim pathKey As String
+    Dim attrs As Long
+
+    If folderObj Is Nothing Then Exit Function
+    If visited Is Nothing Then Exit Function
+
+    On Error Resume Next
+    folderPath = CStr(folderObj.Path)
+    attrs = CLng(folderObj.Attributes)
+    On Error GoTo 0
+
+    If Len(folderPath) = 0 Then Exit Function
+    pathKey = LCase$(EnsureTrailingPathSeparator(folderPath))
+
+    If visited.Exists(pathKey) Then Exit Function
+    visited(pathKey) = True
+
+    ' Avoid traversing reparse-point folders (junctions/symlinks) to prevent cycles.
+    If (attrs And FILE_ATTR_REPARSE_POINT) <> 0 Then Exit Function
+
+    MarkFolderSeen = True
+End Function
 
 Private Function GetForegroundWorkbook() As Workbook
     Dim wb As Workbook
