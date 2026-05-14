@@ -77,7 +77,7 @@ Attribute VB_Name = "iFix_DB_Import"
 '   A_AREA10,A_AREA11,A_AREA12,A_AREA13,A_AREA14,A_AREA15,A_ALMEXT1,A_ALMEXT2,A_ESIGTYPE,A_ESIGCONT,
 '   A_ESIGACK,A_ESIGTRAP,A_PDR_UPDATERATE,A_PDR_ACCESSTIME,A_PDR_DEADBAND,A_PDR_LATCHDATA,A_PDR_DISABLEOUT,A_PDR_ARRAYLENGTH,A_HIST_DESC,A_HIST_COLLECT,
 '   A_HIST_INTERVAL,A_HIST_OFFSET,A_HIST_TIMERES,A_HIST_COMPRESS,A_HIST_DEADBAND,A_HIST_COMPTYPE,A_HIST_COMPTIME!
-' "MDI","<TAGNAME>","","<DESCRIPTION>","NO","NO","SIM","","0:0","",
+' "MDI","<TAGNAME>","","<DESCRIPTION>","NO","NO","MBE","","0:0","",
 '   "","","","","","ON","1","AUTO","NO","",
 '   "","","","","","","","NO","NO","NO",
 '   "NO","NO","NO","NO","NO","ENABLE","NONE","LOW","NONE","NONE",
@@ -112,7 +112,7 @@ Attribute VB_Name = "iFix_DB_Import"
 '   A_PDR_LATCHDATA,A_PDR_DISABLEOUT,A_PDR_ARRAYLENGTH,A_HIST_DESC,A_HIST_COLLECT,A_HIST_INTERVAL,A_HIST_OFFSET,A_HIST_TIMERES,A_HIST_COMPRESS,A_HIST_DEADBAND,
 '   A_HIST_COMPTYPE,A_HIST_COMPTIME,A_SCALE_ENABLED,A_SCALE_CLAMP,A_SCALE_USEEGU,A_SCALE_RAWLOW,A_SCALE_RAWHIGH,A_SCALE_LOW,A_SCALE_HIGH,A_CTK_PERSIST,
 '   A_COMM_SURPRESS!
-' "AA","<TAGNAME>","","<DESCRIPTION>","ON","1","0","MBE","<DATA TYPE>","<ADDRESS>",
+' "AA","<TAGNAME>","","<DESCRIPTION>","ON","2","0","MBE","<DATA TYPE>","<ADDRESS>",
 '   "None","<Sensor Lo Limit (Eng Units)>","<Sensor HI Limit (Eng Units)>","0.00","<UNITS>","ENABLE","AUTO","","","",
 '   "NONE","NO","NONE","NONE","NONE","LOW","","","00:00:00:00","00:00:00:00",
 '   "85.00","LOW","","","00:00:00:00","00:00:00:00","15.00","LOW","","",
@@ -175,12 +175,56 @@ Attribute VB_Name = "iFix_DB_Import"
 
 Option Explicit
 
-Public Sub Export_iFix_DB_Import()
-	Const SOURCE_TABLE_NAME As String = "MasterV3_DB"
-	Const DESTINATION_SHEET_NAME As String = "iFix v5.8 Export"
-	Const DEFAULT_FILE_STEM As String = "ChaseLynk_ExcelCompiled"
-	Const Pull_JCC1_Attributes As Boolean = True
+'================== MODULE CONFIG ==================
 
+Private Const CFG_SOURCE_TABLE_NAME As String = "MasterV3_DB"
+Private Const CFG_DESTINATION_SHEET_NAME As String = "iFix v5.8 Export"
+Private Const CFG_DEFAULT_FILE_STEM As String = "ChaseLynk_ExcelCompiled"
+Private Const CFG_PULL_JCC1_ATTRIBUTES As Boolean = True
+Private Const CFG_DEBUG_WRITE_OUTPUT_TO_COLUMNS As Boolean = True
+
+Private Const BLOCK_DA As String = "DA"
+Private Const BLOCK_DR As String = "DR"
+Private Const BLOCK_MDI As String = "MDI"
+Private Const BLOCK_AA As String = "AA"
+Private Const BLOCK_AR As String = "AR"
+
+Private Const FIELD_SOURCE_BLOCK_TYPE As String = "iFIX BLOCK TYPE"
+Private Const FIELD_SOURCE_SENSOR_ELO As String = "Sensor Lo Limit (Eng Units)"
+Private Const FIELD_SOURCE_SENSOR_EHI As String = "Sensor HI Limit (Eng Units)"
+Private Const FIELD_SOURCE_OLD_TAGNAME_PRIMARY As String = "OLD TAGNAME (IF APPLICABLE)"
+Private Const FIELD_SOURCE_OLD_TAGNAME_ALT1 As String = "OLD TAGNAME IF APPLICABLE"
+Private Const FIELD_SOURCE_OLD_TAGNAME_ALT2 As String = "OLD TAGNAME"
+Private Const FIELD_SOURCE_TAGNAME As String = "TAGNAME"
+
+Private Const FIELD_A_TAG As String = "A_TAG"
+Private Const FIELD_A_IENAB As String = "A_IENAB"
+Private Const FIELD_A_ELO As String = "A_ELO"
+Private Const FIELD_A_EHI As String = "A_EHI"
+Private Const FIELD_A_LOLO As String = "A_LOLO"
+Private Const FIELD_A_LO As String = "A_LO"
+Private Const FIELD_A_HI As String = "A_HI"
+Private Const FIELD_A_HIHI As String = "A_HIHI"
+
+Private Const VALUE_ENABLE As String = "ENABLE"
+Private Const VALUE_HEADER_TAG As String = "TAG"
+
+Private Const JCC1_PULL_BLOCK As String = BLOCK_AA
+Private Const JCC1_SOURCE_SHEET_NAME As String = "JCC1DB OG"
+Private Const JCC1_RANGE_NAME_PREFIX As String = "JCC1DB_OG_"
+Private Const JCC1_SOURCE_TAG_PREFIX As String = "LP1"
+Private Const JCC1_LOOKUP_TAG_PREFIX As String = "JCC1"
+
+Private Const AA_PERCENT_LOLO As Double = 0.15
+Private Const AA_PERCENT_LO As Double = 0.3
+Private Const AA_PERCENT_HI As Double = 0.7
+Private Const AA_PERCENT_HIHI As Double = 0.85
+Private Const AA_CALCULATED_SIGNIFICANT_FIGURES As Long = 3
+Private Const AA_MAX_SIGNIFICANT_SHIFT As Long = 15
+Private Const AA_NUMERIC_OUTPUT_FORMAT As String = "0.###############"
+Private Const NUMERIC_COMPARE_EPSILON As Double = 0.000001
+
+Public Sub Export_iFix_DB_Import()
 	Dim wb As Workbook
 	Dim sourceTable As ListObject
 	Dim destinationSheet As Worksheet
@@ -216,20 +260,20 @@ Public Sub Export_iFix_DB_Import()
 	currentStep = "Initialize workbook context"
 	Set wb = ThisWorkbook
 	currentStep = "Locate source table"
-	Set sourceTable = FindTableInWorkbook(wb, SOURCE_TABLE_NAME)
+	Set sourceTable = FindTableInWorkbook(wb, CFG_SOURCE_TABLE_NAME)
 	If sourceTable Is Nothing Then
-		MsgBox "Could not find source table '" & SOURCE_TABLE_NAME & "'.", vbExclamation, "iFix Export"
+		MsgBox "Could not find source table '" & CFG_SOURCE_TABLE_NAME & "'.", vbExclamation, "iFix Export"
 		Exit Sub
 	End If
 
 	currentStep = "Build source column map"
 	Set columnMap = BuildColumnMap(sourceTable)
-	If Not columnMap.Exists(NormalizeKey("iFIX BLOCK TYPE")) Then
+	If Not columnMap.Exists(NormalizeKey(FIELD_SOURCE_BLOCK_TYPE)) Then
 		MsgBox "Source table is missing the 'iFIX BLOCK TYPE' column.", vbExclamation, "iFix Export"
 		Exit Sub
 	End If
 
-	blockOrder = Array("DA", "DR", "MDI", "AA", "AR")
+	blockOrder = GetBlockOrder()
 	Set bucketByType = CreateObject("Scripting.Dictionary")
 	bucketByType.CompareMode = vbTextCompare
 	Set countByType = CreateObject("Scripting.Dictionary")
@@ -243,26 +287,26 @@ Public Sub Export_iFix_DB_Import()
 	Next key
 
 	currentStep = "Build JCC1 lookup maps"
-	Set jcc1LookupByType = BuildJcc1LookupByType(wb, blockOrder, Pull_JCC1_Attributes)
+	Set jcc1LookupByType = BuildJcc1LookupByType(wb, CFG_PULL_JCC1_ATTRIBUTES)
 
 	For Each rowItem In sourceTable.ListRows
 		If IsTableRowVisible(rowItem.Range) Then
 			visibleRows = visibleRows + 1
-			blockType = UCase$(GetFieldFromRow(rowItem, columnMap, "iFIX BLOCK TYPE"))
+			blockType = UCase$(GetFieldFromRow(rowItem, columnMap, FIELD_SOURCE_BLOCK_TYPE))
 			currentStep = "Process source row " & rowItem.Index & " (block '" & blockType & "')"
 
 			If bucketByType.Exists(blockType) Then
 				Set rowValues = BuildPlaceholderValueMap(rowItem, columnMap)
-				Set jcc1SeedFields = GetJcc1SeedRow(blockType, rowValues, jcc1LookupByType, Pull_JCC1_Attributes, usedJcc1Seed, usedJcc1LookupAttempt)
-				If Pull_JCC1_Attributes Then
+				Set jcc1SeedFields = GetJcc1SeedRow(blockType, rowValues, jcc1LookupByType, CFG_PULL_JCC1_ATTRIBUTES, usedJcc1Seed, usedJcc1LookupAttempt)
+				If CFG_PULL_JCC1_ATTRIBUTES And SupportsJcc1Pull(blockType) Then
 					If usedJcc1LookupAttempt Then
 						jcc1LookupAttempts = jcc1LookupAttempts + 1
 					Else
 						jcc1LookupNoTag = jcc1LookupNoTag + 1
 					End If
-				End If
-				If usedJcc1Seed Then
-					jcc1LookupHits = jcc1LookupHits + 1
+					If usedJcc1Seed Then
+						jcc1LookupHits = jcc1LookupHits + 1
+					End If
 				End If
 				Set typeBucket = bucketByType(blockType)
 				typeBucket.Add BuildDataRowFromTemplate(blockType, rowValues, jcc1SeedFields)
@@ -289,12 +333,12 @@ Public Sub Export_iFix_DB_Import()
 
 	If VarType(saveChoice) = vbBoolean And saveChoice = False Then
 		selectedSavePath = vbNullString
-		selectedFileStem = DEFAULT_FILE_STEM
+		selectedFileStem = CFG_DEFAULT_FILE_STEM
 	Else
 		selectedSavePath = CStr(saveChoice)
 		selectedFileStem = GetFileStemFromPath(selectedSavePath)
 		If Len(selectedFileStem) = 0 Then
-			selectedFileStem = DEFAULT_FILE_STEM
+			selectedFileStem = CFG_DEFAULT_FILE_STEM
 		End If
 	End If
 
@@ -302,8 +346,12 @@ Public Sub Export_iFix_DB_Import()
 	Set outputLines = BuildOutputLines(blockOrder, bucketByType, countByType, selectedFileStem)
 
 	currentStep = "Write output to destination sheet"
-	Set destinationSheet = GetOrCreateWorksheet(wb, DESTINATION_SHEET_NAME)
-	WriteLinesToSheet destinationSheet, outputLines
+	Set destinationSheet = GetOrCreateWorksheet(wb, CFG_DESTINATION_SHEET_NAME)
+	If CFG_DEBUG_WRITE_OUTPUT_TO_COLUMNS Then
+		WriteLinesToSheetAsColumns destinationSheet, outputLines
+	Else
+		WriteLinesToSheet destinationSheet, outputLines
+	End If
 
 	If Len(selectedSavePath) > 0 Then
 		currentStep = "Write CSV file"
@@ -314,7 +362,7 @@ Public Sub Export_iFix_DB_Import()
 			  "Visible rows scanned: " & visibleRows & vbCrLf & _
 			  "Rows exported: " & exportedRows & vbCrLf & _
 			  "Rows skipped (blank/unknown block type): " & skippedRows & vbCrLf & _
-			  "Review output sheet: " & DESTINATION_SHEET_NAME
+			  "Review output sheet: " & CFG_DESTINATION_SHEET_NAME
 
 	If Len(selectedSavePath) > 0 Then
 		summary = summary & vbCrLf & "CSV file: " & selectedSavePath
@@ -322,12 +370,18 @@ Public Sub Export_iFix_DB_Import()
 		summary = summary & vbCrLf & "CSV save was canceled."
 	End If
 
-	If Pull_JCC1_Attributes Then
+	If CFG_PULL_JCC1_ATTRIBUTES Then
 		summary = summary & vbCrLf & "JCC1 attribute pull mode: ON (rows matched: " & jcc1LookupHits & _
 							  ", lookups attempted: " & jcc1LookupAttempts & ", rows without lookup tag: " & jcc1LookupNoTag & ")"
 		summary = summary & vbCrLf & "JCC1 named-range rows loaded by block: " & BuildJcc1LookupCountsSummary(jcc1LookupByType, blockOrder)
 	Else
 		summary = summary & vbCrLf & "JCC1 attribute pull mode: OFF"
+	End If
+
+	If CFG_DEBUG_WRITE_OUTPUT_TO_COLUMNS Then
+		summary = summary & vbCrLf & "Output sheet mode: DEBUG columns"
+	Else
+		summary = summary & vbCrLf & "Output sheet mode: Standard CSV lines"
 	End If
 
 	If unknownTypeCounts.Count > 0 Then
@@ -385,9 +439,9 @@ Private Function BuildFileHeaderLine1(ByVal fileStem As String) As String
 End Function
 
 Private Function BuildFileHeaderLine2(ByVal countByType As Object) As String
-	BuildFileHeaderLine2 = "#AI0,AO0,DI0,AR" & CLng(GetDictCount(countByType, "AR")) & _
-						   ",DR" & CLng(GetDictCount(countByType, "DR")) & ",RM0,MDI" & CLng(GetDictCount(countByType, "MDI")) & _
-						   ",BL0,AA" & CLng(GetDictCount(countByType, "AA")) & ",DA" & CLng(GetDictCount(countByType, "DA")) & _
+	BuildFileHeaderLine2 = "#AI0,AO0,DI0,AR" & CLng(GetDictCount(countByType, BLOCK_AR)) & _
+						   ",DR" & CLng(GetDictCount(countByType, BLOCK_DR)) & ",RM0,MDI" & CLng(GetDictCount(countByType, BLOCK_MDI)) & _
+						   ",BL0,AA" & CLng(GetDictCount(countByType, BLOCK_AA)) & ",DA" & CLng(GetDictCount(countByType, BLOCK_DA)) & _
 						   ",DT0,CA0,FN0,TX0,EV0,TM0#"
 End Function
 
@@ -396,6 +450,10 @@ Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowVa
 	Dim header2Fields As Variant
 	Dim fields As Variant
 	Dim resolvedValue As String
+	Dim headerFieldName As String
+	Dim aaCalculatedThresholds As Object
+	Dim normalizedBlockType As String
+	Dim isAaBlock As Boolean
 	Dim i As Long
 
 	templateFields = GetBlockDataTemplateArray(blockType)
@@ -404,7 +462,13 @@ Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowVa
 		Exit Function
 	End If
 
+	normalizedBlockType = NormalizeKey(blockType)
+	isAaBlock = (normalizedBlockType = "AA")
+
 	header2Fields = GetBlockHeaderFieldArray(blockType, 2)
+	If isAaBlock Then
+		Set aaCalculatedThresholds = BuildAaCalculatedAlarmThresholds(rowValues)
+	End If
 
 	ReDim fields(LBound(templateFields) To UBound(templateFields))
 	For i = LBound(templateFields) To UBound(templateFields)
@@ -412,10 +476,20 @@ Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowVa
 			resolvedValue = ResolveTemplateTokens(CStr(templateFields(i)), rowValues)
 		Else
 			resolvedValue = CStr(templateFields(i))
-			If IsArray(header2Fields) Then
-				resolvedValue = GetSeedDefaultByField(CStr(header2Fields(i)), seedDefaults, resolvedValue)
-			End If
 		End If
+
+		headerFieldName = vbNullString
+		If IsArray(header2Fields) Then
+			headerFieldName = CStr(header2Fields(i))
+		End If
+
+		If Len(headerFieldName) > 0 Then
+			If isAaBlock Then
+				resolvedValue = GetDictValueOrDefault(aaCalculatedThresholds, headerFieldName, resolvedValue)
+			End If
+			resolvedValue = GetSeedDefaultByField(headerFieldName, seedDefaults, resolvedValue)
+		End If
+
 		fields(i) = QuoteCsvField(resolvedValue)
 	Next i
 
@@ -440,13 +514,158 @@ Private Function GetSeedDefaultByField(ByVal fieldName As String, ByVal seedDefa
 	End If
 End Function
 
+Private Function GetDictValueOrDefault(ByVal valueDict As Object, ByVal fieldName As String, ByVal fallbackValue As String) As String
+	Dim fieldKey As String
+
+	GetDictValueOrDefault = fallbackValue
+	If valueDict Is Nothing Then
+		Exit Function
+	End If
+
+	fieldKey = NormalizeKey(fieldName)
+	If Len(fieldKey) = 0 Then
+		Exit Function
+	End If
+
+	If valueDict.Exists(fieldKey) Then
+		GetDictValueOrDefault = CStr(valueDict(fieldKey))
+	End If
+End Function
+
+Private Function BuildAaCalculatedAlarmThresholds(ByVal rowValues As Object) As Object
+	Dim calculatedValues As Object
+	Dim eloValue As Double
+	Dim ehiValue As Double
+	Dim euRange As Double
+
+	Set calculatedValues = CreateObject("Scripting.Dictionary")
+	calculatedValues.CompareMode = vbTextCompare
+
+	If Not TryParseDouble(GetMapValue(rowValues, FIELD_SOURCE_SENSOR_ELO), eloValue) Then
+		Set BuildAaCalculatedAlarmThresholds = calculatedValues
+		Exit Function
+	End If
+	If Not TryParseDouble(GetMapValue(rowValues, FIELD_SOURCE_SENSOR_EHI), ehiValue) Then
+		Set BuildAaCalculatedAlarmThresholds = calculatedValues
+		Exit Function
+	End If
+
+	euRange = ehiValue - eloValue
+	If euRange <= 0 Then
+		Set BuildAaCalculatedAlarmThresholds = calculatedValues
+		Exit Function
+	End If
+
+	calculatedValues(FIELD_A_LOLO) = FormatNumericForTemplate(eloValue + (euRange * AA_PERCENT_LOLO))
+	calculatedValues(FIELD_A_LO) = FormatNumericForTemplate(eloValue + (euRange * AA_PERCENT_LO))
+	calculatedValues(FIELD_A_HI) = FormatNumericForTemplate(eloValue + (euRange * AA_PERCENT_HI))
+	calculatedValues(FIELD_A_HIHI) = FormatNumericForTemplate(eloValue + (euRange * AA_PERCENT_HIHI))
+
+	Set BuildAaCalculatedAlarmThresholds = calculatedValues
+End Function
+
+Private Function TryParseDouble(ByVal textValue As String, ByRef parsedValue As Double) As Boolean
+	Dim cleanedText As String
+
+	cleanedText = Trim$(textValue)
+	If Len(cleanedText) = 0 Then
+		Exit Function
+	End If
+
+	cleanedText = Replace(cleanedText, ",", "")
+	If IsNumeric(cleanedText) Then
+		parsedValue = CDbl(cleanedText)
+		TryParseDouble = True
+	End If
+End Function
+
+Private Function FormatNumericForTemplate(ByVal numericValue As Double) As String
+	Dim roundedValue As Double
+	Dim formattedValue As String
+
+	On Error GoTo FallbackValue
+
+	roundedValue = RoundToSignificantFigures(numericValue, AA_CALCULATED_SIGNIFICANT_FIGURES)
+	formattedValue = Format$(roundedValue, AA_NUMERIC_OUTPUT_FORMAT)
+	FormatNumericForTemplate = NormalizeFormattedNumericText(formattedValue)
+	Exit Function
+
+FallbackValue:
+	formattedValue = Format$(numericValue, AA_NUMERIC_OUTPUT_FORMAT)
+	FormatNumericForTemplate = NormalizeFormattedNumericText(formattedValue)
+End Function
+
+Private Function NormalizeFormattedNumericText(ByVal valueText As String) As String
+	Dim outputText As String
+
+	outputText = Trim$(valueText)
+
+	Do While Len(outputText) > 0 And Right$(outputText, 1) = "0" And InStr(1, outputText, ".", vbBinaryCompare) > 0
+		outputText = Left$(outputText, Len(outputText) - 1)
+	Loop
+
+	If Len(outputText) > 0 And Right$(outputText, 1) = "." Then
+		outputText = Left$(outputText, Len(outputText) - 1)
+	End If
+
+	If Len(outputText) = 0 Then
+		outputText = "0"
+	End If
+
+	NormalizeFormattedNumericText = outputText
+End Function
+
+Private Function RoundToSignificantFigures(ByVal numericValue As Double, ByVal significantFigures As Long) As Double
+	Dim magnitude As Long
+	Dim shiftPlaces As Long
+	Dim scaleFactor As Double
+
+	If significantFigures < 1 Then
+		RoundToSignificantFigures = numericValue
+		Exit Function
+	End If
+
+	If numericValue = 0 Then
+		RoundToSignificantFigures = 0
+		Exit Function
+	End If
+
+	magnitude = Int(Log(Abs(numericValue)) / Log(10#))
+	shiftPlaces = significantFigures - 1 - magnitude
+
+	If shiftPlaces > AA_MAX_SIGNIFICANT_SHIFT Then
+		shiftPlaces = AA_MAX_SIGNIFICANT_SHIFT
+	ElseIf shiftPlaces < -AA_MAX_SIGNIFICANT_SHIFT Then
+		shiftPlaces = -AA_MAX_SIGNIFICANT_SHIFT
+	End If
+
+	If shiftPlaces >= 0 Then
+		scaleFactor = 10# ^ shiftPlaces
+		RoundToSignificantFigures = Round(numericValue * scaleFactor, 0) / scaleFactor
+	Else
+		scaleFactor = 10# ^ (-shiftPlaces)
+		RoundToSignificantFigures = Round(numericValue / scaleFactor, 0) * scaleFactor
+	End If
+End Function
+
+Private Function AreValuesEquivalent(ByVal leftValue As String, ByVal rightValue As String) As Boolean
+	Dim leftNumber As Double
+	Dim rightNumber As Double
+
+	If TryParseDouble(leftValue, leftNumber) And TryParseDouble(rightValue, rightNumber) Then
+		AreValuesEquivalent = (Abs(leftNumber - rightNumber) < NUMERIC_COMPARE_EPSILON)
+	Else
+		AreValuesEquivalent = (NormalizeKey(NormalizeImportedTemplateValue(leftValue)) = NormalizeKey(NormalizeImportedTemplateValue(rightValue)))
+	End If
+End Function
+
 '================== JCC1 LOOKUP HELPERS ==================
 
-Private Function BuildJcc1LookupByType(ByVal wb As Workbook, ByVal blockOrder As Variant, ByVal pullEnabled As Boolean) As Object
+Private Function BuildJcc1LookupByType(ByVal wb As Workbook, ByVal pullEnabled As Boolean) As Object
 	Dim lookupByType As Object
 	Dim ogSheet As Worksheet
-	Dim blockType As Variant
 	Dim blockTagMap As Object
+	Dim allowedFieldMap As Object
 
 	Set lookupByType = CreateObject("Scripting.Dictionary")
 	lookupByType.CompareMode = vbTextCompare
@@ -457,24 +676,23 @@ Private Function BuildJcc1LookupByType(ByVal wb As Workbook, ByVal blockOrder As
 	End If
 
 	On Error Resume Next
-	Set ogSheet = wb.Worksheets("JCC1DB OG")
+	Set ogSheet = wb.Worksheets(JCC1_SOURCE_SHEET_NAME)
 	On Error GoTo 0
 	If ogSheet Is Nothing Then
 		Set BuildJcc1LookupByType = lookupByType
 		Exit Function
 	End If
 
-	For Each blockType In blockOrder
-		Set blockTagMap = BuildTagToFieldMapFromNamedRange(wb, ogSheet, "JCC1DB_OG_" & CStr(blockType))
-		If blockTagMap.Count > 0 Then
-			PutObjectInDictionary lookupByType, CStr(blockType), blockTagMap
-		End If
-	Next blockType
+	Set allowedFieldMap = GetJcc1AllowedFieldMap()
+	Set blockTagMap = BuildTagToFieldMapFromNamedRange(wb, ogSheet, JCC1_RANGE_NAME_PREFIX & JCC1_PULL_BLOCK, allowedFieldMap)
+	If blockTagMap.Count > 0 Then
+		PutObjectInDictionary lookupByType, JCC1_PULL_BLOCK, blockTagMap
+	End If
 
 	Set BuildJcc1LookupByType = lookupByType
 End Function
 
-Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal ogSheet As Worksheet, ByVal rangeName As String) As Object
+Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal ogSheet As Worksheet, ByVal rangeName As String, ByVal allowedFieldMap As Object) As Object
 	Dim tagMap As Object
 	Dim sourceRange As Range
 	Dim rangeValues As Variant
@@ -482,6 +700,7 @@ Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal og
 	Dim tagCol As Long
 	Dim rowIx As Long
 	Dim colIx As Long
+	Dim thisFieldKey As String
 	Dim tagValue As String
 	Dim sourceValue As String
 	Dim rowFieldMap As Object
@@ -507,7 +726,12 @@ Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal og
 
 	ReDim colFieldKeys(1 To UBound(rangeValues, 2))
 	For colIx = 1 To UBound(rangeValues, 2)
-		colFieldKeys(colIx) = ParseJcc1HeaderKey(rangeValues(2, colIx))
+		thisFieldKey = ParseJcc1HeaderKey(rangeValues(2, colIx))
+		If Len(thisFieldKey) > 0 Then
+			If allowedFieldMap Is Nothing Or allowedFieldMap.Exists(thisFieldKey) Then
+				colFieldKeys(colIx) = thisFieldKey
+			End If
+		End If
 	Next colIx
 
 	tagCol = FindTagColumnInJcc1Range(rangeValues, colFieldKeys)
@@ -531,6 +755,24 @@ Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal og
 	Next rowIx
 
 	Set BuildTagToFieldMapFromNamedRange = tagMap
+End Function
+
+Private Function SupportsJcc1Pull(ByVal blockType As String) As Boolean
+	SupportsJcc1Pull = (NormalizeKey(blockType) = JCC1_PULL_BLOCK)
+End Function
+
+Private Function GetJcc1AllowedFieldMap() As Object
+	Dim fieldMap As Object
+	Dim fieldName As Variant
+
+	Set fieldMap = CreateObject("Scripting.Dictionary")
+	fieldMap.CompareMode = vbTextCompare
+
+	For Each fieldName In GetAaHistoricalLookupFieldNames()
+		fieldMap(CStr(fieldName)) = True
+	Next fieldName
+
+	Set GetJcc1AllowedFieldMap = fieldMap
 End Function
 
 Private Function ReadRangeCellRawText(ByVal sourceRange As Range, ByVal rowIx As Long, ByVal colIx As Long) As String
@@ -594,7 +836,7 @@ Private Function FindTagColumnInJcc1Range(ByVal rangeValues As Variant, ByRef co
 	For colIx = 1 To UBound(rangeValues, 2)
 		header1 = ParseJcc1HeaderKey(rangeValues(1, colIx))
 
-		If header1 = "TAG" Or colFieldKeys(colIx) = "A_TAG" Then
+		If header1 = VALUE_HEADER_TAG Or colFieldKeys(colIx) = FIELD_A_TAG Then
 			FindTagColumnInJcc1Range = colIx
 			Exit Function
 		End If
@@ -618,6 +860,7 @@ Private Function ShouldAttemptJcc1Lookup(ByVal blockType As String, ByVal rowVal
 	normalizedTag = vbNullString
 
 	If Not pullEnabled Then Exit Function
+	If Not SupportsJcc1Pull(blockType) Then Exit Function
 	If jcc1LookupByType Is Nothing Then Exit Function
 	If Not jcc1LookupByType.Exists(blockType) Then Exit Function
 
@@ -632,6 +875,7 @@ End Function
 Private Function GetJcc1SeedRow(ByVal blockType As String, ByVal rowValues As Object, ByVal jcc1LookupByType As Object, ByVal pullEnabled As Boolean, ByRef foundMatch As Boolean, Optional ByRef lookupAttempted As Boolean = False) As Object
 	Dim normalizedTag As String
 	Dim blockTagMap As Object
+	Dim historicalSeed As Object
 
 	Set GetJcc1SeedRow = Nothing
 	foundMatch = False
@@ -642,22 +886,80 @@ Private Function GetJcc1SeedRow(ByVal blockType As String, ByVal rowValues As Ob
 
 	lookupAttempted = True
 	If blockTagMap.Exists(normalizedTag) Then
-		Set GetJcc1SeedRow = blockTagMap.Item(normalizedTag)
-		foundMatch = True
+		Set historicalSeed = blockTagMap.Item(normalizedTag)
+		If IsAaHistoricalSeedEligible(rowValues, historicalSeed) Then
+			Set GetJcc1SeedRow = ExtractAaHistoricalAlarmSeed(historicalSeed)
+			If Not GetJcc1SeedRow Is Nothing Then
+				If GetJcc1SeedRow.Count > 0 Then
+					foundMatch = True
+				Else
+					Set GetJcc1SeedRow = Nothing
+				End If
+			End If
+		End If
 	End If
+End Function
+
+Private Function IsAaHistoricalSeedEligible(ByVal rowValues As Object, ByVal historicalSeed As Object) As Boolean
+	Dim masterElo As String
+	Dim masterEhi As String
+	Dim seedElo As String
+	Dim seedEhi As String
+	Dim alarmEnabled As String
+
+	If historicalSeed Is Nothing Then
+		Exit Function
+	End If
+
+	alarmEnabled = GetDictValueOrDefault(historicalSeed, FIELD_A_IENAB, vbNullString)
+	If NormalizeKey(alarmEnabled) <> VALUE_ENABLE Then
+		Exit Function
+	End If
+
+	masterElo = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_ELO)
+	masterEhi = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_EHI)
+	seedElo = GetDictValueOrDefault(historicalSeed, FIELD_A_ELO, vbNullString)
+	seedEhi = GetDictValueOrDefault(historicalSeed, FIELD_A_EHI, vbNullString)
+
+	If Not AreValuesEquivalent(masterElo, seedElo) Then
+		Exit Function
+	End If
+	If Not AreValuesEquivalent(masterEhi, seedEhi) Then
+		Exit Function
+	End If
+
+	IsAaHistoricalSeedEligible = True
+End Function
+
+Private Function ExtractAaHistoricalAlarmSeed(ByVal historicalSeed As Object) As Object
+	Dim selectedSeed As Object
+	Dim fieldName As Variant
+	Dim seedValue As String
+
+	Set selectedSeed = CreateObject("Scripting.Dictionary")
+	selectedSeed.CompareMode = vbTextCompare
+
+	For Each fieldName In GetAaAlarmThresholdFieldNames()
+		seedValue = GetDictValueOrDefault(historicalSeed, CStr(fieldName), vbNullString)
+		If Len(seedValue) > 0 Then
+			selectedSeed(CStr(fieldName)) = seedValue
+		End If
+	Next fieldName
+
+	Set ExtractAaHistoricalAlarmSeed = selectedSeed
 End Function
 
 Private Function GetSourceTagForJcc1Lookup(ByVal rowValues As Object) As String
 	Dim key As Variant
 	Dim normalizedKey As String
 
-	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, "OLD TAGNAME (IF APPLICABLE)")
+	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, FIELD_SOURCE_OLD_TAGNAME_PRIMARY)
 	If Len(GetSourceTagForJcc1Lookup) > 0 Then Exit Function
 
-	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, "OLD TAGNAME IF APPLICABLE")
+	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, FIELD_SOURCE_OLD_TAGNAME_ALT1)
 	If Len(GetSourceTagForJcc1Lookup) > 0 Then Exit Function
 
-	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, "OLD TAGNAME")
+	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, FIELD_SOURCE_OLD_TAGNAME_ALT2)
 	If Len(GetSourceTagForJcc1Lookup) > 0 Then Exit Function
 
 	For Each key In rowValues.Keys
@@ -670,7 +972,7 @@ Private Function GetSourceTagForJcc1Lookup(ByVal rowValues As Object) As String
 		End If
 	Next key
 
-	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, "TAGNAME")
+	GetSourceTagForJcc1Lookup = GetMapValue(rowValues, FIELD_SOURCE_TAGNAME)
 End Function
 
 Private Function BuildJcc1LookupTag(ByVal oldTagName As String) As String
@@ -683,12 +985,24 @@ Private Function BuildJcc1LookupTag(ByVal oldTagName As String) As String
 		Exit Function
 	End If
 
-	convertedTag = Trim$(Replace(normalizedOldTag, "LP1", "JCC1", 1, -1, vbTextCompare))
+	convertedTag = Trim$(Replace(normalizedOldTag, JCC1_SOURCE_TAG_PREFIX, JCC1_LOOKUP_TAG_PREFIX, 1, -1, vbTextCompare))
 	If IsLikelyNewTagMarker(convertedTag) Then
 		BuildJcc1LookupTag = vbNullString
 	Else
 		BuildJcc1LookupTag = convertedTag
 	End If
+End Function
+
+Private Function GetBlockOrder() As Variant
+	GetBlockOrder = Array(BLOCK_DA, BLOCK_DR, BLOCK_MDI, BLOCK_AA, BLOCK_AR)
+End Function
+
+Private Function GetAaAlarmThresholdFieldNames() As Variant
+	GetAaAlarmThresholdFieldNames = Array(FIELD_A_LOLO, FIELD_A_LO, FIELD_A_HI, FIELD_A_HIHI)
+End Function
+
+Private Function GetAaHistoricalLookupFieldNames() As Variant
+	GetAaHistoricalLookupFieldNames = Array(FIELD_A_TAG, FIELD_A_IENAB, FIELD_A_ELO, FIELD_A_EHI, FIELD_A_LOLO, FIELD_A_LO, FIELD_A_HI, FIELD_A_HIHI)
 End Function
 
 Private Function NormalizeTagKey(ByVal value As String) As String
@@ -937,6 +1251,83 @@ Private Sub WriteLinesToSheet(ByVal ws As Worksheet, ByVal lines As Collection)
 	ws.Columns("A").AutoFit
 End Sub
 
+Private Sub WriteLinesToSheetAsColumns(ByVal ws As Worksheet, ByVal lines As Collection)
+	Dim outputArray() As Variant
+	Dim parsedRows() As Variant
+	Dim rowFields As Variant
+	Dim maxCols As Long
+	Dim rowCols As Long
+	Dim i As Long
+	Dim j As Long
+	Dim baseIndex As Long
+
+	ws.Cells.ClearContents
+
+	ReDim parsedRows(1 To lines.Count)
+	maxCols = 1
+
+	For i = 1 To lines.Count
+		parsedRows(i) = ParseCsvLineToFields(CStr(lines(i)))
+		rowFields = parsedRows(i)
+		rowCols = UBound(rowFields) - LBound(rowFields) + 1
+		If rowCols > maxCols Then
+			maxCols = rowCols
+		End If
+	Next i
+
+	ReDim outputArray(1 To lines.Count, 1 To maxCols)
+	For i = 1 To lines.Count
+		rowFields = parsedRows(i)
+		baseIndex = LBound(rowFields)
+		For j = LBound(rowFields) To UBound(rowFields)
+			outputArray(i, (j - baseIndex) + 1) = CStr(rowFields(j))
+		Next j
+	Next i
+
+	ws.Range("A1").Resize(lines.Count, maxCols).NumberFormat = "@"
+	ws.Range("A1").Resize(lines.Count, maxCols).Value = outputArray
+	ws.Range(ws.Cells(1, 1), ws.Cells(1, maxCols)).EntireColumn.AutoFit
+End Sub
+
+Private Function ParseCsvLineToFields(ByVal lineText As String) As Variant
+	Dim fields As Collection
+	Dim currentField As String
+	Dim i As Long
+	Dim outputArray() As String
+	Dim ch As String
+	Dim inQuotes As Boolean
+
+	Set fields = New Collection
+	currentField = vbNullString
+
+	For i = 1 To Len(lineText)
+		ch = Mid$(lineText, i, 1)
+
+		If ch = Chr$(34) Then
+			If inQuotes And i < Len(lineText) And Mid$(lineText, i + 1, 1) = Chr$(34) Then
+				currentField = currentField & Chr$(34)
+				i = i + 1
+			Else
+				inQuotes = Not inQuotes
+			End If
+		ElseIf ch = "," And Not inQuotes Then
+			fields.Add currentField
+			currentField = vbNullString
+		Else
+			currentField = currentField & ch
+		End If
+	Next i
+
+	fields.Add currentField
+
+	ReDim outputArray(0 To fields.Count - 1)
+	For i = 1 To fields.Count
+		outputArray(i - 1) = CStr(fields(i))
+	Next i
+
+	ParseCsvLineToFields = outputArray
+End Function
+
 Private Sub SaveLinesToCsv(ByVal fullPath As String, ByVal lines As Collection)
 	Dim fileNumber As Integer
 	Dim i As Long
@@ -1131,7 +1522,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"NO", "NO", "0", "", "NO", "5,000.0", "0.0", "Milliseconds", "DISABLE", "0.0000", _
 				"Absolute", "0")
 		Case "MDI"
-			GetBlockDataTemplateArray = Array("MDI", "<TAGNAME>", "", "<DESCRIPTION>", "NO", "NO", "SIM", "", "0:0", "", _
+			GetBlockDataTemplateArray = Array("MDI", "<TAGNAME>", "", "<DESCRIPTION>", "NO", "NO", "MBE", "", "0:0", "", _
 				"", "", "", "", "", "ON", "1", "AUTO", "NO", "", _
 				"", "", "", "", "", "", "", "NO", "NO", "NO", _
 				"NO", "NO", "NO", "NO", "NO", "ENABLE", "NONE", "LOW", "NONE", "NONE", _
@@ -1140,7 +1531,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"NO", "REJECT", "1,000", "300,000", "0", "NO", "NO", "0", "", "NO", _
 				"5,000.0", "0.0", "Milliseconds", "DISABLE", "0.0000", "Absolute", "0")
 		Case "AA"
-			GetBlockDataTemplateArray = Array("AA", "<TAGNAME>", "", "<DESCRIPTION>", "ON", "1", "0", "MBE", "<DATA TYPE>", "<ADDRESS>", _
+			GetBlockDataTemplateArray = Array("AA", "<TAGNAME>", "", "<DESCRIPTION>", "ON", "2", "0", "MBE", "<DATA TYPE>", "<ADDRESS>", _
 				"None", "<Sensor Lo Limit (Eng Units)>", "<Sensor HI Limit (Eng Units)>", "0.00", "<UNITS>", "ENABLE", "AUTO", "", "", "", _
 				"NONE", "NO", "NONE", "NONE", "NONE", "LOW", "", "", "00:00:00:00", "00:00:00:00", _
 				"85.00", "LOW", "", "", "00:00:00:00", "00:00:00:00", "15.00", "LOW", "", "", _

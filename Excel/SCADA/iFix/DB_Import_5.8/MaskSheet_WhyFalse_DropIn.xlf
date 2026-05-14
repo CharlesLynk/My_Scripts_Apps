@@ -1,0 +1,138 @@
+=LET(
+	cleanText,
+	LAMBDA(
+		inputText,
+		LET(
+			rawText,
+			CLEAN(inputText & ""),
+			spacedText,
+			SUBSTITUTE(
+				SUBSTITUTE(
+					SUBSTITUTE(
+						SUBSTITUTE(
+							rawText,
+							CHAR(160),
+							" "
+						),
+						UNICHAR(8239),
+						" "
+					),
+					UNICHAR(12288),
+					" "
+				),
+				CHAR(9),
+				" "
+			),
+			trimmedText,
+			TRIM(spacedText),
+			dropText1,
+			SUBSTITUTE(
+				SUBSTITUTE(
+					SUBSTITUTE(
+						SUBSTITUTE(
+							trimmedText,
+							UNICHAR(8203),
+							""
+						),
+						UNICHAR(8204),
+						""
+					),
+					UNICHAR(8205),
+					""
+				),
+				UNICHAR(65279),
+				""
+			),
+			dropText2,
+			SUBSTITUTE(
+				SUBSTITUTE(
+					SUBSTITUTE(
+						SUBSTITUTE(
+							dropText1,
+							UNICHAR(8206),
+							""
+						),
+						UNICHAR(8207),
+						""
+					),
+					UNICHAR(173),
+					""
+				),
+				UNICHAR(8288),
+				""
+			),
+			TRIM(dropText2)
+		)
+	),
+	oldTag,
+	MASTERV3_DB[@[OLD TAGNAME (IF APPLICABLE)]],
+	blockType,
+	UPPER(TRIM(MASTERV3_DB[@[iFIX BLOCK TYPE]])),
+	currentDesc,
+	TRIM(SUBSTITUTE(MASTERV3_DB[@DESCRIPTION], "LP1", "JCC1")),
+	searchPattern,
+	SUBSTITUTE(oldTag, "_LP1", "*"),
+	blockOK,
+	OR(
+		blockType = "AR",
+		blockType = "DR",
+		blockType = "MDI",
+		blockType = "AA",
+		blockType = "DA"
+	),
+	tagColumn,
+	IFS(
+		blockType = "AR", MASTERV3_AR[A_TAG],
+		blockType = "DR", MASTERV3_DR[A_TAG],
+		blockType = "MDI", MASTERV3_MDI[A_TAG],
+		blockType = "AA", MASTERV3_AA[A_TAG],
+		blockType = "DA", MASTERV3_DA[A_TAG],
+		TRUE, ""
+	),
+	descColumn,
+	IFS(
+		blockType = "AR", MASTERV3_AR[A_DESC],
+		blockType = "DR", MASTERV3_DR[A_DESC],
+		blockType = "MDI", MASTERV3_MDI[A_DESC],
+		blockType = "AA", MASTERV3_AA[A_DESC],
+		blockType = "DA", MASTERV3_DA[A_DESC],
+		TRUE, ""
+	),
+	matchCount,
+	IF(blockOK, COUNTIF(tagColumn, searchPattern), 0),
+	pickedTag,
+	IF(matchCount > 0, XLOOKUP(searchPattern, tagColumn, tagColumn, "", 2), ""),
+	pickedDescRaw,
+	IF(matchCount > 0, XLOOKUP(searchPattern, tagColumn, descColumn, "", 2), ""),
+	pickedDesc,
+	TRIM(pickedDescRaw),
+	directEqual,
+	currentDesc = pickedDesc,
+	cleanEqual,
+	UPPER(cleanText(currentDesc)) = UPPER(cleanText(pickedDesc)),
+	IF(
+		LEN(oldTag) < 4,
+		"FALSE | SHORT_OLD_TAG | old=" & oldTag,
+		IF(
+			NOT(blockOK),
+			"FALSE | BAD_BLOCK | block=" & blockType,
+			IF(
+				matchCount = 0,
+				"FALSE | NO_MATCH | pattern=" & searchPattern,
+				IF(
+					matchCount > 1,
+					"FALSE | MULTI_WILDCARD | count=" & matchCount & " | firstTag=" & pickedTag & " | firstDesc=" & pickedDesc,
+					IF(
+						directEqual,
+						"TRUE | EXACT_MATCH | tag=" & pickedTag,
+						IF(
+							cleanEqual,
+							"FALSE | HIDDEN_CHAR_DIFF | tag=" & pickedTag & " | left=" & currentDesc & " | right=" & pickedDesc,
+							"FALSE | TEXT_DIFF | tag=" & pickedTag & " | left=" & currentDesc & " | right=" & pickedDesc
+						)
+					)
+				)
+			)
+		)
+	)
+)

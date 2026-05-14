@@ -1,0 +1,59 @@
+=IF(
+  LEN(MASTERV3_DB[@[OLD TAGNAME (IF APPLICABLE)]]) < 4,
+  FALSE,
+  LET(
+    blockType,
+    UPPER(TRIM(MASTERV3_DB[@[iFIX BLOCK TYPE]])),
+    expectedDesc,
+    TRIM(SUBSTITUTE(MASTERV3_DB[@DESCRIPTION], "LP1", "JCC1")),
+    searchPattern,
+    SUBSTITUTE(MASTERV3_DB[@[OLD TAGNAME (IF APPLICABLE)]], "_LP1", "*"),
+    evaluateBlock,
+    LAMBDA(
+      tags,
+      descs,
+      notNeeded,
+      LET(
+        wildcardCount,
+        COUNTIFS(tags, searchPattern, notNeeded, "<>TRUE"),
+        descriptionMatchCount,
+        COUNTIFS(tags, searchPattern, notNeeded, "<>TRUE", descs, expectedDesc),
+        AND(wildcardCount > 0, descriptionMatchCount > 0)
+      )
+    ),
+    IFS(
+      blockType = "AR",
+      evaluateBlock(
+        MASTERV3_AR[A_TAG],
+        MASTERV3_AR[A_DESC],
+        MASTERV3_AR[Not Needed]
+      ),
+      blockType = "DR",
+      evaluateBlock(
+        MASTERV3_DR[A_TAG],
+        MASTERV3_DR[A_DESC],
+        MASTERV3_DR[Not Needed]
+      ),
+      blockType = "MDI",
+      evaluateBlock(
+        MASTERV3_MDI[A_TAG],
+        MASTERV3_MDI[A_DESC],
+        MASTERV3_MDI[Not Needed]
+      ),
+      blockType = "AA",
+      evaluateBlock(
+        MASTERV3_AA[A_TAG],
+        MASTERV3_AA[A_DESC],
+        MASTERV3_AA[Not Needed]
+      ),
+      blockType = "DA",
+      evaluateBlock(
+        MASTERV3_DA[A_TAG],
+        MASTERV3_DA[A_DESC],
+        MASTERV3_DA[Not Needed]
+      ),
+      TRUE,
+      FALSE
+    )
+  )
+)
