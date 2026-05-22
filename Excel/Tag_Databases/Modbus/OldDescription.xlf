@@ -296,6 +296,65 @@
         descs,
         notNeeded,
         LET(
+          tagsUpper,
+          UPPER(
+            tags & ""
+          ),
+          exactTarget,
+          UPPER(
+            base & pExactLookupSuffix
+          ),
+          fastExactCount,
+          SUM(
+            --(
+              tagsUpper = exactTarget
+            )
+          ),
+          fastExactIdx,
+          IF(
+            fastExactCount = 1,
+            XMATCH(
+              exactTarget,
+              tagsUpper,
+              0
+            ),
+            0
+          ),
+          fastIsNeeded,
+          AND(
+            fastExactIdx > 0,
+            NOT(
+              isTruthy(
+                INDEX(
+                  notNeeded,
+                  fastExactIdx
+                )
+              )
+            )
+          ),
+          fastRawDesc,
+          IF(
+            fastIsNeeded,
+            INDEX(
+              descs,
+              fastExactIdx
+            ),
+            ""
+          ),
+          fastDesc,
+          IF(
+            LEFT(
+              fastRawDesc,
+              4
+            ) = "----",
+            fastRawDesc,
+            applyReplacement(
+              fastRawDesc
+            )
+          ),
+          slowDesc,
+          LAMBDA(
+            LET(
           tagsClean,
           cleanText(
             tags
@@ -397,6 +456,14 @@
             rawDesc,
             applyReplacement(
               rawDesc
+            )
+          )
+            )
+          ),
+          IF(
+            fastIsNeeded,
+            fastDesc,
+            slowDesc(
             )
           )
         )

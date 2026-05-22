@@ -468,7 +468,7 @@ Public Sub HandleWorkbookOpen(ByVal wb As Workbook)
 End Sub
 
 ' One-time pass for all currently open non-add-in workbooks.
-Private Sub RunOpenTimeDriftCheckAllOpenWorkbooks()
+Public Sub RunOpenTimeDriftCheckAllOpenWorkbooks()
     Dim wb As Workbook
 
     On Error GoTo SafeExit

@@ -2,18 +2,65 @@ Attribute VB_Name = "FormulaFreezer"
 ' VBA Module (Reusable Formula Freeze/Refresh)
 Option Explicit
 
-' Default wrapper target for a button-assigned macro in this workbook.
-' You can use either a structured reference like TableName[Column Name]
-' or a normal worksheet/name reference like Sheet1!D2:D500 or MyNamedRange.
-Private Const DEFAULT_TARGET_REFERENCES As String = "MASTERV3_MASK_DB[ADDRESS]"
-
 ' Hidden worksheet used to store one formula template per target reference.
 ' This lets the refresh macro restore formulas after a target range has been frozen to values.
 Private Const FORMULA_STATE_SHEET_NAME As String = "__FrozenFormulaState"
 
-' Button-friendly wrapper for this workbook.
+' Button-friendly wrapper that discovers targets from the hidden state sheet.
 Public Sub RefreshDefaultFrozenColumn()
-   RefreshFrozenFormulaTargets DEFAULT_TARGET_REFERENCES
+   RefreshFrozenFormulaTargetsFromState
+End Sub
+
+' Discovers stored targets from __FrozenFormulaState!A:A and applies the adjacent formula in column B.
+Private Sub RefreshFrozenFormulaTargetsFromState()
+   Dim ws As Worksheet
+   Dim lastRow As Long
+   Dim i As Long
+   Dim targetRef As String
+   Dim formulaText As String
+   Dim failed As String
+   Dim processedCount As Long
+   Dim totalCount As Long
+
+   Set ws = GetFormulaStateSheet()
+   lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+   If lastRow = 1 And Len(Trim$(CStr(ws.Cells(1, 1).Value2))) = 0 Then
+      MsgBox "No stored frozen formula targets were found on " & FORMULA_STATE_SHEET_NAME & ".", vbExclamation
+      Exit Sub
+   End If
+
+   For i = 1 To lastRow
+      targetRef = Trim$(CStr(ws.Cells(i, 1).Value2))
+      If Len(targetRef) > 0 Then totalCount = totalCount + 1
+   Next i
+
+   If totalCount = 0 Then
+      MsgBox "No stored frozen formula targets were found on " & FORMULA_STATE_SHEET_NAME & ".", vbExclamation
+      Exit Sub
+   End If
+
+   For i = 1 To lastRow
+      targetRef = Trim$(CStr(ws.Cells(i, 1).Value2))
+      If Len(targetRef) > 0 Then
+         formulaText = ReadStoredFormulaFromCell(ws.Cells(i, 2))
+         processedCount = processedCount + 1
+         SetProgressStatus "Refreshing frozen formulas from state: target " & CStr(processedCount) & " of " & CStr(totalCount) & "..."
+
+         If Not RefreshFrozenFormulaTargetCore(targetRef, False, formulaText) Then
+            If Len(failed) > 0 Then failed = failed & vbCrLf
+            failed = failed & targetRef
+         End If
+      End If
+   Next i
+
+   ClearProgressStatus
+
+   If Len(failed) = 0 Then
+      MsgBox "Refreshed " & CStr(processedCount) & " frozen formula target(s) from " & FORMULA_STATE_SHEET_NAME & ".", vbInformation
+   Else
+      MsgBox "Some state-sheet targets failed to refresh:" & vbCrLf & failed, vbExclamation
+   End If
 End Sub
 
 ' Batch-friendly wrapper for multiple targets.
@@ -85,7 +132,7 @@ Private Sub RefreshFrozenFormulaTarget(ByVal targetReference As String)
 End Sub
 
 ' Single-target refresh implementation with optional user prompts.
-Private Function RefreshFrozenFormulaTargetCore(ByVal targetReference As String, ByVal showMessages As Boolean) As Boolean
+Private Function RefreshFrozenFormulaTargetCore(ByVal targetReference As String, ByVal showMessages As Boolean, Optional ByVal storedFormulaOverride As String = "") As Boolean
    Dim targetRng As Range
    Dim formulaText As String
    Dim storeKey As String
@@ -94,23 +141,35 @@ Private Function RefreshFrozenFormulaTargetCore(ByVal targetReference As String,
 
    Set targetRng = ResolveTargetRange(targetReference)
    If targetRng Is Nothing Then
+      If IsStructuredTargetReferenceEmpty(targetReference) Then
+         RefreshFrozenFormulaTargetCore = True
+         Exit Function
+      End If
       If showMessages Then MsgBox "Target range not found or empty: " & targetReference, vbExclamation
       Exit Function
    End If
 
-   formulaText = ReadFormulaTemplate(targetRng, storeKey)
+   If Len(storedFormulaOverride) > 0 Then
+      formulaText = NormalizeFormulaTemplateText(storedFormulaOverride)
+   Else
+      formulaText = ReadFormulaTemplate(targetRng, storeKey)
+   End If
    If Len(formulaText) = 0 Then
+      If IsRangeBlank(targetRng) Then
+         RefreshFrozenFormulaTargetCore = True
+         Exit Function
+      End If
       If showMessages Then MsgBox "No stored formula template found. Put formula back in first target cell, then run again.", vbExclamation
       Exit Function
    End If
 
-   WriteFormulaTemplate storeKey, formulaText
-   SetProgressStatus "Restoring formulas for " & targetReference & "..."
-   RestoreColumnFormulasIfNeeded targetRng, formulaText
-
    Application.ScreenUpdating = False
    Application.EnableEvents = False
    On Error GoTo SafeExit
+
+   WriteFormulaTemplate storeKey, formulaText
+   SetProgressStatus "Restoring formulas for " & targetReference & "..."
+   RestoreColumnFormulasIfNeeded targetRng, formulaText
 
    ReleaseStatusBarForCalculation
    Application.CalculateFull
@@ -214,27 +273,54 @@ End Function
 
 ' Uses the live formula when available, otherwise falls back to the stored template.
 Private Function ReadFormulaTemplate(ByVal targetRng As Range, ByVal storeKey As String) As String
-   If targetRng.Cells(1, 1).HasFormula Then
+   Dim formulaCell As Range
+
+   Set formulaCell = FindFirstFormulaCell(targetRng)
+
+   If Not formulaCell Is Nothing Then
       On Error Resume Next
-      ReadFormulaTemplate = targetRng.Cells(1, 1).Formula2
-      If Len(ReadFormulaTemplate) = 0 Then ReadFormulaTemplate = targetRng.Cells(1, 1).Formula
+      ReadFormulaTemplate = formulaCell.Formula2
+      If Len(ReadFormulaTemplate) = 0 Then ReadFormulaTemplate = formulaCell.Formula
       On Error GoTo 0
    Else
       ReadFormulaTemplate = ReadStoredFormulaTemplate(storeKey)
    End If
 End Function
 
-' Restores formulas across the entire target range if any cells were frozen to values.
-Private Sub RestoreColumnFormulasIfNeeded(ByVal targetRng As Range, ByVal formulaText As String)
-   If IsEntireRangeFormulaBacked(targetRng) Then Exit Sub
+' Returns the first formula cell in a range, if one exists.
+Private Function FindFirstFormulaCell(ByVal rng As Range) As Range
+   Dim formulaCells As Range
 
    On Error Resume Next
-   targetRng.Formula2 = formulaText
+   Set formulaCells = rng.SpecialCells(xlCellTypeFormulas)
+   On Error GoTo 0
+
+   If Not formulaCells Is Nothing Then Set FindFirstFormulaCell = formulaCells.Cells(1, 1)
+End Function
+
+' Restores formulas across the entire target range if any cells were frozen to values.
+Private Sub RestoreColumnFormulasIfNeeded(ByVal targetRng As Range, ByVal formulaText As String)
+   Dim formulaToApply As String
+
+   If IsEntireRangeFormulaBacked(targetRng) Then Exit Sub
+
+   formulaToApply = NormalizeFormulaTemplateText(formulaText)
+   If Len(formulaToApply) = 0 Then
+      Err.Raise vbObjectError + 501, "RestoreColumnFormulasIfNeeded", "Stored formula template was empty after normalization."
+   End If
+
+   On Error Resume Next
+   targetRng.Formula2 = formulaToApply
    If Err.Number <> 0 Then
       Err.Clear
-      targetRng.Formula = formulaText
+      targetRng.Formula = formulaToApply
    End If
    On Error GoTo 0
+
+    If Not targetRng.Cells(1, 1).HasFormula Then
+      Err.Raise vbObjectError + 502, "RestoreColumnFormulasIfNeeded", _
+                "Stored template could not be applied as a formula: " & Left$(formulaToApply, 120)
+   End If
 End Sub
 
 ' Detects mixed state after an interrupted run so the next refresh can self-heal.
@@ -242,13 +328,48 @@ Private Function IsEntireRangeFormulaBacked(ByVal rng As Range) As Boolean
    Dim c As Range
 
    For Each c In rng.Cells
-      If Not c.HasFormula Then
+      If c.HasFormula Then
+         ' Formula-backed cell.
+      ElseIf IsError(c.Value2) Then
+         IsEntireRangeFormulaBacked = False
+         Exit Function
+      ElseIf IsEmpty(c.Value2) Then
+         ' Treat blank cells as acceptable so sparse ranges do not force a rewrite.
+      Else
          IsEntireRangeFormulaBacked = False
          Exit Function
       End If
    Next c
 
    IsEntireRangeFormulaBacked = True
+End Function
+
+' True when the requested structured target exists but has no data rows.
+Private Function IsStructuredTargetReferenceEmpty(ByVal targetReference As String) As Boolean
+   Dim lo As ListObject
+   Dim tableName As String
+   Dim columnName As String
+   Dim targetCol As ListColumn
+
+   If Not TryParseStructuredTargetReference(targetReference, tableName, columnName) Then Exit Function
+
+   Set lo = FindWorkbookTable(tableName)
+   If lo Is Nothing Then Exit Function
+
+   On Error Resume Next
+   Set targetCol = lo.ListColumns(columnName)
+   On Error GoTo 0
+
+   If targetCol Is Nothing Then Exit Function
+
+   IsStructuredTargetReferenceEmpty = targetCol.DataBodyRange Is Nothing
+End Function
+
+' True when no cell in the range contains a value or formula result.
+Private Function IsRangeBlank(ByVal rng As Range) As Boolean
+   On Error Resume Next
+   IsRangeBlank = (WorksheetFunction.CountA(rng) = 0)
+   On Error GoTo 0
 End Function
 
 ' Waits until Excel reports that calculation has finished before freezing values.
@@ -275,20 +396,71 @@ Private Sub WriteFormulaTemplate(ByVal storeKey As String, ByVal formulaText As 
 
    Set formulaCell = keyCell.Offset(0, 1)
    formulaCell.NumberFormat = "@"
-   formulaCell.Value2 = "'" & formulaText
+   If Len(formulaText) > 0 Then
+      If Left$(formulaText, 1) = "'" Then
+         formulaCell.Value2 = formulaText
+      Else
+         formulaCell.Value2 = "'" & formulaText
+      End If
+   Else
+      formulaCell.Value2 = formulaText
+   End If
 End Sub
 
 ' Reads the stored template for a specific target reference.
 Private Function ReadStoredFormulaTemplate(ByVal storeKey As String) As String
    Dim ws As Worksheet
    Dim keyCell As Range
+   Dim formulaCell As Range
 
    Set ws = GetFormulaStateSheet()
    Set keyCell = FindStoredFormulaKeyCell(ws, storeKey)
 
    If Not keyCell Is Nothing Then
-      ReadStoredFormulaTemplate = CStr(keyCell.Offset(0, 1).Value2)
+      Set formulaCell = keyCell.Offset(0, 1)
+      ReadStoredFormulaTemplate = ReadStoredFormulaFromCell(formulaCell)
    End If
+End Function
+
+' Reads one stored formula cell and normalizes text payloads like '=... and ''=....
+Private Function ReadStoredFormulaFromCell(ByVal formulaCell As Range) As String
+   Dim rawValue As Variant
+   Dim formulaText As String
+
+   If formulaCell Is Nothing Then Exit Function
+
+   If formulaCell.HasFormula Then
+      On Error Resume Next
+      formulaText = formulaCell.Formula2
+      If Len(formulaText) = 0 Then formulaText = formulaCell.Formula
+      On Error GoTo 0
+   Else
+      rawValue = formulaCell.Value2
+      If Not IsError(rawValue) Then formulaText = CStr(rawValue)
+   End If
+
+   ReadStoredFormulaFromCell = NormalizeFormulaTemplateText(formulaText)
+End Function
+
+' Accepts formula templates stored as text in either "=..." or "'=..." format.
+Private Function NormalizeFormulaTemplateText(ByVal formulaText As String) As String
+   Dim i As Long
+
+   i = 1
+   Do While i <= Len(formulaText) And Mid$(formulaText, i, 1) = "'"
+      i = i + 1
+   Loop
+
+   If i > 1 Then
+      If i <= Len(formulaText) Then
+         If Mid$(formulaText, i, 1) = "=" Then
+            NormalizeFormulaTemplateText = Mid$(formulaText, i)
+            Exit Function
+         End If
+      End If
+   End If
+
+   NormalizeFormulaTemplateText = formulaText
 End Function
 
 ' Creates the lookup key used in the hidden state sheet.
