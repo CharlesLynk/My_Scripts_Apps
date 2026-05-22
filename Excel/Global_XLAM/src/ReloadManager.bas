@@ -28,13 +28,139 @@ Private Const REPO_ADDIN_RELATIVE_PATH As String = "Global_XLAM\Global_CNL.xlam"
 Private Const REPO_ADDIN_SRC_RELATIVE_PATH As String = "Global_XLAM\src"
 Private Const MODULE_RELOAD_MANAGER As String = "ReloadManager"
 Private Const MODULE_RELOAD_MANAGER_BOOTSTRAP As String = "ReloadManagerBootstrap"
-Private Const TEST_PICKER_FORM_NAME As String = "RM_TypePickerTestForm"
-Private Const TEST_PICKER_LIST_NAME As String = "lstEntries"
-Private Const TEST_PICKER_OK_NAME As String = "btnOK"
-Private Const TEST_PICKER_CANCEL_NAME As String = "btnCancel"
-Private Const TEST_PICKER_INFO_NAME As String = "lblInfo"
+Private Const TYPE_PICKER_FORM_NAME As String = "RM_TypePickerForm"
+Private Const TYPE_PICKER_LIST_NAME As String = "lstEntries"
+Private Const TYPE_PICKER_OK_NAME As String = "btnOK"
+Private Const TYPE_PICKER_CANCEL_NAME As String = "btnCancel"
+Private Const TYPE_PICKER_SYNC_DRIFT_NAME As String = "btnSyncOnDrift"
+Private Const TYPE_PICKER_FORCE_SYNC_NAME As String = "btnForceSync"
+Private Const TYPE_PICKER_INFO_NAME As String = "lblInfo"
+Private Const TYPE_PICKER_TAG_OK As String = "OK"
+Private Const TYPE_PICKER_TAG_CANCEL As String = "0"
+Private Const TYPE_PICKER_TAG_SYNC_DRIFT As String = "SYNC_DRIFT"
+Private Const TYPE_PICKER_TAG_FORCE_SYNC As String = "FORCE_SYNC"
 Private Const MAX_FOLDER_SCAN_DEPTH As Long = 64
 Private Const FILE_ATTR_REPARSE_POINT As Long = 1024
+
+' Win32 constants for making the dynamic type picker UserForm resizable.
+Private Const GWL_STYLE As Long = -16
+Private Const WS_THICKFRAME As Long = &H40000
+Private Const WS_MAXIMIZEBOX As Long = &H10000
+Private Const WS_MINIMIZEBOX As Long = &H20000
+Private Const SWP_NOSIZE As Long = &H1
+Private Const SWP_NOMOVE As Long = &H2
+Private Const SWP_NOZORDER As Long = &H4
+Private Const SWP_FRAMECHANGED As Long = &H20
+
+#If VBA7 Then
+    Private Declare PtrSafe Function FindWindowW Lib "user32" (ByVal lpClassName As LongPtr, ByVal lpWindowName As LongPtr) As LongPtr
+    Private Declare PtrSafe Function GetWindowLongPtrW Lib "user32" (ByVal hwnd As LongPtr, ByVal nIndex As Long) As LongPtr
+    Private Declare PtrSafe Function SetWindowLongPtrW Lib "user32" (ByVal hwnd As LongPtr, ByVal nIndex As Long, ByVal dwNewLong As LongPtr) As LongPtr
+    Private Declare PtrSafe Function SetWindowPos Lib "user32" (ByVal hwnd As LongPtr, ByVal hWndInsertAfter As LongPtr, _
+                                                                  ByVal X As Long, ByVal Y As Long, ByVal cx As Long, ByVal cy As Long, _
+                                                                  ByVal uFlags As Long) As Long
+#Else
+    Private Declare Function FindWindowW Lib "user32" (ByVal lpClassName As Long, ByVal lpWindowName As Long) As Long
+    Private Declare Function GetWindowLongPtrW Lib "user32" Alias "GetWindowLongW" (ByVal hwnd As Long, ByVal nIndex As Long) As Long
+    Private Declare Function SetWindowLongPtrW Lib "user32" Alias "SetWindowLongW" (ByVal hwnd As Long, ByVal nIndex As Long, ByVal dwNewLong As Long) As Long
+    Private Declare Function SetWindowPos Lib "user32" (ByVal hwnd As Long, ByVal hWndInsertAfter As Long, _
+                                                         ByVal X As Long, ByVal Y As Long, ByVal cx As Long, ByVal cy As Long, _
+                                                         ByVal uFlags As Long) As Long
+#End If
+
+'================== TYPE PICKER UI TUNING ==================
+' Checklist indentation and general row rendering.
+' - Indentation controls horizontal nesting offset for folder/file rows.
+' - Base/Right/Top paddings control drawing space inside the entries frame.
+' - Min control width prevents deep rows from becoming too narrow to read.
+' - Scroll extra adds a small trailing scroll region so the last row is not clipped.
+' - Folder label nudge lets label text align visually with checkbox captions.
+Private Const TP_INDENT_PIXELS_PER_LEVEL As Double = 12
+Private Const TP_LIST_BASE_LEFT As Double = 4
+Private Const TP_LIST_RIGHT_PADDING As Double = 16
+Private Const TP_LIST_TOP_PADDING As Double = 3
+Private Const TP_LIST_MIN_CONTROL_WIDTH As Double = 200
+Private Const TP_LIST_SCROLL_EXTRA As Double = 20
+Private Const TP_FOLDER_LABEL_LEFT_NUDGE As Double = 2
+Private Const TP_LIST_FRAME_CAPTION As String = ""
+' UI font family for picker text. Recommended options: Segoe UI, Tahoma, Verdana, Calibri.
+Private Const TP_UI_FONT_NAME As String = "Segoe UI"
+
+' File (checkbox) row styling.
+' Row formulas:
+' - file row control height = TP_FILE_FONT_HEIGHT + TP_FILE_FONT_ADDITIONAL_HEIGHT
+' - file row step = file row control height + TP_FILE_ROW_ADDITIONAL_SPACING
+' - checkbox glyph font = TP_FILE_FONT_HEIGHT - TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS
+' - checkbox bottom = row bottom - TP_FILE_ROW_ADDITIONAL_SPACING - TP_FILE_CHECKBOX_BOTTOM_OFFSET
+' Group gaps provide visual separation when transitioning between folder rows and file groups.
+Private Const TP_FILE_FONT_HEIGHT As Double = 9
+Private Const TP_FILE_FONT_ADDITIONAL_HEIGHT As Double = 2
+Private Const TP_FILE_ROW_ADDITIONAL_SPACING As Double = 3
+Private Const TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS As Double = 1
+' Positive values lift the checkbox relative to text-bottom alignment; negative values drop it.
+Private Const TP_FILE_CHECKBOX_BOTTOM_OFFSET As Double = 1
+Private Const TP_GAP_BEFORE_FILE_GROUP As Double = 3
+Private Const TP_GAP_AFTER_FILE_GROUP As Double = 3
+Private Const TP_GAP_BEFORE_FOLDER_L0 As Double = 6
+
+' Temporary troubleshooting mode: writes rendered row metrics to a plaintext report in %TEMP%.
+Private Const TP_DEBUG_ENABLE_ROW_REPORT As Boolean = True
+
+' Folder row styling by hierarchy depth.
+' Layer 0 = top-level folder, layer 1 = child folder, etc.
+' Folder formulas per layer:
+' - folder control height = TP_FOLDER_FONT_HEIGHT_* + TP_FOLDER_FONT_ADDITIONAL_HEIGHT_*
+' - folder row step = control height + TP_FOLDER_ROW_ADDITIONAL_SPACING_*
+' Use these sets to make parent folders more prominent than deeper levels.
+Private Const TP_FOLDER_FONT_HEIGHT_L0 As Double = 11
+Private Const TP_FOLDER_FONT_HEIGHT_L1 As Double = 11
+Private Const TP_FOLDER_FONT_HEIGHT_L2 As Double = 11
+Private Const TP_FOLDER_FONT_HEIGHT_L3 As Double = 11
+Private Const TP_FOLDER_FONT_HEIGHT_DEFAULT As Double = 11
+
+Private Const TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L0 As Double = 3
+Private Const TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L1 As Double = 3
+Private Const TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L2 As Double = 3
+Private Const TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L3 As Double = 3
+Private Const TP_FOLDER_FONT_ADDITIONAL_HEIGHT_DEFAULT As Double = 3
+
+Private Const TP_FOLDER_ROW_ADDITIONAL_SPACING_L0 As Double = 0
+Private Const TP_FOLDER_ROW_ADDITIONAL_SPACING_L1 As Double = 0
+Private Const TP_FOLDER_ROW_ADDITIONAL_SPACING_L2 As Double = 0
+Private Const TP_FOLDER_ROW_ADDITIONAL_SPACING_L3 As Double = 0
+Private Const TP_FOLDER_ROW_ADDITIONAL_SPACING_DEFAULT As Double = 0
+
+' Runtime auto-size and manual resize behavior.
+' Layout levers:
+' - Margins and button gaps define frame/button padding around the list.
+' - Button width/height and gap define the action row footprint.
+' - List horizontal/vertical padding enlarges content fit area around measured text/rows.
+' - TP_AUTO_ROW_HEIGHT and TP_AUTO_MAX_VISIBLE_ROWS control initial auto-size height estimate.
+' - TP_FORM_USABLE_*_RATIO limits the default form size to a fraction of Excel usable area.
+' - TP_SEED_LIST_* controls designer-time seed size (replaces hardcoded values).
+' - Set TP_FORCE_LIST_* > 0 to bypass autosize and directly control popup/list size.
+Private Const TP_LAYOUT_LEFT_MARGIN As Double = 10
+Private Const TP_LAYOUT_RIGHT_MARGIN As Double = 10
+Private Const TP_LAYOUT_TOP_MARGIN As Double = 8
+Private Const TP_LAYOUT_BUTTON_GAP_TOP As Double = 10
+Private Const TP_LAYOUT_BUTTON_GAP As Double = 8
+Private Const TP_LAYOUT_BUTTON_WIDTH As Double = 48
+Private Const TP_LAYOUT_SYNC_BUTTON_WIDTH As Double = 64
+Private Const TP_LAYOUT_BUTTON_HEIGHT As Double = 24
+Private Const TP_LAYOUT_BOTTOM_MARGIN As Double = TP_LAYOUT_BUTTON_HEIGHT + TP_LAYOUT_BUTTON_GAP + TP_LAYOUT_BUTTON_GAP_TOP
+Private Const TP_SEED_LIST_WIDTH As Double = 420
+Private Const TP_SEED_LIST_HEIGHT As Double = 720
+Private Const TP_LIST_HORIZONTAL_PADDING As Double = 22
+Private Const TP_LIST_VERTICAL_PADDING As Double = 8
+Private Const TP_AUTO_ROW_HEIGHT As Double = 16
+Private Const TP_AUTO_MAX_VISIBLE_ROWS As Long = 24
+Private Const TP_FORM_USABLE_WIDTH_RATIO As Double = 0.9
+Private Const TP_FORM_USABLE_HEIGHT_RATIO As Double = 0.9
+Private Const TP_FORCE_LIST_WIDTH As Double = 0
+Private Const TP_FORCE_LIST_HEIGHT As Double = 0
+
+' Internal representation for tree depth in displayLines. Keep fixed to avoid dual user levers.
+Private Const TP_INDENT_SPACES_PER_LEVEL_INTERNAL As Long = 2
 
 Private mStartupSyncComplete As Boolean
 Private mGlobalAddInPublishedThisSession As Boolean
@@ -394,8 +520,8 @@ Public Sub ManageActiveWorkbookTypes()
     ShowReloadManagerCommandCenter
 End Sub
 
-' Proof-of-concept userform picker to evaluate layout/width before full conversion.
-Public Sub TestWorkbookTypePickerUserForm()
+' UserForm picker preview for visual validation.
+Public Sub PreviewWorkbookTypePickerUserForm()
     Dim wb As Workbook
     Dim typeMap As Object
     Dim availableTypeIds As Collection
@@ -411,7 +537,7 @@ Public Sub TestWorkbookTypePickerUserForm()
     End If
 
     If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before running picker test.", vbExclamation, SYNC_DIALOG_TITLE
+        MsgBox "Select a regular workbook before running picker preview.", vbExclamation, SYNC_DIALOG_TITLE
         Exit Sub
     End If
 
@@ -430,14 +556,14 @@ Public Sub TestWorkbookTypePickerUserForm()
     Set typeMap = GetWorkbookTypeMap(wb)
     Set displayLines = New Collection
     Set ownerTypeIds = New Collection
-    BuildUserFormPickerPreview availableTypeIds, typeMap, displayLines, ownerTypeIds
+    BuildTypePickerTreeLines availableTypeIds, typeMap, displayLines, ownerTypeIds
 
     If displayLines.Count = 0 Then
         MsgBox "No .bas entries were found for available type IDs.", vbInformation, SYNC_DIALOG_TITLE
         Exit Sub
     End If
 
-    selectedIndex = ShowTypePickerTestUserForm(displayLines, ownerTypeIds, "Workbook Type Picker Test")
+    selectedIndex = ShowTypePickerPreviewUserForm(displayLines, ownerTypeIds, "Workbook Type Picker")
     If selectedIndex <= 0 Then Exit Sub
     If selectedIndex > ownerTypeIds.Count Then Exit Sub
 
@@ -448,6 +574,124 @@ Public Sub TestWorkbookTypePickerUserForm()
 End Sub
 
 Private Sub ShowReloadManagerCommandCenter()
+    Dim reason As String
+
+    If ShowReloadManagerUserFormCommandCenter(reason) Then Exit Sub
+
+    If Len(reason) > 0 Then
+        MsgBox "UserForm interface was unavailable. Falling back to legacy menu." & vbCrLf & _
+               "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
+    End If
+
+    ShowReloadManagerCommandCenterLegacy
+End Sub
+
+Private Function ShowReloadManagerUserFormCommandCenter(ByRef reason As String) As Boolean
+    Dim wb As Workbook
+    Dim availableTypeIds As Collection
+    Dim currentTypeMap As Object
+    Dim selectedTypeIds As Collection
+    Dim selectedTypeMap As Object
+    Dim typeId As Variant
+    Dim normalizedTypeId As String
+    Dim addedCount As Long
+    Dim removedCount As Long
+    Dim pickerAction As String
+
+    On Error GoTo Fail
+
+    Set wb = GetForegroundWorkbook()
+    If wb Is Nothing Then
+        reason = "No workbook is currently available."
+        Exit Function
+    End If
+
+    If IsAddInWorkbook(wb) Then
+        reason = "Select a regular workbook before managing workbook types."
+        Exit Function
+    End If
+
+    Set availableTypeIds = GetAvailableTypeIdsCollection()
+    If availableTypeIds.Count = 0 Then
+        MsgBox "No valid type IDs were found in local VBA sources." & vbCrLf & _
+               MSG_REQUEST_UPDATE, vbInformation, SYNC_DIALOG_TITLE
+        ShowReloadManagerUserFormCommandCenter = True
+        Exit Function
+    End If
+
+    Set currentTypeMap = GetWorkbookTypeMap(wb)
+    Set selectedTypeIds = PromptManageWorkbookTypeIdsUserForm(availableTypeIds, currentTypeMap, _
+                                                               "ReloadManager - Workbook Types", _
+                                                               "Check workbook types, then click Apply, Sync on drift, or Force sync.", _
+                                                               pickerAction)
+
+    If selectedTypeIds Is Nothing Then
+        ShowReloadManagerUserFormCommandCenter = True
+        Exit Function
+    End If
+
+    If StrComp(pickerAction, TYPE_PICKER_TAG_CANCEL, vbTextCompare) = 0 Then
+        ShowReloadManagerUserFormCommandCenter = True
+        Exit Function
+    End If
+
+    If selectedTypeIds.Count = 0 And currentTypeMap.count = 0 Then
+        If MsgBox("No workbook types were selected. Apply an empty assignment and continue?", _
+                  vbYesNo + vbQuestion, SYNC_DIALOG_TITLE) <> vbYes Then
+            ShowReloadManagerUserFormCommandCenter = True
+            Exit Function
+        End If
+    End If
+
+    If selectedTypeIds.Count = 0 And currentTypeMap.count > 0 Then
+        If MsgBox("No workbook types are checked. Clear all assigned workbook types?", _
+                  vbYesNo + vbQuestion, SYNC_DIALOG_TITLE) <> vbYes Then
+            ShowReloadManagerUserFormCommandCenter = True
+            Exit Function
+        End If
+    End If
+
+    Set selectedTypeMap = CreateObject("Scripting.Dictionary")
+    selectedTypeMap.CompareMode = vbTextCompare
+    For Each typeId In selectedTypeIds
+        normalizedTypeId = NormalizeTypeId(CStr(typeId))
+        If Len(normalizedTypeId) > 0 Then
+            selectedTypeMap(normalizedTypeId) = normalizedTypeId
+        End If
+    Next typeId
+
+    For Each typeId In selectedTypeMap.Keys
+        If Not currentTypeMap.Exists(CStr(typeId)) Then addedCount = addedCount + 1
+    Next typeId
+
+    For Each typeId In currentTypeMap.Keys
+        If Not selectedTypeMap.Exists(CStr(typeId)) Then removedCount = removedCount + 1
+    Next typeId
+
+    If addedCount > 0 Or removedCount > 0 Then
+        SaveWorkbookTypeMap wb, selectedTypeMap
+        MsgBox "Workbook type assignments updated." & vbCrLf & _
+               "Added: " & CStr(addedCount) & vbCrLf & _
+               "Removed: " & CStr(removedCount), vbInformation, SYNC_DIALOG_TITLE
+    Else
+        MsgBox "No workbook type changes were applied.", vbInformation, SYNC_DIALOG_TITLE
+    End If
+
+    Select Case UCase$(Trim$(pickerAction))
+        Case TYPE_PICKER_TAG_SYNC_DRIFT
+            SyncWorkbook wb, False, True
+        Case TYPE_PICKER_TAG_FORCE_SYNC
+            SyncWorkbook wb, True, False
+    End Select
+
+    ShowReloadManagerUserFormCommandCenter = True
+    Exit Function
+
+Fail:
+    reason = "UserForm workflow failed. Error " & CStr(Err.Number) & ": " & Err.Description
+End Function
+
+Private Sub ShowReloadManagerCommandCenterLegacy()
     Dim choice As String
     Dim menuText As String
 
@@ -478,19 +722,34 @@ End Sub
 Private Sub RunSyncForForegroundWorkbook(Optional ByVal Force As Boolean = False, _
                                          Optional ByVal PromptOnDrift As Boolean = True)
     Dim wb As Workbook
-    Set wb = GetForegroundWorkbook()
-
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available for sync.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-    If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before syncing.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
+    If Not TryGetForegroundWorkbookForTypes(wb, _
+                                            "No workbook is currently available for sync.", _
+                                            "Select a regular workbook before syncing.") Then Exit Sub
 
     SyncWorkbook wb, Force, PromptOnDrift
 End Sub
+
+Private Function TryGetForegroundWorkbookForTypes(ByRef wb As Workbook, _
+                                                  ByVal noWorkbookMessage As String, _
+                                                  ByVal addInMessage As String) As Boolean
+    Set wb = GetForegroundWorkbook()
+
+    If wb Is Nothing Then
+        If Len(noWorkbookMessage) > 0 Then
+            MsgBox noWorkbookMessage, vbExclamation, SYNC_DIALOG_TITLE
+        End If
+        Exit Function
+    End If
+
+    If IsAddInWorkbook(wb) Then
+        If Len(addInMessage) > 0 Then
+            MsgBox addInMessage, vbExclamation, SYNC_DIALOG_TITLE
+        End If
+        Exit Function
+    End If
+
+    TryGetForegroundWorkbookForTypes = True
+End Function
 
 Private Sub ShowActiveWorkbookTypeIds()
     Dim wb As Workbook
@@ -498,11 +757,9 @@ Private Sub ShowActiveWorkbookTypeIds()
     Dim summary As String
     Dim sorted() As String
 
-    Set wb = GetForegroundWorkbook()
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
+    If Not TryGetForegroundWorkbookForTypes(wb, _
+                                            "No workbook is currently available.", _
+                                            "Select a regular workbook before viewing assigned types.") Then Exit Sub
 
     Set typeMap = GetWorkbookTypeMap(wb)
     If Not typeMap Is Nothing Then
@@ -556,15 +813,9 @@ Private Sub AddActiveWorkbookTypeId()
     Dim availableTypeIds As Collection
     Dim addedCount As Long
 
-    Set wb = GetForegroundWorkbook()
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available to update types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-    If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before assigning types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
+    If Not TryGetForegroundWorkbookForTypes(wb, _
+                                            "No workbook is currently available to update types.", _
+                                            "Select a regular workbook before assigning types.") Then Exit Sub
 
     Set typeMap = GetWorkbookTypeMap(wb)
     Set availableTypeIds = GetAvailableTypeIdsCollection()
@@ -614,15 +865,9 @@ Private Sub RemoveActiveWorkbookTypeId()
     Dim normalizedTypeId As String
     Dim removedCount As Long
 
-    Set wb = GetForegroundWorkbook()
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available to update types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-    If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before updating types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
+    If Not TryGetForegroundWorkbookForTypes(wb, _
+                                            "No workbook is currently available to update types.", _
+                                            "Select a regular workbook before updating types.") Then Exit Sub
 
     Set typeMap = GetWorkbookTypeMap(wb)
     If typeMap.count = 0 Then
@@ -700,15 +945,9 @@ Private Sub ClearActiveWorkbookTypeIds()
     Dim wb As Workbook
     Dim typeMap As Object
 
-    Set wb = GetForegroundWorkbook()
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available to clear types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-    If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before clearing types.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
+    If Not TryGetForegroundWorkbookForTypes(wb, _
+                                            "No workbook is currently available to clear types.", _
+                                            "Select a regular workbook before clearing types.") Then Exit Sub
 
     Set typeMap = GetWorkbookTypeMap(wb)
     If typeMap.count = 0 Then
@@ -807,132 +1046,54 @@ SyncFail:
     Resume SyncExit
 End Sub
 
-
-Private Function PromptSelectAvailableTypeId(ByVal availableTypeIds As Collection, _
-                                             ByVal assignedTypeMap As Object) As String
-    Dim menuText As String
-    Dim userInput As String
-    Dim i As Long
-    Dim typeId As String
-    Dim selectedIndex As Long
-    Dim marker As String
-    Dim normalizedTypeId As String
-    Dim selectableTypeIds As Collection
-    Dim selectableEntryPaths As Collection
-    Dim basFiles As Collection
-    Dim basFile As Variant
-    Dim numberWidth As Long
-    Dim numberLabel As String
-    Dim parts() As String
-    Dim previousParts() As String
-    Dim hasPrevious As Boolean
-    Dim commonDepth As Long
-    Dim leafIndex As Long
-    Dim j As Long
-
-    Set selectableTypeIds = New Collection
-    Set selectableEntryPaths = New Collection
-
-    For i = 1 To availableTypeIds.Count
-        typeId = CStr(availableTypeIds(i))
-        normalizedTypeId = NormalizeTypeId(typeId)
-        Set basFiles = GetBasFileNamesInTypeSource(normalizedTypeId)
-        For Each basFile In basFiles
-            selectableTypeIds.Add normalizedTypeId
-            selectableEntryPaths.Add normalizedTypeId & Application.PathSeparator & CStr(basFile)
-        Next basFile
-    Next i
-
-    If selectableEntryPaths.Count = 0 Then Exit Function
-
-    menuText = "Add Workbook Type" & vbCrLf & String$(24, "=") & vbCrLf & vbCrLf
-    numberWidth = Len(CStr(selectableEntryPaths.Count))
-    If numberWidth < 2 Then numberWidth = 2
-
-    For i = 1 To selectableEntryPaths.Count
-        parts = Split(CStr(selectableEntryPaths(i)), Application.PathSeparator)
-        leafIndex = UBound(parts)
-
-        If hasPrevious Then
-            commonDepth = GetCommonFolderDepth(previousParts, parts)
-        Else
-            commonDepth = 0
-        End If
-
-        For j = commonDepth To leafIndex - 1
-            menuText = menuText & String$(j * 3, " ") & parts(j) & vbCrLf
-        Next j
-
-        If assignedTypeMap.Exists(CStr(selectableTypeIds(i))) Then
-            marker = "[Assigned]"
-        Else
-            marker = "[Available]"
-        End If
-
-        numberLabel = "[" & Right$(String$(numberWidth, " ") & CStr(i), numberWidth) & "]"
-        menuText = menuText & String$(leafIndex * 3, " ") & numberLabel & " " & parts(leafIndex) & " " & marker & vbCrLf
-
-        previousParts = parts
-        hasPrevious = True
-    Next i
-    menuText = menuText & vbCrLf & "Enter a number (or 0 to cancel)."
-
-    userInput = Trim$(InputBox(menuText, "Add Workbook Type", "0"))
-    If Len(userInput) = 0 Or userInput = "0" Then Exit Function
-    If Not IsNumeric(userInput) Then
-        MsgBox "Please enter a valid number.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Function
-    End If
-
-    selectedIndex = CLng(userInput)
-    If selectedIndex < 1 Or selectedIndex > selectableEntryPaths.Count Then
-        MsgBox "Selection out of range.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Function
-    End If
-
-    PromptSelectAvailableTypeId = CStr(selectableTypeIds(selectedIndex))
-End Function
-
 Private Function PromptSelectTypeIdsUserForm(ByVal typeIds As Collection, _
                                              ByVal formCaption As String, _
                                              ByVal infoText As String) As Collection
+    Set PromptSelectTypeIdsUserForm = PromptTypeIdsUserFormInternal(typeIds, Nothing, formCaption, infoText)
+End Function
+
+Private Function PromptManageWorkbookTypeIdsUserForm(ByVal availableTypeIds As Collection, _
+                                                    ByVal checkedTypeMap As Object, _
+                                                    ByVal formCaption As String, _
+                                                    ByVal infoText As String, _
+                                                    Optional ByRef selectedAction As String = "") As Collection
+    Set PromptManageWorkbookTypeIdsUserForm = PromptTypeIdsUserFormInternal(availableTypeIds, checkedTypeMap, _
+                                                                           formCaption, infoText, True, selectedAction)
+End Function
+
+Private Function PromptTypeIdsUserFormInternal(ByVal sourceTypeIds As Collection, _
+                                               ByVal checkedTypeMap As Object, _
+                                               ByVal formCaption As String, _
+                                               ByVal infoText As String, _
+                                               Optional ByVal showSyncButtons As Boolean = False, _
+                                               Optional ByRef selectedAction As String = "") As Collection
     Dim displayLines As Collection
     Dim ownerTypeIds As Collection
-    Dim uncheckedTypeMap As Object
     Dim selectedTypeIds As Collection
 
     Set selectedTypeIds = New Collection
-    If typeIds Is Nothing Then
-        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+    If sourceTypeIds Is Nothing Then
+        Set PromptTypeIdsUserFormInternal = selectedTypeIds
         Exit Function
     End If
-    If typeIds.Count = 0 Then
-        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+    If sourceTypeIds.Count = 0 Then
+        Set PromptTypeIdsUserFormInternal = selectedTypeIds
         Exit Function
     End If
 
     Set displayLines = New Collection
     Set ownerTypeIds = New Collection
-    Set uncheckedTypeMap = CreateObject("Scripting.Dictionary")
-    uncheckedTypeMap.CompareMode = vbTextCompare
-
-    BuildTypePickerTreeLines typeIds, uncheckedTypeMap, displayLines, ownerTypeIds
+    BuildTypePickerTreeLines sourceTypeIds, checkedTypeMap, displayLines, ownerTypeIds
 
     If displayLines.Count = 0 Then
-        Set PromptSelectTypeIdsUserForm = selectedTypeIds
+        Set PromptTypeIdsUserFormInternal = selectedTypeIds
         Exit Function
     End If
 
-    Set selectedTypeIds = ShowTypePickerCheckedTypeIdsUserForm(displayLines, ownerTypeIds, formCaption, infoText)
-    Set PromptSelectTypeIdsUserForm = selectedTypeIds
+    Set selectedTypeIds = ShowTypePickerCheckedTypeIdsUserForm(displayLines, ownerTypeIds, _
+                                                               formCaption, infoText, showSyncButtons, selectedAction)
+    Set PromptTypeIdsUserFormInternal = selectedTypeIds
 End Function
-
-Private Sub BuildUserFormPickerPreview(ByVal availableTypeIds As Collection, _
-                                       ByVal assignedTypeMap As Object, _
-                                       ByRef displayLines As Collection, _
-                                       ByRef ownerTypeIds As Collection)
-    BuildTypePickerTreeLines availableTypeIds, assignedTypeMap, displayLines, ownerTypeIds
-End Sub
 
 Private Sub BuildTypePickerTreeLines(ByVal typeIds As Collection, _
                                      ByVal checkedTypeMap As Object, _
@@ -960,13 +1121,13 @@ Private Sub BuildTypePickerTreeLines(ByVal typeIds As Collection, _
         leafIndex = UBound(parts)
 
         If hasPrevious Then
-            commonDepth = GetCommonFolderDepth(previousParts, parts)
+            commonDepth = GetCommonFolderDepth(previousParts, parts, True)
         Else
             commonDepth = 0
         End If
 
         For j = commonDepth To leafIndex
-            displayLines.Add String$(j * 2, " ") & parts(j)
+            displayLines.Add String$(j * TP_INDENT_SPACES_PER_LEVEL_INTERNAL, " ") & parts(j)
             ownerTypeIds.Add vbNullString
         Next j
 
@@ -979,7 +1140,7 @@ Private Sub BuildTypePickerTreeLines(ByVal typeIds As Collection, _
         End If
 
         For Each basFile In basFiles
-            displayLines.Add String$((leafIndex + 1) * 2, " ") & marker & " " & CStr(basFile)
+            displayLines.Add String$((leafIndex + 1) * TP_INDENT_SPACES_PER_LEVEL_INTERNAL, " ") & marker & " " & CStr(basFile)
             ownerTypeIds.Add normalizedTypeId
         Next basFile
 
@@ -989,29 +1150,28 @@ NextType:
     Next i
 End Sub
 
-Private Function ShowTypePickerTestUserForm(ByVal displayLines As Collection, _
+Private Function ShowTypePickerPreviewUserForm(ByVal displayLines As Collection, _
                                             ByVal ownerTypeIds As Collection, _
                                             ByVal formCaption As String) As Long
     Dim vbComp As Object
     Dim frm As Object
     Dim entriesHost As Object
     Dim lbl As Object
+    Dim btnOk As Object
+    Dim btnSyncDrift As Object
+    Dim btnForceSync As Object
+    Dim layoutPlan As Collection
+    Dim layoutContentHeight As Double
     Dim reason As String
     Dim stage As String
 
     On Error GoTo Fail
 
-    stage = "EnsureTypePickerTestFormComponent"
-    Set vbComp = EnsureTypePickerTestFormComponent(ThisWorkbook, reason)
+    stage = "EnsureTypePickerFormComponent"
+    Set vbComp = EnsureTypePickerFormComponent(ThisWorkbook, reason)
     If vbComp Is Nothing Then
-        MsgBox "Unable to open test userform." & vbCrLf & _
-               "Reason: " & reason & vbCrLf & vbCrLf & _
-               "Fallback: create a manual UserForm named '" & TEST_PICKER_FORM_NAME & _
-               "' in the Global_CNL VBA project with controls:" & vbCrLf & _
-               "- " & TEST_PICKER_INFO_NAME & " (Label)" & vbCrLf & _
-             "- " & TEST_PICKER_LIST_NAME & " (Frame)" & vbCrLf & _
-               "- " & TEST_PICKER_OK_NAME & " (CommandButton)" & vbCrLf & _
-               "- " & TEST_PICKER_CANCEL_NAME & " (CommandButton)", vbExclamation, SYNC_DIALOG_TITLE
+        MsgBox "Unable to open type picker userform." & vbCrLf & _
+                             "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
         Exit Function
     End If
 
@@ -1021,31 +1181,46 @@ Private Function ShowTypePickerTestUserForm(ByVal displayLines As Collection, _
     frm.Tag = "0"
 
     stage = "Find info label"
-    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
-    If lbl Is Nothing Then Err.Raise vbObjectError + 8101, "ReloadManager.ShowTypePickerTestUserForm", _
-                                    "Missing control: " & TEST_PICKER_INFO_NAME
-    lbl.Caption = "Select .bas entries using checkboxes. Folder rows are context only."
+    Set lbl = GetFormControlByName(frm, TYPE_PICKER_INFO_NAME)
+    If lbl Is Nothing Then Err.Raise vbObjectError + 8101, "ReloadManager.ShowTypePickerPreviewUserForm", _
+                                    "Missing control: " & TYPE_PICKER_INFO_NAME
+    ResetTypePickerInfoLabel lbl
 
     stage = "Find entries host"
-    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
-    If entriesHost Is Nothing Then Err.Raise vbObjectError + 8102, "ReloadManager.ShowTypePickerTestUserForm", _
-                                    "Missing control: " & TEST_PICKER_LIST_NAME
+    Set entriesHost = GetFormControlByName(frm, TYPE_PICKER_LIST_NAME)
+    If entriesHost Is Nothing Then Err.Raise vbObjectError + 8102, "ReloadManager.ShowTypePickerPreviewUserForm", _
+                                    "Missing control: " & TYPE_PICKER_LIST_NAME
+    If StrComp(TypeName(entriesHost), "Frame", vbTextCompare) <> 0 Then _
+        Err.Raise vbObjectError + 8103, "ReloadManager.ShowTypePickerPreviewUserForm", _
+                  "Control '" & TYPE_PICKER_LIST_NAME & "' must be a Frame for checkbox rendering."
+    ApplyTypePickerEntriesHostStyle entriesHost
+
+    stage = "Configure action buttons"
+    Set btnOk = GetFormControlByName(frm, TYPE_PICKER_OK_NAME)
+    Set btnSyncDrift = GetFormControlByName(frm, TYPE_PICKER_SYNC_DRIFT_NAME)
+    Set btnForceSync = GetFormControlByName(frm, TYPE_PICKER_FORCE_SYNC_NAME)
+    If Not btnOk Is Nothing Then TrySetObjectProperty btnOk, "Caption", "OK"
+    If Not btnSyncDrift Is Nothing Then TrySetObjectProperty btnSyncDrift, "Visible", False
+    If Not btnForceSync Is Nothing Then TrySetObjectProperty btnForceSync, "Visible", False
+
+    stage = "Build layout plan"
+    Set layoutPlan = BuildTypePickerLayoutPlan(displayLines, ownerTypeIds, 0, layoutContentHeight)
 
     stage = "AutoSize form"
-    AutoSizeTypePickerTestForm frm, displayLines
+    AutoSizeTypePickerForm frm, displayLines, layoutPlan, layoutContentHeight
 
     stage = "Build checkbox entries"
-    PopulateTypePickerChecklist entriesHost, displayLines, ownerTypeIds
+    PopulateTypePickerChecklist entriesHost, layoutPlan, layoutContentHeight
 
     stage = "Show form"
     frm.Show vbModal
 
     stage = "Read selection"
     On Error Resume Next
-    If StrComp(CStr(frm.Tag), "OK", vbTextCompare) = 0 Then
-        ShowTypePickerTestUserForm = GetFirstCheckedChecklistLineIndex(entriesHost, ownerTypeIds)
+    If StrComp(CStr(frm.Tag), TYPE_PICKER_TAG_OK, vbTextCompare) = 0 Then
+        ShowTypePickerPreviewUserForm = GetFirstCheckedChecklistLineIndex(entriesHost, ownerTypeIds)
     ElseIf Len(CStr(frm.Tag)) > 0 And IsNumeric(CStr(frm.Tag)) Then
-        ShowTypePickerTestUserForm = CLng(Val(CStr(frm.Tag)))
+        ShowTypePickerPreviewUserForm = CLng(Val(CStr(frm.Tag)))
     End If
     Err.Clear
     On Error GoTo Fail
@@ -1059,7 +1234,7 @@ Private Function ShowTypePickerTestUserForm(ByVal displayLines As Collection, _
     Exit Function
 
 Fail:
-    MsgBox "UserForm test failed at stage: " & stage & vbCrLf & _
+    MsgBox "UserForm failed at stage: " & stage & vbCrLf & _
            "Error " & CStr(Err.Number) & ": " & Err.Description, vbExclamation, SYNC_DIALOG_TITLE
     On Error Resume Next
     If Not frm Is Nothing Then Unload frm
@@ -1068,19 +1243,26 @@ End Function
 Private Function ShowTypePickerCheckedTypeIdsUserForm(ByVal displayLines As Collection, _
                                                       ByVal ownerTypeIds As Collection, _
                                                       ByVal formCaption As String, _
-                                                      ByVal infoText As String) As Collection
+                                                      ByVal infoText As String, _
+                                                      Optional ByVal showSyncButtons As Boolean = False, _
+                                                      Optional ByRef selectedAction As String = "") As Collection
     Dim vbComp As Object
     Dim frm As Object
     Dim entriesHost As Object
     Dim lbl As Object
+    Dim btnOk As Object
+    Dim btnSyncDrift As Object
+    Dim btnForceSync As Object
+    Dim layoutPlan As Collection
+    Dim layoutContentHeight As Double
     Dim reason As String
     Dim stage As String
     Dim selectedTypeIds As New Collection
 
     On Error GoTo Fail
 
-    stage = "EnsureTypePickerTestFormComponent"
-    Set vbComp = EnsureTypePickerTestFormComponent(ThisWorkbook, reason)
+    stage = "EnsureTypePickerFormComponent"
+    Set vbComp = EnsureTypePickerFormComponent(ThisWorkbook, reason)
     If vbComp Is Nothing Then
         MsgBox "Unable to open type picker." & vbCrLf & _
                "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
@@ -1091,30 +1273,58 @@ Private Function ShowTypePickerCheckedTypeIdsUserForm(ByVal displayLines As Coll
     stage = "UserForms.Add"
     Set frm = VBA.UserForms.Add(vbComp.Name)
     frm.Caption = formCaption
-    frm.Tag = "0"
+    frm.Tag = TYPE_PICKER_TAG_CANCEL
 
     stage = "Find info label"
-    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
+    Set lbl = GetFormControlByName(frm, TYPE_PICKER_INFO_NAME)
     If lbl Is Nothing Then Err.Raise vbObjectError + 8111, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
-                                    "Missing control: " & TEST_PICKER_INFO_NAME
-    lbl.Caption = infoText
+                                    "Missing control: " & TYPE_PICKER_INFO_NAME
+    ' Keep popup body text empty; title bar already identifies the dialog.
+    ResetTypePickerInfoLabel lbl
 
     stage = "Find entries host"
-    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
+    Set entriesHost = GetFormControlByName(frm, TYPE_PICKER_LIST_NAME)
     If entriesHost Is Nothing Then Err.Raise vbObjectError + 8112, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
-                                    "Missing control: " & TEST_PICKER_LIST_NAME
+                                    "Missing control: " & TYPE_PICKER_LIST_NAME
+    If StrComp(TypeName(entriesHost), "Frame", vbTextCompare) <> 0 Then _
+        Err.Raise vbObjectError + 8113, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
+                  "Control '" & TYPE_PICKER_LIST_NAME & "' must be a Frame for checkbox rendering."
+    ApplyTypePickerEntriesHostStyle entriesHost
+
+    stage = "Configure action buttons"
+    Set btnOk = GetFormControlByName(frm, TYPE_PICKER_OK_NAME)
+    Set btnSyncDrift = GetFormControlByName(frm, TYPE_PICKER_SYNC_DRIFT_NAME)
+    Set btnForceSync = GetFormControlByName(frm, TYPE_PICKER_FORCE_SYNC_NAME)
+    If btnOk Is Nothing Then Err.Raise vbObjectError + 8114, "ReloadManager.ShowTypePickerCheckedTypeIdsUserForm", _
+                                      "Missing control: " & TYPE_PICKER_OK_NAME
+    If showSyncButtons Then
+        TrySetObjectProperty btnOk, "Caption", "Apply"
+    Else
+        TrySetObjectProperty btnOk, "Caption", "OK"
+    End If
+    If Not btnSyncDrift Is Nothing Then
+        TrySetObjectProperty btnSyncDrift, "Visible", showSyncButtons
+    End If
+    If Not btnForceSync Is Nothing Then
+        TrySetObjectProperty btnForceSync, "Visible", showSyncButtons
+    End If
+
+    stage = "Build layout plan"
+    Set layoutPlan = BuildTypePickerLayoutPlan(displayLines, ownerTypeIds, 0, layoutContentHeight)
 
     stage = "AutoSize form"
-    AutoSizeTypePickerTestForm frm, displayLines
+    AutoSizeTypePickerForm frm, displayLines, layoutPlan, layoutContentHeight
 
     stage = "Build checkbox entries"
-    PopulateTypePickerChecklist entriesHost, displayLines, ownerTypeIds
+    PopulateTypePickerChecklist entriesHost, layoutPlan, layoutContentHeight
 
     stage = "Show form"
     frm.Show vbModal
 
+    selectedAction = CStr(frm.Tag)
+
     stage = "Collect checked selections"
-    If StrComp(CStr(frm.Tag), "OK", vbTextCompare) = 0 Then
+    If IsTypePickerAcceptTag(CStr(frm.Tag)) Then
         CollectCheckedTypeIdsFromChecklist entriesHost, ownerTypeIds, selectedTypeIds
     End If
 
@@ -1137,70 +1347,482 @@ Fail:
 End Function
 
 Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
-                                        ByVal displayLines As Collection, _
-                                        ByVal ownerTypeIds As Collection)
-    Dim i As Long
+                                        ByVal layoutPlan As Collection, _
+                                        ByVal layoutContentHeight As Double)
+    Dim rowCursor As Long
+    Dim rowIndex As Long
+    Dim rowInfo As Variant
     Dim lineText As String
-    Dim ownerTypeId As String
-    Dim indentChars As Long
     Dim captionText As String
     Dim rowTop As Double
-    Dim rowHeight As Double
+    Dim rowStep As Double
     Dim maxWidth As Double
     Dim offsetLeft As Double
+    Dim ctlWidth As Double
     Dim ctl As Object
+    Dim lblText As Object
+    Dim depthLevel As Long
+    Dim fontSize As Double
+    Dim rowControlHeight As Double
+    Dim checkboxFontHeight As Double
+    Dim checkboxWidth As Double
+    Dim checkboxHeight As Double
+    Dim checkboxRowSize As Double
+    Dim checkboxTop As Double
+    Dim checkboxBottom As Double
+    Dim checkboxLeft As Double
+    Dim textTop As Double
+    Dim rowBottom As Double
+    Dim textControlHeight As Double
+    Dim textLeft As Double
+    Dim textWidth As Double
+    Dim debugEnabled As Boolean
+    Dim debugLines As Collection
+    Dim actualTextFont As Double
+    Dim actualCheckboxFont As Double
+    Dim actualTextFontName As String
+    Dim actualCheckboxFontName As String
+    Dim isCheckRow As Boolean
+    Dim textLineForDebug As String
+    Dim viewportWidth As Double
+    Dim viewportHeight As Double
+    Dim scrollHeight As Double
+    Dim checkboxHitWidth As Double
 
     If entriesHost Is Nothing Then Exit Sub
 
     ClearTypePickerDynamicControls entriesHost
 
-    rowTop = 4
-    rowHeight = 18
-    maxWidth = CDbl(entriesHost.Width) - 16
-    If maxWidth < 120 Then maxWidth = 120
+    If layoutContentHeight <= 0 Then layoutContentHeight = TP_LIST_TOP_PADDING + TP_LIST_SCROLL_EXTRA
 
-    For i = 1 To displayLines.Count
-        lineText = CStr(displayLines(i))
-        ownerTypeId = ""
-        If Not ownerTypeIds Is Nothing Then
-            If i <= ownerTypeIds.Count Then
-                ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(i)))
+    viewportWidth = GetControlInsideWidth(entriesHost)
+    maxWidth = viewportWidth - TP_LIST_RIGHT_PADDING
+    If maxWidth < TP_LIST_MIN_CONTROL_WIDTH Then maxWidth = TP_LIST_MIN_CONTROL_WIDTH
+    checkboxFontHeight = GetFileCheckboxFontHeight()
+    checkboxHeight = ComputeControlHeightFromFontHeight(checkboxFontHeight, 0)
+    If checkboxHeight < 6 Then checkboxHeight = 6
+    checkboxWidth = checkboxHeight
+    debugEnabled = TP_DEBUG_ENABLE_ROW_REPORT
+    If debugEnabled Then
+        Set debugLines = New Collection
+        debugLines.Add "TypePicker Row Debug Report"
+        debugLines.Add "Timestamp: " & Format$(Now, "yyyy-mm-dd HH:NN:SS")
+        debugLines.Add "TP_FILE_FONT_HEIGHT=" & CStr(TP_FILE_FONT_HEIGHT) & _
+                       " | TP_FILE_FONT_ADDITIONAL_HEIGHT=" & CStr(TP_FILE_FONT_ADDITIONAL_HEIGHT) & _
+                       " | TP_FILE_ROW_ADDITIONAL_SPACING=" & CStr(TP_FILE_ROW_ADDITIONAL_SPACING) & _
+                       " | TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS=" & CStr(TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS) & _
+                       " | TP_FILE_CHECKBOX_BOTTOM_OFFSET=" & CStr(TP_FILE_CHECKBOX_BOTTOM_OFFSET)
+        debugLines.Add String$(100, "-")
+    End If
+
+    If Not layoutPlan Is Nothing Then
+        For rowCursor = 1 To layoutPlan.Count
+            rowInfo = layoutPlan.Item(rowCursor)
+            rowIndex = CLng(rowInfo(0))
+            isCheckRow = CBool(rowInfo(1))
+            depthLevel = CLng(rowInfo(2))
+            rowTop = CDbl(rowInfo(3))
+            rowStep = CDbl(rowInfo(4))
+            rowControlHeight = CDbl(rowInfo(5))
+            captionText = CStr(rowInfo(6))
+            lineText = CStr(rowInfo(7))
+            textLineForDebug = captionText
+
+        offsetLeft = TP_LIST_BASE_LEFT + (depthLevel * TP_INDENT_PIXELS_PER_LEVEL)
+        ctlWidth = maxWidth - (depthLevel * TP_INDENT_PIXELS_PER_LEVEL)
+        If ctlWidth < TP_LIST_MIN_CONTROL_WIDTH Then ctlWidth = TP_LIST_MIN_CONTROL_WIDTH
+
+            If isCheckRow Then
+                fontSize = TP_FILE_FONT_HEIGHT
+                textControlHeight = rowControlHeight
+                textTop = rowTop
+                rowBottom = rowTop + rowStep
+
+                checkboxRowSize = checkboxHeight
+                If rowStep > 6 Then
+                    If checkboxRowSize >= rowStep Then checkboxRowSize = rowStep - 1
+                End If
+                If checkboxRowSize < 6 Then checkboxRowSize = 6
+
+                checkboxWidth = checkboxRowSize
+                checkboxBottom = rowBottom - TP_FILE_ROW_ADDITIONAL_SPACING - TP_FILE_CHECKBOX_BOTTOM_OFFSET
+                checkboxTop = checkboxBottom - checkboxRowSize
+                checkboxLeft = offsetLeft
+
+                textLeft = checkboxLeft + checkboxWidth + TP_FOLDER_LABEL_LEFT_NUDGE
+                textWidth = ctlWidth - (checkboxWidth + TP_FOLDER_LABEL_LEFT_NUDGE)
+                If textWidth < 8 Then textWidth = 8
+                checkboxHitWidth = ctlWidth
+                If checkboxHitWidth < checkboxWidth Then checkboxHitWidth = checkboxWidth
+
+                Set ctl = entriesHost.Controls.Add("Forms.CheckBox.1", "chkEntry_" & CStr(rowIndex), True)
+                ApplyUniformControlFontSize ctl, checkboxFontHeight
+                TrySetObjectProperty ctl, "Caption", vbNullString
+                TrySetObjectProperty ctl, "Value", IsChecklistLineChecked(lineText)
+                TrySetObjectProperty ctl, "Tag", CStr(rowIndex)
+                TrySetObjectProperty ctl, "Left", checkboxLeft
+                TrySetObjectProperty ctl, "Top", checkboxTop
+                TrySetObjectProperty ctl, "Width", checkboxWidth
+                TrySetObjectProperty ctl, "Height", checkboxRowSize
+
+                Set lblText = entriesHost.Controls.Add("Forms.Label.1", "lblCheckText_" & CStr(rowIndex), True)
+                ApplyUniformControlFontSize lblText, fontSize
+                TrySetObjectProperty lblText, "Caption", captionText
+                TrySetObjectProperty lblText, "Left", textLeft
+                TrySetObjectProperty lblText, "Top", textTop
+                TrySetObjectProperty lblText, "Width", textWidth
+                TrySetObjectProperty lblText, "Height", textControlHeight
+                TrySetObjectProperty lblText, "WordWrap", False
+                TrySetObjectProperty lblText, "AutoSize", False
+                TrySetObjectProperty lblText, "BackStyle", 0
+
+                ' Keep glyph placement unchanged, but make the checkbox clickable across the row text.
+                TrySetObjectProperty ctl, "BackStyle", 0
+                TrySetObjectProperty ctl, "Width", checkboxHitWidth
+                On Error Resume Next
+                CallByName ctl, "ZOrder", VbMethod, 0
+                Err.Clear
+                On Error GoTo 0
+
+                If debugEnabled Then
+                    actualTextFont = GetControlFontSize(lblText)
+                    actualCheckboxFont = GetControlFontSize(ctl)
+                    actualTextFontName = GetControlFontName(lblText)
+                    actualCheckboxFontName = GetControlFontName(ctl)
+                    debugLines.Add "Row " & CStr(rowIndex) & " | FILE | text='" & Replace(captionText, "'", "''") & _
+                                   "' | intendedTextFont=" & CStr(fontSize) & _
+                                   " | actualTextFont=" & CStr(actualTextFont) & _
+                                   " | actualTextFontName=" & actualTextFontName & _
+                                   " | intendedCheckboxFont=" & CStr(checkboxFontHeight) & _
+                                   " | actualCheckboxFont=" & CStr(actualCheckboxFont) & _
+                                   " | actualCheckboxFontName=" & actualCheckboxFontName & _
+                                   " | rowTop=" & CStr(rowTop) & _
+                                   " | rowStep=" & CStr(rowStep) & _
+                                   " | textTop=" & CStr(textTop) & _
+                                   " | textHeight=" & CStr(textControlHeight) & _
+                                   " | checkboxTop=" & CStr(checkboxTop) & _
+                                   " | checkboxHeight=" & CStr(checkboxRowSize)
+                End If
+            Else
+                fontSize = GetFolderFontHeightByDepth(depthLevel)
+
+                Set ctl = entriesHost.Controls.Add("Forms.Label.1", "lblEntry_" & CStr(rowIndex), True)
+                ApplyUniformControlFontSize ctl, fontSize
+                TrySetObjectProperty ctl, "Caption", captionText
+                TrySetObjectProperty ctl, "Left", offsetLeft + TP_FOLDER_LABEL_LEFT_NUDGE
+                TrySetObjectProperty ctl, "Top", rowTop
+                TrySetObjectProperty ctl, "Width", ctlWidth
+                TrySetObjectProperty ctl, "Height", rowControlHeight
+                TrySetObjectProperty ctl, "WordWrap", False
+                TrySetObjectProperty ctl, "AutoSize", False
+
+                If debugEnabled Then
+                    actualTextFont = GetControlFontSize(ctl)
+                    actualTextFontName = GetControlFontName(ctl)
+                    debugLines.Add "Row " & CStr(rowIndex) & " | FOLDER | text='" & Replace(textLineForDebug, "'", "''") & _
+                                   "' | intendedFont=" & CStr(fontSize) & _
+                                   " | actualFont=" & CStr(actualTextFont) & _
+                                   " | actualFontName=" & actualTextFontName & _
+                                   " | rowTop=" & CStr(rowTop) & _
+                                   " | rowStep=" & CStr(rowStep) & _
+                                   " | rowHeight=" & CStr(rowControlHeight)
+                End If
             End If
-        End If
-
-        indentChars = CountLeadingSpaces(lineText)
-        offsetLeft = 6 + (indentChars * 3)
-        captionText = StripChecklistMarker(LTrim$(lineText))
-
-        If Len(ownerTypeId) > 0 Then
-            Set ctl = entriesHost.Controls.Add("Forms.CheckBox.1", "chkEntry_" & CStr(i), True)
-            TrySetObjectProperty ctl, "Caption", captionText
-            TrySetObjectProperty ctl, "Value", IsChecklistLineChecked(lineText)
-            TrySetObjectProperty ctl, "Tag", CStr(i)
-            TrySetObjectProperty ctl, "Left", offsetLeft
-            TrySetObjectProperty ctl, "Top", rowTop
-            TrySetObjectProperty ctl, "Width", maxWidth - (indentChars * 3)
-            TrySetObjectProperty ctl, "Height", 16
-        Else
-            Set ctl = entriesHost.Controls.Add("Forms.Label.1", "lblEntry_" & CStr(i), True)
-            TrySetObjectProperty ctl, "Caption", LTrim$(lineText)
-            TrySetObjectProperty ctl, "Left", offsetLeft + 2
-            TrySetObjectProperty ctl, "Top", rowTop + 1
-            TrySetObjectProperty ctl, "Width", maxWidth - (indentChars * 3)
-            TrySetObjectProperty ctl, "Height", 15
-        End If
-
-        rowTop = rowTop + rowHeight
-    Next i
+        Next rowCursor
+    End If
 
     TrySetObjectProperty entriesHost, "ScrollBars", 2
-    TrySetObjectProperty entriesHost, "KeepScrollBarsVisible", 2
-    TrySetObjectProperty entriesHost, "ScrollHeight", rowTop + 4
-    TrySetObjectProperty entriesHost, "ScrollWidth", CDbl(entriesHost.Width)
+    TrySetObjectProperty entriesHost, "KeepScrollBarsVisible", 0
+    viewportHeight = GetControlInsideHeight(entriesHost)
+    scrollHeight = layoutContentHeight
+    If scrollHeight < viewportHeight Then scrollHeight = viewportHeight
+    TrySetObjectProperty entriesHost, "ScrollHeight", scrollHeight
+    TrySetObjectProperty entriesHost, "ScrollWidth", viewportWidth
     On Error Resume Next
     entriesHost.ScrollTop = 0
     On Error GoTo 0
+
+    If debugEnabled Then
+        WriteTypePickerRowDebugReport debugLines
+    End If
 End Sub
+
+Private Sub ApplyUniformControlFontSize(ByVal ctl As Object, ByVal fontSize As Double)
+    Dim fnt As Object
+
+    If ctl Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    Set fnt = CallByName(ctl, "Font", VbGet)
+    If Not fnt Is Nothing Then
+        CallByName fnt, "Name", VbLet, TP_UI_FONT_NAME
+        CallByName fnt, "Size", VbLet, fontSize
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Function GetControlFontSize(ByVal ctl As Object) As Double
+    Dim fnt As Object
+
+    If ctl Is Nothing Then
+        GetControlFontSize = -1
+        Exit Function
+    End If
+
+    On Error Resume Next
+    Set fnt = CallByName(ctl, "Font", VbGet)
+    If Not fnt Is Nothing Then
+        GetControlFontSize = CDbl(CallByName(fnt, "Size", VbGet))
+    Else
+        GetControlFontSize = -1
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetControlFontName(ByVal ctl As Object) As String
+    Dim fnt As Object
+
+    If ctl Is Nothing Then Exit Function
+
+    On Error Resume Next
+    Set fnt = CallByName(ctl, "Font", VbGet)
+    If Not fnt Is Nothing Then
+        GetControlFontName = CStr(CallByName(fnt, "Name", VbGet))
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Sub WriteTypePickerRowDebugReport(ByVal debugLines As Collection)
+    Dim outputPath As String
+    Dim lineItem As Variant
+    Dim fileHandle As Integer
+
+    If debugLines Is Nothing Then Exit Sub
+    If debugLines.Count = 0 Then Exit Sub
+
+    outputPath = GetTypePickerRowDebugReportPath()
+    If Len(outputPath) = 0 Then Exit Sub
+
+    On Error GoTo Fail
+    fileHandle = FreeFile
+    Open outputPath For Output As #fileHandle
+    For Each lineItem In debugLines
+        Print #fileHandle, CStr(lineItem)
+    Next lineItem
+    Close #fileHandle
+
+    MsgBox "Type picker debug report written to:" & vbCrLf & outputPath, vbInformation, SYNC_DIALOG_TITLE
+    Exit Sub
+
+Fail:
+    On Error Resume Next
+    If fileHandle <> 0 Then Close #fileHandle
+    On Error GoTo 0
+End Sub
+
+Private Function GetTypePickerRowDebugReportPath() As String
+    Dim tempPath As String
+
+    tempPath = Environ$("TEMP")
+    If Len(tempPath) = 0 Then tempPath = ThisWorkbook.Path
+    If Len(tempPath) = 0 Then Exit Function
+
+    GetTypePickerRowDebugReportPath = EnsureTrailingPathSeparator(tempPath) & _
+                                      "TypePicker_RowDebug_" & Format$(Now, "yyyymmdd_HHNNSS") & ".txt"
+End Function
+
+Private Function GetHierarchyDepthFromIndent(ByVal indentChars As Long) As Long
+    If TP_INDENT_SPACES_PER_LEVEL_INTERNAL <= 0 Then
+        GetHierarchyDepthFromIndent = 0
+    Else
+        GetHierarchyDepthFromIndent = indentChars \ TP_INDENT_SPACES_PER_LEVEL_INTERNAL
+    End If
+End Function
+
+Private Function GetFolderFontHeightByDepth(ByVal depthLevel As Long) As Double
+    Select Case depthLevel
+        Case 0
+            GetFolderFontHeightByDepth = TP_FOLDER_FONT_HEIGHT_L0
+        Case 1
+            GetFolderFontHeightByDepth = TP_FOLDER_FONT_HEIGHT_L1
+        Case 2
+            GetFolderFontHeightByDepth = TP_FOLDER_FONT_HEIGHT_L2
+        Case 3
+            GetFolderFontHeightByDepth = TP_FOLDER_FONT_HEIGHT_L3
+        Case Else
+            GetFolderFontHeightByDepth = TP_FOLDER_FONT_HEIGHT_DEFAULT
+    End Select
+End Function
+
+Private Function GetFolderFontAdditionalHeightByDepth(ByVal depthLevel As Long) As Double
+    Select Case depthLevel
+        Case 0
+            GetFolderFontAdditionalHeightByDepth = TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L0
+        Case 1
+            GetFolderFontAdditionalHeightByDepth = TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L1
+        Case 2
+            GetFolderFontAdditionalHeightByDepth = TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L2
+        Case 3
+            GetFolderFontAdditionalHeightByDepth = TP_FOLDER_FONT_ADDITIONAL_HEIGHT_L3
+        Case Else
+            GetFolderFontAdditionalHeightByDepth = TP_FOLDER_FONT_ADDITIONAL_HEIGHT_DEFAULT
+    End Select
+End Function
+
+Private Function GetFolderRowAdditionalSpacingByDepth(ByVal depthLevel As Long) As Double
+    Select Case depthLevel
+        Case 0
+            GetFolderRowAdditionalSpacingByDepth = TP_FOLDER_ROW_ADDITIONAL_SPACING_L0
+        Case 1
+            GetFolderRowAdditionalSpacingByDepth = TP_FOLDER_ROW_ADDITIONAL_SPACING_L1
+        Case 2
+            GetFolderRowAdditionalSpacingByDepth = TP_FOLDER_ROW_ADDITIONAL_SPACING_L2
+        Case 3
+            GetFolderRowAdditionalSpacingByDepth = TP_FOLDER_ROW_ADDITIONAL_SPACING_L3
+        Case Else
+            GetFolderRowAdditionalSpacingByDepth = TP_FOLDER_ROW_ADDITIONAL_SPACING_DEFAULT
+    End Select
+End Function
+
+Private Function ComputeControlHeightFromFontHeight(ByVal fontHeight As Double, ByVal additionalHeight As Double) As Double
+    ComputeControlHeightFromFontHeight = fontHeight + additionalHeight
+    If ComputeControlHeightFromFontHeight < fontHeight Then
+        ComputeControlHeightFromFontHeight = fontHeight
+    End If
+End Function
+
+Private Function ComputeRowStepFromControlHeight(ByVal controlHeight As Double, _
+                                                 ByVal rowStepAdd As Double) As Double
+    ComputeRowStepFromControlHeight = controlHeight + rowStepAdd
+
+    ' Keep rows contiguous by default; extra spacing should come from rowStepAdd.
+    If ComputeRowStepFromControlHeight < controlHeight Then
+        ComputeRowStepFromControlHeight = controlHeight
+    End If
+End Function
+
+Private Function GetFileCheckboxFontHeight() As Double
+    GetFileCheckboxFontHeight = TP_FILE_FONT_HEIGHT - TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS
+    If GetFileCheckboxFontHeight < 6 Then
+        GetFileCheckboxFontHeight = 6
+    End If
+End Function
+
+Private Function BuildTypePickerLayoutPlan(ByVal displayLines As Collection, _
+                                           ByVal ownerTypeIds As Collection, _
+                                           ByVal maxVisibleRows As Long, _
+                                           ByRef contentHeight As Double) As Collection
+    Dim results As New Collection
+    Dim i As Long
+    Dim lineText As String
+    Dim captionText As String
+    Dim indentChars As Long
+    Dim depthLevel As Long
+    Dim isCheckRow As Boolean
+    Dim previousWasCheckRow As Boolean
+    Dim rowTop As Double
+    Dim rowControlHeight As Double
+    Dim rowStep As Double
+    Dim rowInfo As Variant
+
+    rowTop = TP_LIST_TOP_PADDING
+
+    If displayLines Is Nothing Then
+        contentHeight = rowTop + TP_LIST_SCROLL_EXTRA
+        Set BuildTypePickerLayoutPlan = results
+        Exit Function
+    End If
+
+    For i = 1 To displayLines.Count
+        If maxVisibleRows > 0 Then
+            If results.Count >= maxVisibleRows Then Exit For
+        End If
+
+        lineText = CStr(displayLines(i))
+        isCheckRow = ResolveChecklistRowIsCheckable(i, lineText, ownerTypeIds)
+        indentChars = CountLeadingSpaces(lineText)
+        depthLevel = GetHierarchyDepthFromIndent(indentChars)
+
+        If results.Count > 0 Then
+            If previousWasCheckRow And (Not isCheckRow) Then
+                rowTop = rowTop + TP_GAP_AFTER_FILE_GROUP
+            ElseIf (Not previousWasCheckRow) And isCheckRow Then
+                rowTop = rowTop + TP_GAP_BEFORE_FILE_GROUP
+            End If
+
+            If (Not isCheckRow) And depthLevel = 0 Then
+                rowTop = rowTop + TP_GAP_BEFORE_FOLDER_L0
+            End If
+        End If
+
+        If isCheckRow Then
+            rowControlHeight = ComputeControlHeightFromFontHeight(TP_FILE_FONT_HEIGHT, TP_FILE_FONT_ADDITIONAL_HEIGHT)
+            rowStep = ComputeRowStepFromControlHeight(rowControlHeight, TP_FILE_ROW_ADDITIONAL_SPACING)
+        Else
+            rowControlHeight = ComputeControlHeightFromFontHeight(GetFolderFontHeightByDepth(depthLevel), _
+                                                                  GetFolderFontAdditionalHeightByDepth(depthLevel))
+            rowStep = ComputeRowStepFromControlHeight(rowControlHeight, GetFolderRowAdditionalSpacingByDepth(depthLevel))
+        End If
+
+        captionText = StripChecklistMarker(LTrim$(lineText))
+        rowInfo = Array(CLng(i), CBool(isCheckRow), CLng(depthLevel), CDbl(rowTop), CDbl(rowStep), CDbl(rowControlHeight), CStr(captionText), CStr(lineText))
+        results.Add rowInfo
+
+        rowTop = rowTop + rowStep
+        previousWasCheckRow = isCheckRow
+    Next i
+
+    contentHeight = rowTop + TP_LIST_SCROLL_EXTRA
+    Set BuildTypePickerLayoutPlan = results
+End Function
+
+Private Function ResolveChecklistRowIsCheckable(ByVal rowIndex As Long, _
+                                                ByVal lineText As String, _
+                                                ByVal ownerTypeIds As Collection) As Boolean
+    Dim ownerTypeId As String
+
+    If Not ownerTypeIds Is Nothing Then
+        If rowIndex <= ownerTypeIds.Count Then
+            ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(rowIndex)))
+        End If
+    End If
+
+    If Len(ownerTypeId) > 0 Then
+        ResolveChecklistRowIsCheckable = True
+    Else
+        ResolveChecklistRowIsCheckable = IsChecklistLineCheckable(lineText)
+    End If
+End Function
+
+Private Function GetTypePickerLayoutHeightForVisibleRows(ByVal layoutPlan As Collection, _
+                                                         ByVal visibleRows As Long) As Double
+    Dim effectiveRows As Long
+    Dim rowInfo As Variant
+    Dim rowBottom As Double
+
+    If layoutPlan Is Nothing Then
+        GetTypePickerLayoutHeightForVisibleRows = TP_LIST_TOP_PADDING + TP_LIST_SCROLL_EXTRA
+        Exit Function
+    End If
+
+    effectiveRows = visibleRows
+    If effectiveRows <= 0 Or effectiveRows > layoutPlan.Count Then
+        effectiveRows = layoutPlan.Count
+    End If
+
+    If effectiveRows <= 0 Then
+        GetTypePickerLayoutHeightForVisibleRows = TP_LIST_TOP_PADDING + TP_LIST_SCROLL_EXTRA
+        Exit Function
+    End If
+
+    rowInfo = layoutPlan.Item(effectiveRows)
+    rowBottom = CDbl(rowInfo(3)) + CDbl(rowInfo(4))
+
+    GetTypePickerLayoutHeightForVisibleRows = rowBottom + TP_LIST_SCROLL_EXTRA
+End Function
 
 Private Sub ClearTypePickerDynamicControls(ByVal entriesHost As Object)
     Dim i As Long
@@ -1213,7 +1835,7 @@ Private Sub ClearTypePickerDynamicControls(ByVal entriesHost As Object)
     For i = entriesHost.Controls.Count - 1 To 0 Step -1
         Set ctl = entriesHost.Controls.Item(i)
         ctlName = CStr(ctl.Name)
-        If Left$(ctlName, 9) = "chkEntry_" Or Left$(ctlName, 9) = "lblEntry_" Then
+        If Left$(ctlName, 9) = "chkEntry_" Or Left$(ctlName, 9) = "lblEntry_" Or Left$(ctlName, 13) = "lblCheckText_" Then
             entriesHost.Controls.Remove ctlName
         End If
     Next i
@@ -1306,30 +1928,30 @@ Private Function IsChecklistLineChecked(ByVal lineText As String) As Boolean
     IsChecklistLineChecked = (Left$(trimmedLine, 3) = "[x]" Or Left$(trimmedLine, 3) = "[X]")
 End Function
 
-Private Function EnsureTypePickerTestFormComponent(ByVal wb As Workbook, ByRef reason As String) As Object
+Private Function IsTypePickerAcceptTag(ByVal tagValue As String) As Boolean
+    Select Case UCase$(Trim$(tagValue))
+        Case TYPE_PICKER_TAG_OK, TYPE_PICKER_TAG_SYNC_DRIFT, TYPE_PICKER_TAG_FORCE_SYNC
+            IsTypePickerAcceptTag = True
+    End Select
+End Function
+
+Private Function EnsureTypePickerFormComponent(ByVal wb As Workbook, ByRef reason As String) As Object
     Dim vbComp As Object
     Dim designer As Object
     Dim stage As String
-    Dim createdNow As Boolean
 
     On Error GoTo Fail
 
-    stage = "Find component"
-    Set vbComp = FindVBComponentByName(wb, TEST_PICKER_FORM_NAME)
+    stage = "Rebuild component"
+    If Not RebuildTypePickerFormComponent(wb, reason, vbComp) Then Exit Function
 
-    If Not vbComp Is Nothing Then
-        If vbComp.Type <> 3 Then
-            reason = "A non-UserForm component already uses name '" & TEST_PICKER_FORM_NAME & "'." & vbCrLf & _
-                     "Rename it or create a UserForm with that name."
+    If vbComp Is Nothing Then
+        stage = "Find component"
+        Set vbComp = FindTypePickerFormComponent(wb)
+        If vbComp Is Nothing Then
+            reason = "Type picker form component was not found after rebuild."
             Exit Function
         End If
-    End If
-
-    stage = "Create component"
-    If vbComp Is Nothing Then
-        Set vbComp = wb.VBProject.VBComponents.Add(3)
-        vbComp.Name = TEST_PICKER_FORM_NAME
-        createdNow = True
     End If
 
     stage = "Open designer"
@@ -1340,107 +1962,348 @@ Private Function EnsureTypePickerTestFormComponent(ByVal wb As Workbook, ByRef r
     End If
 
     stage = "Configure designer controls"
-    If createdNow Or (Not HasRequiredTypePickerControls(designer)) Then
-        ConfigureTypePickerTestFormDesigner designer
-    End If
+    ConfigureTypePickerFormDesigner designer
 
     stage = "Inject form code"
-    EnsureTypePickerTestFormCode vbComp.CodeModule
+    EnsureTypePickerFormCode vbComp.CodeModule
 
-    Set EnsureTypePickerTestFormComponent = vbComp
+    Set EnsureTypePickerFormComponent = vbComp
     Exit Function
 
 Fail:
     reason = "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
 End Function
 
+Public Sub ResetTypePickerUserForm()
+    Dim reason As String
+
+    If RebuildTypePickerFormComponent(ThisWorkbook, reason) Then
+        MsgBox "Type picker form was rebuilt successfully.", vbInformation, SYNC_DIALOG_TITLE
+    Else
+        MsgBox "Unable to rebuild type picker form." & vbCrLf & _
+               "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
+    End If
+End Sub
+
+Private Function RebuildTypePickerFormComponent(ByVal wb As Workbook, _
+                                                    ByRef reason As String, _
+                                                    Optional ByRef rebuiltComponent As Object) As Boolean
+    Dim vbComp As Object
+    Dim createReason As String
+
+    On Error GoTo Fail
+
+    If wb Is Nothing Then
+        reason = "Workbook reference is missing."
+        Exit Function
+    End If
+
+    UnloadTypePickerFormInstances
+
+    If Not ResolveTypePickerNameConflict(wb, reason) Then
+        Exit Function
+    End If
+
+    RemoveExistingTypePickerFormComponents wb
+
+    Set vbComp = wb.VBProject.VBComponents.Add(3)
+    If Not TryAssignTypePickerFormName(vbComp, createReason) Then
+        If Len(createReason) > 0 Then
+            reason = createReason
+        Else
+            reason = "Type picker form was created with a fallback component name."
+        End If
+    End If
+
+    Set rebuiltComponent = vbComp
+
+    RebuildTypePickerFormComponent = True
+    Exit Function
+
+Fail:
+    reason = "Rebuild failed. Error " & CStr(Err.Number) & ": " & Err.Description
+End Function
+
+Private Sub UnloadTypePickerFormInstances()
+    Dim frm As Object
+    Dim formName As String
+
+    On Error Resume Next
+    For Each frm In VBA.UserForms
+        formName = vbNullString
+        formName = CStr(frm.Name)
+        If StrComp(formName, TYPE_PICKER_FORM_NAME, vbTextCompare) = 0 Or _
+           StrComp(TypeName(frm), TYPE_PICKER_FORM_NAME, vbTextCompare) = 0 Then
+            Unload frm
+        End If
+    Next frm
+    On Error GoTo 0
+End Sub
+
+Private Sub RemoveExistingTypePickerFormComponents(ByVal wb As Workbook)
+    Dim i As Long
+    Dim vbComp As Object
+
+    If wb Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    For i = wb.VBProject.VBComponents.Count To 1 Step -1
+        Set vbComp = wb.VBProject.VBComponents.Item(i)
+        If IsTypePickerFormComponent(vbComp) Then
+            wb.VBProject.VBComponents.Remove vbComp
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Function IsTypePickerFormComponent(ByVal vbComp As Object) As Boolean
+    Dim designer As Object
+
+    If vbComp Is Nothing Then Exit Function
+    If vbComp.Type <> 3 Then Exit Function
+
+    If StrComp(vbComp.Name, TYPE_PICKER_FORM_NAME, vbTextCompare) = 0 Then
+        IsTypePickerFormComponent = True
+        Exit Function
+    End If
+
+    If IsAutoRenamedModuleName(vbComp.Name, TYPE_PICKER_FORM_NAME) Then
+        IsTypePickerFormComponent = True
+        Exit Function
+    End If
+
+    On Error Resume Next
+    Set designer = vbComp.Designer
+    On Error GoTo 0
+    If designer Is Nothing Then Exit Function
+
+    If HasRequiredTypePickerControls(designer) Then
+        IsTypePickerFormComponent = True
+    End If
+End Function
+
+Private Function ResolveTypePickerNameConflict(ByVal wb As Workbook, ByRef reason As String) As Boolean
+    Dim vbComp As Object
+    Dim fallbackName As String
+
+    If wb Is Nothing Then
+        reason = "Workbook reference is missing."
+        Exit Function
+    End If
+
+    For Each vbComp In wb.VBProject.VBComponents
+        If StrComp(vbComp.Name, TYPE_PICKER_FORM_NAME, vbTextCompare) = 0 Then
+            If vbComp.Type <> 3 Then
+                fallbackName = TYPE_PICKER_FORM_NAME & "_Legacy"
+                On Error Resume Next
+                vbComp.Name = fallbackName
+                If Err.Number <> 0 Then
+                    Err.Clear
+                    fallbackName = TYPE_PICKER_FORM_NAME & "_Legacy_" & CStr(Fix(Timer * 1000))
+                    vbComp.Name = fallbackName
+                End If
+                If Err.Number <> 0 Then
+                    reason = "A non-UserForm component owns name '" & TYPE_PICKER_FORM_NAME & "' and could not be renamed."
+                    Err.Clear
+                    On Error GoTo 0
+                    Exit Function
+                End If
+                Err.Clear
+                On Error GoTo 0
+            End If
+        End If
+    Next vbComp
+
+    ResolveTypePickerNameConflict = True
+End Function
+
+Private Function FindTypePickerFormComponent(ByVal wb As Workbook) As Object
+    Dim vbComp As Object
+    Dim candidate As Object
+
+    If wb Is Nothing Then Exit Function
+
+    For Each vbComp In wb.VBProject.VBComponents
+        If vbComp.Type = 3 Then
+            If StrComp(vbComp.Name, TYPE_PICKER_FORM_NAME, vbTextCompare) = 0 Then
+                Set FindTypePickerFormComponent = vbComp
+                Exit Function
+            End If
+
+            If IsAutoRenamedModuleName(vbComp.Name, TYPE_PICKER_FORM_NAME) Then
+                If candidate Is Nothing Then
+                    Set candidate = vbComp
+                End If
+            End If
+        End If
+    Next vbComp
+
+    If Not candidate Is Nothing Then
+        Set FindTypePickerFormComponent = candidate
+    End If
+End Function
+
+Private Function TryAssignTypePickerFormName(ByVal vbComp As Object, ByRef reason As String) As Boolean
+    If vbComp Is Nothing Then Exit Function
+
+    On Error Resume Next
+    vbComp.Name = TYPE_PICKER_FORM_NAME
+    If Err.Number = 0 Then
+        TryAssignTypePickerFormName = True
+    Else
+        reason = "Type picker form created as '" & vbComp.Name & "' because canonical name was unavailable."
+        Err.Clear
+        TryAssignTypePickerFormName = False
+    End If
+    On Error GoTo 0
+End Function
+
 Private Function HasRequiredTypePickerControls(ByVal designer As Object) As Boolean
     Dim entriesHost As Object
 
-    Set entriesHost = GetDesignerControlByName(designer, TEST_PICKER_LIST_NAME)
+    Set entriesHost = GetDesignerControlByName(designer, TYPE_PICKER_LIST_NAME)
     If entriesHost Is Nothing Then Exit Function
     If StrComp(TypeName(entriesHost), "Frame", vbTextCompare) <> 0 Then Exit Function
-    If GetDesignerControlByName(designer, TEST_PICKER_OK_NAME) Is Nothing Then Exit Function
-    If GetDesignerControlByName(designer, TEST_PICKER_CANCEL_NAME) Is Nothing Then Exit Function
-    If GetDesignerControlByName(designer, TEST_PICKER_INFO_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TYPE_PICKER_OK_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TYPE_PICKER_CANCEL_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TYPE_PICKER_SYNC_DRIFT_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TYPE_PICKER_FORCE_SYNC_NAME) Is Nothing Then Exit Function
+    If GetDesignerControlByName(designer, TYPE_PICKER_INFO_NAME) Is Nothing Then Exit Function
     HasRequiredTypePickerControls = True
 End Function
 
-Private Function FindVBComponentByName(ByVal wb As Workbook, ByVal componentName As String) As Object
-    Dim vbComp As Object
-
-    For Each vbComp In wb.VBProject.VBComponents
-        If StrComp(vbComp.Name, componentName, vbTextCompare) = 0 Then
-            Set FindVBComponentByName = vbComp
-            Exit Function
-        End If
-    Next vbComp
-End Function
-
-Private Sub ConfigureTypePickerTestFormDesigner(ByVal designer As Object)
+Private Sub ConfigureTypePickerFormDesigner(ByVal designer As Object)
     Dim lbl As Object
     Dim lst As Object
     Dim existingEntries As Object
     Dim btnOk As Object
     Dim btnCancel As Object
+    Dim btnSyncDrift As Object
+    Dim btnForceSync As Object
+    Dim buttonGroupLeft As Double
+    Dim seedListWidth As Double
+    Dim seedListHeight As Double
+    Dim seedButtonTop As Double
+    Dim seedFormWidth As Double
+    Dim seedFormHeight As Double
     Dim stage As String
 
     On Error GoTo Fail
 
+    seedListWidth = TP_SEED_LIST_WIDTH
+    seedListHeight = TP_SEED_LIST_HEIGHT
+    seedButtonTop = TP_LAYOUT_TOP_MARGIN + seedListHeight + TP_LAYOUT_BUTTON_GAP_TOP
+    seedFormWidth = TP_LAYOUT_LEFT_MARGIN + seedListWidth + TP_LAYOUT_RIGHT_MARGIN
+    seedFormHeight = TP_LAYOUT_TOP_MARGIN + seedListHeight + TP_LAYOUT_BOTTOM_MARGIN
+
     stage = "Form properties"
-    TrySetObjectProperty designer, "Caption", "Workbook Type Picker Test"
-    TrySetObjectProperty designer, "Width", 780
-    TrySetObjectProperty designer, "Height", 460
+    TrySetObjectProperty designer, "Caption", "Workbook Type Picker"
+    TrySetObjectProperty designer, "Width", seedFormWidth
+    TrySetObjectProperty designer, "Height", seedFormHeight
+
+    stage = "Remove stale controls"
+    RemoveUnexpectedTypePickerDesignerControls designer
 
     stage = "Info label"
-    Set lbl = GetOrCreateFormControl(designer, "Forms.Label.1", TEST_PICKER_INFO_NAME)
-    TrySetObjectProperty lbl, "Left", 12
-    TrySetObjectProperty lbl, "Top", 12
-    TrySetObjectProperty lbl, "Width", 744
-    TrySetObjectProperty lbl, "Height", 24
-    TrySetObjectProperty lbl, "Caption", "POC: test readability and width with long paths before full conversion."
+    Set lbl = GetOrCreateFormControl(designer, "Forms.Label.1", TYPE_PICKER_INFO_NAME)
+    ResetTypePickerInfoLabel lbl
     TrySetObjectProperty lbl, "WordWrap", True
 
     stage = "Entries host"
-    Set existingEntries = GetDesignerControlByName(designer, TEST_PICKER_LIST_NAME)
+    Set existingEntries = GetDesignerControlByName(designer, TYPE_PICKER_LIST_NAME)
     If Not existingEntries Is Nothing Then
         If StrComp(TypeName(existingEntries), "Frame", vbTextCompare) <> 0 Then
             On Error Resume Next
-            designer.Controls.Remove TEST_PICKER_LIST_NAME
+            designer.Controls.Remove TYPE_PICKER_LIST_NAME
+            Err.Clear
             On Error GoTo Fail
+
+            Set existingEntries = GetDesignerControlByName(designer, TYPE_PICKER_LIST_NAME)
+            If Not existingEntries Is Nothing Then
+                On Error Resume Next
+                CallByName existingEntries, "Name", VbLet, TYPE_PICKER_LIST_NAME & "_Legacy"
+                Err.Clear
+                On Error GoTo Fail
+            End If
         End If
     End If
 
-    Set lst = GetOrCreateFormControl(designer, "Forms.Frame.1", TEST_PICKER_LIST_NAME)
-    TrySetObjectProperty lst, "Left", 12
-    TrySetObjectProperty lst, "Top", 42
-    TrySetObjectProperty lst, "Width", 744
-    TrySetObjectProperty lst, "Height", 350
-    TrySetObjectProperty lst, "Caption", ""
-    TrySetObjectProperty lst, "ScrollBars", 2
-    TrySetObjectProperty lst, "KeepScrollBarsVisible", 2
+    Set lst = GetDesignerControlByName(designer, TYPE_PICKER_LIST_NAME)
+    If lst Is Nothing Then
+        Set lst = GetOrCreateFormControl(designer, "Forms.Frame.1", TYPE_PICKER_LIST_NAME)
+    ElseIf StrComp(TypeName(lst), "Frame", vbTextCompare) <> 0 Then
+        Err.Raise vbObjectError + 8122, "ReloadManager.ConfigureTypePickerFormDesigner", _
+                  "Entries host control '" & TYPE_PICKER_LIST_NAME & "' is not a Frame."
+    End If
+
+    SetControlBounds lst, TP_LAYOUT_LEFT_MARGIN, TP_LAYOUT_TOP_MARGIN, seedListWidth, seedListHeight
+    ApplyTypePickerEntriesHostStyle lst
+
+    buttonGroupLeft = TP_LAYOUT_LEFT_MARGIN + seedListWidth - ((TP_LAYOUT_SYNC_BUTTON_WIDTH * 2) + _
+                     (TP_LAYOUT_BUTTON_WIDTH * 2) + (TP_LAYOUT_BUTTON_GAP * 3))
+    If buttonGroupLeft < TP_LAYOUT_LEFT_MARGIN Then buttonGroupLeft = TP_LAYOUT_LEFT_MARGIN
+
+    stage = "Sync on drift button"
+    Set btnSyncDrift = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TYPE_PICKER_SYNC_DRIFT_NAME)
+    TrySetObjectProperty btnSyncDrift, "Caption", "Sync on drift"
+    SetTypePickerButtonLayout btnSyncDrift, buttonGroupLeft, seedButtonTop, TP_LAYOUT_SYNC_BUTTON_WIDTH, False
+
+    stage = "Force sync button"
+    Set btnForceSync = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TYPE_PICKER_FORCE_SYNC_NAME)
+    TrySetObjectProperty btnForceSync, "Caption", "Force sync"
+    SetTypePickerButtonLayout btnForceSync, buttonGroupLeft + TP_LAYOUT_SYNC_BUTTON_WIDTH + TP_LAYOUT_BUTTON_GAP, _
+                              seedButtonTop, TP_LAYOUT_SYNC_BUTTON_WIDTH, False
 
     stage = "OK button"
-    Set btnOk = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TEST_PICKER_OK_NAME)
+    Set btnOk = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TYPE_PICKER_OK_NAME)
     TrySetObjectProperty btnOk, "Caption", "OK"
-    TrySetObjectProperty btnOk, "Left", 588
-    TrySetObjectProperty btnOk, "Top", 402
-    TrySetObjectProperty btnOk, "Width", 80
-    TrySetObjectProperty btnOk, "Height", 24
+    SetTypePickerButtonLayout btnOk, buttonGroupLeft + (TP_LAYOUT_SYNC_BUTTON_WIDTH * 2) + (TP_LAYOUT_BUTTON_GAP * 2), _
+                              seedButtonTop, TP_LAYOUT_BUTTON_WIDTH
 
     stage = "Cancel button"
-    Set btnCancel = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TEST_PICKER_CANCEL_NAME)
+    Set btnCancel = GetOrCreateFormControl(designer, "Forms.CommandButton.1", TYPE_PICKER_CANCEL_NAME)
     TrySetObjectProperty btnCancel, "Caption", "Cancel"
-    TrySetObjectProperty btnCancel, "Left", 676
-    TrySetObjectProperty btnCancel, "Top", 402
-    TrySetObjectProperty btnCancel, "Width", 80
-    TrySetObjectProperty btnCancel, "Height", 24
+    SetTypePickerButtonLayout btnCancel, buttonGroupLeft + (TP_LAYOUT_SYNC_BUTTON_WIDTH * 2) + _
+                              (TP_LAYOUT_BUTTON_GAP * 2) + TP_LAYOUT_BUTTON_WIDTH + TP_LAYOUT_BUTTON_GAP, _
+                              seedButtonTop, TP_LAYOUT_BUTTON_WIDTH
     Exit Sub
 
 Fail:
-    Err.Raise vbObjectError + 8120, "ReloadManager.ConfigureTypePickerTestFormDesigner", _
+    Err.Raise vbObjectError + 8120, "ReloadManager.ConfigureTypePickerFormDesigner", _
               "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
 End Sub
+
+Private Sub RemoveUnexpectedTypePickerDesignerControls(ByVal designer As Object)
+    Dim i As Long
+    Dim ctl As Object
+    Dim ctlName As String
+
+    On Error Resume Next
+    For i = designer.Controls.Count - 1 To 0 Step -1
+        Set ctl = designer.Controls.Item(i)
+        ctlName = CStr(ctl.Name)
+        If Not IsRequiredTypePickerControlName(ctlName) Then
+            designer.Controls.Remove ctlName
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Function IsRequiredTypePickerControlName(ByVal controlName As String) As Boolean
+    If StrComp(controlName, TYPE_PICKER_INFO_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    ElseIf StrComp(controlName, TYPE_PICKER_LIST_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    ElseIf StrComp(controlName, TYPE_PICKER_OK_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    ElseIf StrComp(controlName, TYPE_PICKER_CANCEL_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    ElseIf StrComp(controlName, TYPE_PICKER_SYNC_DRIFT_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    ElseIf StrComp(controlName, TYPE_PICKER_FORCE_SYNC_NAME, vbTextCompare) = 0 Then
+        IsRequiredTypePickerControlName = True
+    End If
+End Function
 
 Private Function GetOrCreateFormControl(ByVal designer As Object, _
                                         ByVal progId As String, _
@@ -1477,6 +2340,44 @@ Private Sub TrySetObjectProperty(ByVal target As Object, ByVal propName As Strin
     CallByName target, propName, VbLet, propValue
     Err.Clear
     On Error GoTo 0
+End Sub
+
+Private Sub SetControlBounds(ByVal target As Object, _
+                             ByVal leftPos As Double, _
+                             ByVal topPos As Double, _
+                             ByVal widthValue As Double, _
+                             ByVal heightValue As Double)
+    If target Is Nothing Then Exit Sub
+    TrySetObjectProperty target, "Left", leftPos
+    TrySetObjectProperty target, "Top", topPos
+    TrySetObjectProperty target, "Width", widthValue
+    TrySetObjectProperty target, "Height", heightValue
+End Sub
+
+Private Sub ResetTypePickerInfoLabel(ByVal lbl As Object)
+    If lbl Is Nothing Then Exit Sub
+    TrySetObjectProperty lbl, "Caption", vbNullString
+    TrySetObjectProperty lbl, "Visible", False
+    SetControlBounds lbl, 0, 0, 0, 0
+End Sub
+
+Private Sub ApplyTypePickerEntriesHostStyle(ByVal entriesHost As Object)
+    If entriesHost Is Nothing Then Exit Sub
+    TrySetObjectProperty entriesHost, "Caption", TP_LIST_FRAME_CAPTION
+    TrySetObjectProperty entriesHost, "ScrollBars", 2
+    TrySetObjectProperty entriesHost, "KeepScrollBarsVisible", 0
+End Sub
+
+Private Sub SetTypePickerButtonLayout(ByVal btn As Object, _
+                                      ByVal leftPos As Double, _
+                                      ByVal topPos As Double, _
+                                      ByVal buttonWidth As Double, _
+                                      Optional ByVal visibleState As Variant)
+    If btn Is Nothing Then Exit Sub
+    SetControlBounds btn, leftPos, topPos, buttonWidth, TP_LAYOUT_BUTTON_HEIGHT
+    If Not IsMissing(visibleState) Then
+        TrySetObjectProperty btn, "Visible", CBool(visibleState)
+    End If
 End Sub
 
 Private Function GetDesignerControlByName(ByVal designer As Object, ByVal controlName As String) As Object
@@ -1525,56 +2426,63 @@ Private Function GetFormControlByName(ByVal frm As Object, ByVal controlName As 
     End If
 End Function
 
-Private Sub AutoSizeTypePickerTestForm(ByVal frm As Object, ByVal displayLines As Collection)
+Private Sub AutoSizeTypePickerForm(ByVal frm As Object, _
+                                       ByVal displayLines As Collection, _
+                                       ByVal layoutPlan As Collection, _
+                                       ByVal layoutContentHeight As Double)
     Dim lbl As Object
     Dim entriesHost As Object
+    Dim btnSyncDrift As Object
+    Dim btnForceSync As Object
     Dim btnOk As Object
     Dim btnCancel As Object
-    Dim lineText As Variant
     Dim longestLineWidth As Double
-    Dim measuredLineHeight As Double
-    Dim rowHeight As Double
     Dim lineCount As Long
+    Dim visibleLineCount As Long
     Dim listWidth As Double
     Dim listHeight As Double
     Dim formWidth As Double
     Dim formHeight As Double
     Dim btnTop As Double
+    Dim minListHeight As Double
+    Dim minListWidth As Double
+    Dim minFormWidth As Double
+    Dim minFormHeight As Double
+    Dim buttonSpan As Double
+    Dim reservedHeight As Double
     Dim usableWidth As Double
     Dim usableHeight As Double
-    Dim maxListWidth As Double
-    Dim maxListHeight As Double
-    Const LEFT_MARGIN As Double = 12
-    Const TOP_LABEL As Double = 12
-    Const LABEL_HEIGHT As Double = 24
-    Const LIST_TOP As Double = 42
-    Const RIGHT_MARGIN As Double = 12
-    Const BUTTON_GAP_TOP As Double = 10
-    Const BUTTON_WIDTH As Double = 80
-    Const BUTTON_HEIGHT As Double = 24
-    Const BUTTON_GAP As Double = 8
-    Const BOTTOM_MARGIN As Double = 34
-    Const LIST_HORIZONTAL_PADDING As Double = 26
-    Const LIST_VERTICAL_PADDING As Double = 8
-    Const MIN_VISIBLE_ROWS As Long = 8
-    Const MAX_VISIBLE_ROWS As Long = 36
+    Dim maxFormWidth As Double
+    Dim maxFormHeight As Double
+    Dim isFixedSizeMode As Boolean
+    Dim entriesChromeHeight As Double
+    Dim showSyncButtons As Boolean
 
-    Set lbl = GetFormControlByName(frm, TEST_PICKER_INFO_NAME)
-    Set entriesHost = GetFormControlByName(frm, TEST_PICKER_LIST_NAME)
-    Set btnOk = GetFormControlByName(frm, TEST_PICKER_OK_NAME)
-    Set btnCancel = GetFormControlByName(frm, TEST_PICKER_CANCEL_NAME)
+    Set lbl = GetFormControlByName(frm, TYPE_PICKER_INFO_NAME)
+    Set entriesHost = GetFormControlByName(frm, TYPE_PICKER_LIST_NAME)
+    Set btnSyncDrift = GetFormControlByName(frm, TYPE_PICKER_SYNC_DRIFT_NAME)
+    Set btnForceSync = GetFormControlByName(frm, TYPE_PICKER_FORCE_SYNC_NAME)
+    Set btnOk = GetFormControlByName(frm, TYPE_PICKER_OK_NAME)
+    Set btnCancel = GetFormControlByName(frm, TYPE_PICKER_CANCEL_NAME)
 
     If lbl Is Nothing Or entriesHost Is Nothing Or btnOk Is Nothing Or btnCancel Is Nothing Then Exit Sub
 
-    lineCount = displayLines.Count
+    lineCount = 0
+    If Not layoutPlan Is Nothing Then lineCount = layoutPlan.Count
     If lineCount < 1 Then lineCount = 1
 
     longestLineWidth = MeasureLongestCaptionWidth(lbl, displayLines)
-    measuredLineHeight = MeasureCaptionHeight(lbl)
-    If measuredLineHeight <= 0 Then measuredLineHeight = 11
-    rowHeight = measuredLineHeight
-    If rowHeight < 11 Then rowHeight = 11
-    rowHeight = rowHeight + 1
+    entriesChromeHeight = GetControlHeightChrome(entriesHost)
+    minListHeight = GetTypePickerLayoutHeightForVisibleRows(layoutPlan, 1)
+    If minListHeight <= 0 Then minListHeight = TP_AUTO_ROW_HEIGHT + TP_LIST_VERTICAL_PADDING
+    minListHeight = minListHeight + entriesChromeHeight
+    showSyncButtons = AreTypePickerSyncButtonsVisible(btnSyncDrift, btnForceSync)
+    buttonSpan = GetTypePickerButtonSpan(showSyncButtons)
+    minListWidth = buttonSpan
+    If (TP_LIST_MIN_CONTROL_WIDTH + TP_LIST_RIGHT_PADDING) > minListWidth Then
+        minListWidth = TP_LIST_MIN_CONTROL_WIDTH + TP_LIST_RIGHT_PADDING
+    End If
+    reservedHeight = TP_LAYOUT_TOP_MARGIN + TP_LAYOUT_BOTTOM_MARGIN
 
     On Error Resume Next
     usableWidth = CDbl(Application.UsableWidth)
@@ -1583,61 +2491,316 @@ Private Sub AutoSizeTypePickerTestForm(ByVal frm As Object, ByVal displayLines A
     If usableWidth <= 0 Then usableWidth = 1400
     If usableHeight <= 0 Then usableHeight = 900
 
-    maxListWidth = (usableWidth * 0.85) - (LEFT_MARGIN + RIGHT_MARGIN)
-    If maxListWidth < 420 Then maxListWidth = 420
-    maxListHeight = (usableHeight * 0.78) - (LIST_TOP + BUTTON_GAP_TOP + BUTTON_HEIGHT + BOTTOM_MARGIN)
-    If maxListHeight < 220 Then maxListHeight = 220
+    maxFormWidth = usableWidth * TP_FORM_USABLE_WIDTH_RATIO
+    maxFormHeight = usableHeight * TP_FORM_USABLE_HEIGHT_RATIO
 
-    listWidth = longestLineWidth + LIST_HORIZONTAL_PADDING
-    If listWidth < 320 Then listWidth = 320
-    If listWidth > maxListWidth Then listWidth = maxListWidth
+    minFormWidth = TP_LAYOUT_LEFT_MARGIN + minListWidth + TP_LAYOUT_RIGHT_MARGIN
+    minFormHeight = reservedHeight + minListHeight
+    isFixedSizeMode = (TP_FORCE_LIST_WIDTH > 0 Or TP_FORCE_LIST_HEIGHT > 0)
 
-    If lineCount < MIN_VISIBLE_ROWS Then lineCount = MIN_VISIBLE_ROWS
-    If lineCount > MAX_VISIBLE_ROWS Then lineCount = MAX_VISIBLE_ROWS
-    listHeight = (lineCount * rowHeight) + LIST_VERTICAL_PADDING
-    If listHeight < 200 Then listHeight = 200
-    If listHeight > maxListHeight Then listHeight = maxListHeight
+    If TP_FORCE_LIST_WIDTH > 0 Then
+        listWidth = TP_FORCE_LIST_WIDTH
+    Else
+        listWidth = longestLineWidth + TP_LIST_HORIZONTAL_PADDING
+    End If
+    If listWidth < minListWidth Then listWidth = minListWidth
 
-    btnTop = LIST_TOP + listHeight + BUTTON_GAP_TOP
-    formWidth = LEFT_MARGIN + listWidth + RIGHT_MARGIN
-    formHeight = btnTop + BUTTON_HEIGHT + BOTTOM_MARGIN
+    If TP_FORCE_LIST_HEIGHT > 0 Then
+        listHeight = TP_FORCE_LIST_HEIGHT
+    Else
+        visibleLineCount = lineCount
+        If visibleLineCount > TP_AUTO_MAX_VISIBLE_ROWS Then visibleLineCount = TP_AUTO_MAX_VISIBLE_ROWS
+        If visibleLineCount >= lineCount And layoutContentHeight > 0 Then
+            listHeight = layoutContentHeight + entriesChromeHeight
+        Else
+            listHeight = GetTypePickerLayoutHeightForVisibleRows(layoutPlan, visibleLineCount) + entriesChromeHeight
+        End If
+    End If
+    If listHeight < minListHeight Then listHeight = minListHeight
 
-    If formWidth < 460 Then formWidth = 460
-    If formWidth > usableWidth * 0.9 Then formWidth = usableWidth * 0.9
-    If formHeight < 320 Then formHeight = 320
-    If formHeight > usableHeight * 0.9 Then formHeight = usableHeight * 0.9
+    btnTop = TP_LAYOUT_TOP_MARGIN + listHeight + TP_LAYOUT_BUTTON_GAP_TOP
+    formWidth = TP_LAYOUT_LEFT_MARGIN + listWidth + TP_LAYOUT_RIGHT_MARGIN
+    formHeight = TP_LAYOUT_TOP_MARGIN + listHeight + TP_LAYOUT_BOTTOM_MARGIN
 
-    ' Keep margins fixed; let list consume any extra width from form minimums.
-    listWidth = formWidth - LEFT_MARGIN - RIGHT_MARGIN
-    If listWidth < 320 Then listWidth = 320
+    If isFixedSizeMode Then
+        If formWidth < minFormWidth Then formWidth = minFormWidth
+        If formHeight < minFormHeight Then formHeight = minFormHeight
+    Else
+        If formWidth < minFormWidth Then formWidth = minFormWidth
+        If formWidth > maxFormWidth Then formWidth = maxFormWidth
+        If formHeight < minFormHeight Then formHeight = minFormHeight
+        If formHeight > maxFormHeight Then formHeight = maxFormHeight
+    End If
 
-    frm.Width = formWidth
-    frm.Height = formHeight
+    listWidth = formWidth - TP_LAYOUT_LEFT_MARGIN - TP_LAYOUT_RIGHT_MARGIN
+    If listWidth < minListWidth Then
+        listWidth = minListWidth
+        formWidth = TP_LAYOUT_LEFT_MARGIN + listWidth + TP_LAYOUT_RIGHT_MARGIN
+    End If
 
-    lbl.Left = LEFT_MARGIN
-    lbl.Top = TOP_LABEL
-    lbl.Width = listWidth
-    lbl.Height = LABEL_HEIGHT
+    listHeight = formHeight - reservedHeight
+    If listHeight < minListHeight Then
+        listHeight = minListHeight
+        formHeight = reservedHeight + listHeight
+    End If
+    btnTop = TP_LAYOUT_TOP_MARGIN + listHeight + TP_LAYOUT_BUTTON_GAP_TOP
 
-    entriesHost.Left = LEFT_MARGIN
-    entriesHost.Top = LIST_TOP
-    entriesHost.Width = listWidth
-    entriesHost.Height = listHeight
-    On Error Resume Next
-    entriesHost.ScrollBars = 2
-    entriesHost.KeepScrollBarsVisible = 2
-    On Error GoTo 0
+    SetFormClientSize frm, formWidth, formHeight
 
-    btnCancel.Width = BUTTON_WIDTH
-    btnCancel.Height = BUTTON_HEIGHT
-    btnCancel.Top = btnTop
-    btnCancel.Left = LEFT_MARGIN + listWidth - BUTTON_WIDTH
+    ResetTypePickerInfoLabel lbl
+    ApplyTypePickerEntriesHostStyle entriesHost
 
-    btnOk.Width = BUTTON_WIDTH
-    btnOk.Height = BUTTON_HEIGHT
-    btnOk.Top = btnTop
-    btnOk.Left = LEFT_MARGIN + listWidth - (BUTTON_WIDTH * 2) - BUTTON_GAP
+    HandleTypePickerFormResize frm
 End Sub
+
+Public Sub EnableTypePickerWindowResize(ByVal frm As Object)
+    Dim hwndForm As LongPtr
+    Dim styleValue As LongPtr
+
+    hwndForm = GetUserFormHwnd(frm)
+    If hwndForm = 0 Then Exit Sub
+
+    styleValue = GetWindowLongPtrW(hwndForm, GWL_STYLE)
+    styleValue = styleValue Or WS_THICKFRAME Or WS_MAXIMIZEBOX Or WS_MINIMIZEBOX
+    Call SetWindowLongPtrW(hwndForm, GWL_STYLE, styleValue)
+    Call SetWindowPos(hwndForm, 0, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE Or SWP_NOZORDER Or SWP_FRAMECHANGED)
+End Sub
+
+Public Sub HandleTypePickerFormResize(ByVal frm As Object)
+    Dim lbl As Object
+    Dim entriesHost As Object
+    Dim btnSyncDrift As Object
+    Dim btnForceSync As Object
+    Dim btnOk As Object
+    Dim btnCancel As Object
+    Dim buttonSpan As Double
+    Dim minListHeight As Double
+    Dim minListWidth As Double
+    Dim minFormWidth As Double
+    Dim minFormHeight As Double
+    Dim clientWidth As Double
+    Dim clientHeight As Double
+    Dim listWidth As Double
+    Dim listHeight As Double
+    Dim btnTop As Double
+    Dim showSyncButtons As Boolean
+
+    Set lbl = GetFormControlByName(frm, TYPE_PICKER_INFO_NAME)
+    Set entriesHost = GetFormControlByName(frm, TYPE_PICKER_LIST_NAME)
+    Set btnSyncDrift = GetFormControlByName(frm, TYPE_PICKER_SYNC_DRIFT_NAME)
+    Set btnForceSync = GetFormControlByName(frm, TYPE_PICKER_FORCE_SYNC_NAME)
+    Set btnOk = GetFormControlByName(frm, TYPE_PICKER_OK_NAME)
+    Set btnCancel = GetFormControlByName(frm, TYPE_PICKER_CANCEL_NAME)
+
+    If lbl Is Nothing Or entriesHost Is Nothing Or btnOk Is Nothing Or btnCancel Is Nothing Then Exit Sub
+
+    showSyncButtons = AreTypePickerSyncButtonsVisible(btnSyncDrift, btnForceSync)
+    buttonSpan = GetTypePickerButtonSpan(showSyncButtons)
+    minListHeight = TP_AUTO_ROW_HEIGHT + TP_LIST_VERTICAL_PADDING
+    minListWidth = buttonSpan
+    If (TP_LIST_MIN_CONTROL_WIDTH + TP_LIST_RIGHT_PADDING) > minListWidth Then
+        minListWidth = TP_LIST_MIN_CONTROL_WIDTH + TP_LIST_RIGHT_PADDING
+    End If
+    minFormWidth = TP_LAYOUT_LEFT_MARGIN + minListWidth + TP_LAYOUT_RIGHT_MARGIN
+    minFormHeight = TP_LAYOUT_TOP_MARGIN + minListHeight + TP_LAYOUT_BOTTOM_MARGIN
+
+    clientWidth = GetFormInsideWidth(frm)
+    clientHeight = GetFormInsideHeight(frm)
+
+    If clientWidth < minFormWidth Then clientWidth = minFormWidth
+    If clientHeight < minFormHeight Then clientHeight = minFormHeight
+    SetFormClientSize frm, clientWidth, clientHeight
+
+    clientWidth = GetFormInsideWidth(frm)
+    clientHeight = GetFormInsideHeight(frm)
+
+    listWidth = clientWidth - TP_LAYOUT_LEFT_MARGIN - TP_LAYOUT_RIGHT_MARGIN
+    If listWidth < minListWidth Then
+        listWidth = minListWidth
+        clientWidth = TP_LAYOUT_LEFT_MARGIN + listWidth + TP_LAYOUT_RIGHT_MARGIN
+        SetFormClientSize frm, clientWidth, clientHeight
+        clientWidth = GetFormInsideWidth(frm)
+        listWidth = clientWidth - TP_LAYOUT_LEFT_MARGIN - TP_LAYOUT_RIGHT_MARGIN
+    End If
+
+    btnTop = clientHeight - TP_LAYOUT_BUTTON_HEIGHT - TP_LAYOUT_BUTTON_GAP
+    listHeight = btnTop - TP_LAYOUT_BUTTON_GAP_TOP - TP_LAYOUT_TOP_MARGIN
+    If listHeight < minListHeight Then
+        listHeight = minListHeight
+        clientHeight = TP_LAYOUT_TOP_MARGIN + listHeight + TP_LAYOUT_BOTTOM_MARGIN
+        SetFormClientSize frm, clientWidth, clientHeight
+        clientHeight = GetFormInsideHeight(frm)
+        btnTop = clientHeight - TP_LAYOUT_BUTTON_HEIGHT - TP_LAYOUT_BUTTON_GAP
+    End If
+
+    ResetTypePickerInfoLabel lbl
+    SetControlBounds entriesHost, TP_LAYOUT_LEFT_MARGIN, TP_LAYOUT_TOP_MARGIN, listWidth, listHeight
+    ApplyTypePickerEntriesHostStyle entriesHost
+
+    LayoutTypePickerActionButtons btnSyncDrift, btnForceSync, btnOk, btnCancel, _
+                                  TP_LAYOUT_LEFT_MARGIN, listWidth, btnTop, showSyncButtons
+End Sub
+
+Private Function AreTypePickerSyncButtonsVisible(ByVal btnSyncDrift As Object, _
+                                                 ByVal btnForceSync As Object) As Boolean
+    On Error Resume Next
+    If btnSyncDrift Is Nothing Or btnForceSync Is Nothing Then Exit Function
+    AreTypePickerSyncButtonsVisible = CBool(CallByName(btnSyncDrift, "Visible", VbGet)) Or _
+                                     CBool(CallByName(btnForceSync, "Visible", VbGet))
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetTypePickerButtonSpan(ByVal includeSyncButtons As Boolean) As Double
+    If includeSyncButtons Then
+        GetTypePickerButtonSpan = (TP_LAYOUT_SYNC_BUTTON_WIDTH * 2) + (TP_LAYOUT_BUTTON_WIDTH * 2) + (TP_LAYOUT_BUTTON_GAP * 3)
+    Else
+        GetTypePickerButtonSpan = (TP_LAYOUT_BUTTON_WIDTH * 2) + TP_LAYOUT_BUTTON_GAP
+    End If
+End Function
+
+Private Sub LayoutTypePickerActionButtons(ByVal btnSyncDrift As Object, _
+                                          ByVal btnForceSync As Object, _
+                                          ByVal btnOk As Object, _
+                                          ByVal btnCancel As Object, _
+                                          ByVal listLeft As Double, _
+                                          ByVal listWidth As Double, _
+                                          ByVal btnTop As Double, _
+                                          ByVal includeSyncButtons As Boolean)
+    Dim rightEdge As Double
+    Dim okLeft As Double
+    Dim cancelLeft As Double
+    Dim forceLeft As Double
+    Dim driftLeft As Double
+
+    rightEdge = listLeft + listWidth
+    cancelLeft = rightEdge - TP_LAYOUT_BUTTON_WIDTH
+    okLeft = cancelLeft - TP_LAYOUT_BUTTON_GAP - TP_LAYOUT_BUTTON_WIDTH
+
+    SetTypePickerButtonLayout btnCancel, cancelLeft, btnTop, TP_LAYOUT_BUTTON_WIDTH
+    SetTypePickerButtonLayout btnOk, okLeft, btnTop, TP_LAYOUT_BUTTON_WIDTH
+
+    If includeSyncButtons Then
+        forceLeft = okLeft - TP_LAYOUT_BUTTON_GAP - TP_LAYOUT_SYNC_BUTTON_WIDTH
+        driftLeft = forceLeft - TP_LAYOUT_BUTTON_GAP - TP_LAYOUT_SYNC_BUTTON_WIDTH
+
+        SetTypePickerButtonLayout btnForceSync, forceLeft, btnTop, TP_LAYOUT_SYNC_BUTTON_WIDTH, True
+        SetTypePickerButtonLayout btnSyncDrift, driftLeft, btnTop, TP_LAYOUT_SYNC_BUTTON_WIDTH, True
+    Else
+        If Not btnForceSync Is Nothing Then TrySetObjectProperty btnForceSync, "Visible", False
+        If Not btnSyncDrift Is Nothing Then TrySetObjectProperty btnSyncDrift, "Visible", False
+    End If
+End Sub
+
+Private Function GetFormInsideWidth(ByVal frm As Object) As Double
+    On Error Resume Next
+    GetFormInsideWidth = CDbl(CallByName(frm, "InsideWidth", VbGet))
+    If Err.Number <> 0 Or GetFormInsideWidth <= 0 Then
+        Err.Clear
+        GetFormInsideWidth = CDbl(CallByName(frm, "Width", VbGet))
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetFormInsideHeight(ByVal frm As Object) As Double
+    On Error Resume Next
+    GetFormInsideHeight = CDbl(CallByName(frm, "InsideHeight", VbGet))
+    If Err.Number <> 0 Or GetFormInsideHeight <= 0 Then
+        Err.Clear
+        GetFormInsideHeight = CDbl(CallByName(frm, "Height", VbGet))
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetControlInsideWidth(ByVal ctl As Object) As Double
+    On Error Resume Next
+    GetControlInsideWidth = CDbl(CallByName(ctl, "InsideWidth", VbGet))
+    If Err.Number <> 0 Or GetControlInsideWidth <= 0 Then
+        Err.Clear
+        GetControlInsideWidth = CDbl(CallByName(ctl, "Width", VbGet))
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetControlInsideHeight(ByVal ctl As Object) As Double
+    On Error Resume Next
+    GetControlInsideHeight = CDbl(CallByName(ctl, "InsideHeight", VbGet))
+    If Err.Number <> 0 Or GetControlInsideHeight <= 0 Then
+        Err.Clear
+        GetControlInsideHeight = CDbl(CallByName(ctl, "Height", VbGet))
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Function GetControlHeightChrome(ByVal ctl As Object) As Double
+    Dim totalHeight As Double
+    Dim insideHeight As Double
+
+    On Error Resume Next
+    totalHeight = CDbl(CallByName(ctl, "Height", VbGet))
+    insideHeight = CDbl(CallByName(ctl, "InsideHeight", VbGet))
+    If Err.Number <> 0 Then
+        Err.Clear
+        GetControlHeightChrome = 0
+    Else
+        GetControlHeightChrome = totalHeight - insideHeight
+        If GetControlHeightChrome < 0 Then GetControlHeightChrome = 0
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+Private Sub SetFormClientSize(ByVal frm As Object, ByVal insideWidth As Double, ByVal insideHeight As Double)
+    Dim chromeWidth As Double
+    Dim chromeHeight As Double
+    Dim targetWidth As Double
+    Dim targetHeight As Double
+
+    If insideWidth < 1 Then insideWidth = 1
+    If insideHeight < 1 Then insideHeight = 1
+
+    On Error Resume Next
+    chromeWidth = CDbl(CallByName(frm, "Width", VbGet)) - CDbl(CallByName(frm, "InsideWidth", VbGet))
+    If Err.Number <> 0 Then
+        Err.Clear
+        chromeWidth = 0
+    End If
+
+    chromeHeight = CDbl(CallByName(frm, "Height", VbGet)) - CDbl(CallByName(frm, "InsideHeight", VbGet))
+    If Err.Number <> 0 Then
+        Err.Clear
+        chromeHeight = 0
+    End If
+
+    targetWidth = insideWidth + chromeWidth
+    targetHeight = insideHeight + chromeHeight
+
+    If targetWidth < insideWidth Then targetWidth = insideWidth
+    If targetHeight < insideHeight Then targetHeight = insideHeight
+
+    CallByName frm, "Width", VbLet, targetWidth
+    CallByName frm, "Height", VbLet, targetHeight
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Function GetUserFormHwnd(ByVal frm As Object) As LongPtr
+    Dim captionText As String
+
+    On Error Resume Next
+    captionText = CStr(frm.Caption)
+    On Error GoTo 0
+    If Len(captionText) = 0 Then Exit Function
+
+    GetUserFormHwnd = FindWindowW(StrPtr("ThunderDFrame"), StrPtr(captionText))
+    If GetUserFormHwnd = 0 Then
+        GetUserFormHwnd = FindWindowW(0, StrPtr(captionText))
+    End If
+End Function
 
 Private Function MeasureLongestCaptionWidth(ByVal measureLabel As Object, ByVal displayLines As Collection) As Double
     Dim originalCaption As String
@@ -1674,57 +2837,63 @@ Private Function MeasureLongestCaptionWidth(ByVal measureLabel As Object, ByVal 
     On Error GoTo 0
 End Function
 
-Private Function MeasureCaptionHeight(ByVal measureLabel As Object) As Double
-    Dim originalCaption As String
-    Dim originalAutoSize As Boolean
-    Dim originalWordWrap As Boolean
-    Dim originalWidth As Double
-    Dim originalHeight As Double
-
-    On Error Resume Next
-    originalCaption = CStr(measureLabel.Caption)
-    originalAutoSize = CBool(measureLabel.AutoSize)
-    originalWordWrap = CBool(measureLabel.WordWrap)
-    originalWidth = CDbl(measureLabel.Width)
-    originalHeight = CDbl(measureLabel.Height)
-
-    measureLabel.WordWrap = False
-    measureLabel.AutoSize = True
-    measureLabel.Caption = "Ag"
-    MeasureCaptionHeight = CDbl(measureLabel.Height)
-
-    measureLabel.Caption = originalCaption
-    measureLabel.AutoSize = originalAutoSize
-    measureLabel.WordWrap = originalWordWrap
-    measureLabel.Width = originalWidth
-    measureLabel.Height = originalHeight
-    On Error GoTo 0
-End Function
-
-Private Sub EnsureTypePickerTestFormCode(ByVal codeModule As Object)
+Private Sub EnsureTypePickerFormCode(ByVal codeModule As Object)
     Dim codeText As String
 
     codeText = ""
     codeText = codeText & "Option Explicit" & vbCrLf
     codeText = codeText & vbCrLf
+    codeText = codeText & "Private mWindowResizeEnabled As Boolean" & vbCrLf
+    codeText = codeText & vbCrLf
     codeText = codeText & "Private Sub UserForm_Initialize()" & vbCrLf
-    codeText = codeText & "    Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "    Me.Tag = """ & TYPE_PICKER_TAG_CANCEL & """" & vbCrLf
+    codeText = codeText & "    On Error Resume Next" & vbCrLf
+    codeText = codeText & "    Me.lblInfo.Caption = """"" & vbCrLf
+    codeText = codeText & "    Me.lblInfo.Visible = False" & vbCrLf
+    codeText = codeText & "    Me.lstEntries.Caption = "" """ & vbCrLf
+    codeText = codeText & "    On Error GoTo 0" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub UserForm_Activate()" & vbCrLf
+    codeText = codeText & "    On Error Resume Next" & vbCrLf
+    codeText = codeText & "    If Not mWindowResizeEnabled Then" & vbCrLf
+    codeText = codeText & "        ReloadManager.EnableTypePickerWindowResize Me" & vbCrLf
+    codeText = codeText & "        mWindowResizeEnabled = True" & vbCrLf
+    codeText = codeText & "    End If" & vbCrLf
+    codeText = codeText & "    ReloadManager.HandleTypePickerFormResize Me" & vbCrLf
+    codeText = codeText & "    On Error GoTo 0" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub UserForm_Resize()" & vbCrLf
+    codeText = codeText & "    On Error Resume Next" & vbCrLf
+    codeText = codeText & "    ReloadManager.HandleTypePickerFormResize Me" & vbCrLf
+    codeText = codeText & "    On Error GoTo 0" & vbCrLf
     codeText = codeText & "End Sub" & vbCrLf
     codeText = codeText & vbCrLf
     codeText = codeText & "Private Sub btnOK_Click()" & vbCrLf
-    codeText = codeText & "    Me.Tag = ""OK""" & vbCrLf
+    codeText = codeText & "    Me.Tag = """ & TYPE_PICKER_TAG_OK & """" & vbCrLf
+    codeText = codeText & "    Me.Hide" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub " & TYPE_PICKER_SYNC_DRIFT_NAME & "_Click()" & vbCrLf
+    codeText = codeText & "    Me.Tag = """ & TYPE_PICKER_TAG_SYNC_DRIFT & """" & vbCrLf
+    codeText = codeText & "    Me.Hide" & vbCrLf
+    codeText = codeText & "End Sub" & vbCrLf
+    codeText = codeText & vbCrLf
+    codeText = codeText & "Private Sub " & TYPE_PICKER_FORCE_SYNC_NAME & "_Click()" & vbCrLf
+    codeText = codeText & "    Me.Tag = """ & TYPE_PICKER_TAG_FORCE_SYNC & """" & vbCrLf
     codeText = codeText & "    Me.Hide" & vbCrLf
     codeText = codeText & "End Sub" & vbCrLf
     codeText = codeText & vbCrLf
     codeText = codeText & "Private Sub btnCancel_Click()" & vbCrLf
-    codeText = codeText & "    Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "    Me.Tag = """ & TYPE_PICKER_TAG_CANCEL & """" & vbCrLf
     codeText = codeText & "    Me.Hide" & vbCrLf
     codeText = codeText & "End Sub" & vbCrLf
     codeText = codeText & vbCrLf
     codeText = codeText & "Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)" & vbCrLf
     codeText = codeText & "    If CloseMode = 0 Then" & vbCrLf
     codeText = codeText & "        Cancel = True" & vbCrLf
-    codeText = codeText & "        Me.Tag = ""0""" & vbCrLf
+    codeText = codeText & "        Me.Tag = """ & TYPE_PICKER_TAG_CANCEL & """" & vbCrLf
     codeText = codeText & "        Me.Hide" & vbCrLf
     codeText = codeText & "    End If" & vbCrLf
     codeText = codeText & "End Sub"
@@ -1750,7 +2919,11 @@ Private Function GetBasFileNamesInTypeSource(ByVal typeId As String) As Collecti
     Do While Len(f) > 0
         count = count + 1
         ReDim Preserve names(1 To count)
-        names(count) = f
+        If Len(f) > 4 And StrComp(Right$(f, 4), ".bas", vbTextCompare) = 0 Then
+            names(count) = Left$(f, Len(f) - 4)
+        Else
+            names(count) = f
+        End If
         f = Dir()
     Loop
 
@@ -1765,14 +2938,21 @@ Private Function GetBasFileNamesInTypeSource(ByVal typeId As String) As Collecti
     Set GetBasFileNamesInTypeSource = results
 End Function
 
-Private Function GetCommonFolderDepth(ByRef leftParts() As String, ByRef rightParts() As String) As Long
+Private Function GetCommonFolderDepth(ByRef leftParts() As String, _
+                                      ByRef rightParts() As String, _
+                                      Optional ByVal includeLastPart As Boolean = False) As Long
     Dim leftLastFolder As Long
     Dim rightLastFolder As Long
     Dim maxFolderIndex As Long
     Dim i As Long
 
-    leftLastFolder = UBound(leftParts) - 1
-    rightLastFolder = UBound(rightParts) - 1
+    If includeLastPart Then
+        leftLastFolder = UBound(leftParts)
+        rightLastFolder = UBound(rightParts)
+    Else
+        leftLastFolder = UBound(leftParts) - 1
+        rightLastFolder = UBound(rightParts) - 1
+    End If
 
     If leftLastFolder < 0 Or rightLastFolder < 0 Then Exit Function
 

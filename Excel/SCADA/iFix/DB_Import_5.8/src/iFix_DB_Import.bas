@@ -30,7 +30,7 @@ Attribute VB_Name = "iFix_DB_Import"
 '   A_AACK,A_ASUSP,A_DELAY,A_REALM,A_ESIGTYPE,A_ESIGCONT,A_ESIGACK,A_ESIGTRAP,A_PDR_UPDATERATE,A_PDR_ACCESSTIME,
 '   A_PDR_DEADBAND,A_PDR_LATCHDATA,A_PDR_DISABLEOUT,A_PDR_ARRAYLENGTH,A_HIST_DESC,A_HIST_COLLECT,A_HIST_INTERVAL,A_HIST_OFFSET,A_HIST_TIMERES,A_HIST_COMPRESS,
 '   A_HIST_DEADBAND,A_HIST_COMPTYPE,A_HIST_COMPTIME,A_CTK_PERSIST,A_COMM_SURPRESS!
-' "DA","<TAGNAME>","","<DESCRIPTION>","MBE","EBOOL","<ADDRESS>","AUTO","ON","1",
+' "DA","<TAGNAME>","","<DESCRIPTION>","MBE","","<ADDRESS>","AUTO","ON","1",
 '   "NO","<OFF CODE>","<ON CODE>","ENABLE","NONE","LOW","COS","NO","NONE","NONE",
 '   "NONE","ALL","","","","","","","","",
 '   "","","","","","","","","","",
@@ -52,7 +52,7 @@ Attribute VB_Name = "iFix_DB_Import"
 '   A_AREA15,A_ALMEXT1,A_ALMEXT2,A_ESIGTYPE,A_ESIGCONT,A_ESIGACK,A_ESIGTRAP,A_PDR_UPDATERATE,A_PDR_ACCESSTIME,A_PDR_DEADBAND,
 '   A_PDR_LATCHDATA,A_PDR_DISABLEOUT,A_PDR_ARRAYLENGTH,A_HIST_DESC,A_HIST_COLLECT,A_HIST_INTERVAL,A_HIST_OFFSET,A_HIST_TIMERES,A_HIST_COMPRESS,A_HIST_DEADBAND,
 '   A_HIST_COMPTYPE,A_HIST_COMPTIME!
-' "DR","<TAGNAME>","<DESCRIPTION>","MBE","EBOOL","DECIMAL","<ADDRESS>","NO","NO","<OFF CODE>",
+' "DR","<TAGNAME>","<DESCRIPTION>","MBE","","DECIMAL","<ADDRESS>","NO","NO","<OFF CODE>",
 '   "<ON CODE>","DISABLE","NONE","NONE","NONE","NONE","ALL","","","",
 '   "","","","","","","","","","",
 '   "","","","NONE","YES","NO","REJECT","1,000","300,000","0",
@@ -77,7 +77,7 @@ Attribute VB_Name = "iFix_DB_Import"
 '   A_AREA10,A_AREA11,A_AREA12,A_AREA13,A_AREA14,A_AREA15,A_ALMEXT1,A_ALMEXT2,A_ESIGTYPE,A_ESIGCONT,
 '   A_ESIGACK,A_ESIGTRAP,A_PDR_UPDATERATE,A_PDR_ACCESSTIME,A_PDR_DEADBAND,A_PDR_LATCHDATA,A_PDR_DISABLEOUT,A_PDR_ARRAYLENGTH,A_HIST_DESC,A_HIST_COLLECT,
 '   A_HIST_INTERVAL,A_HIST_OFFSET,A_HIST_TIMERES,A_HIST_COMPRESS,A_HIST_DEADBAND,A_HIST_COMPTYPE,A_HIST_COMPTIME!
-' "MDI","<TAGNAME>","","<DESCRIPTION>","NO","NO","MBE","","0:0","",
+' "MDI","<TAGNAME>","","<DESCRIPTION>","NO","NO","SIM","","0:0","",
 '   "","","","","","ON","1","AUTO","NO","",
 '   "","","","","","","","NO","NO","NO",
 '   "NO","NO","NO","NO","NO","ENABLE","NONE","LOW","NONE","NONE",
@@ -888,7 +888,7 @@ Private Function GetJcc1SeedRow(ByVal blockType As String, ByVal rowValues As Ob
 	If blockTagMap.Exists(normalizedTag) Then
 		Set historicalSeed = blockTagMap.Item(normalizedTag)
 		If IsAaHistoricalSeedEligible(rowValues, historicalSeed) Then
-			Set GetJcc1SeedRow = ExtractAaHistoricalAlarmSeed(historicalSeed)
+			Set GetJcc1SeedRow = ExtractAaHistoricalAlarmSeed(historicalSeed, rowValues)
 			If Not GetJcc1SeedRow Is Nothing Then
 				If GetJcc1SeedRow.Count > 0 Then
 					foundMatch = True
@@ -931,18 +931,40 @@ Private Function IsAaHistoricalSeedEligible(ByVal rowValues As Object, ByVal his
 	IsAaHistoricalSeedEligible = True
 End Function
 
-Private Function ExtractAaHistoricalAlarmSeed(ByVal historicalSeed As Object) As Object
+Private Function ExtractAaHistoricalAlarmSeed(ByVal historicalSeed As Object, ByVal rowValues As Object) As Object
 	Dim selectedSeed As Object
 	Dim fieldName As Variant
 	Dim seedValue As String
+	Dim seedNumericValue As Double
+	Dim sourceElo As Double
+	Dim sourceEhi As Double
 
 	Set selectedSeed = CreateObject("Scripting.Dictionary")
 	selectedSeed.CompareMode = vbTextCompare
 
+	If Not TryParseDouble(GetMapValue(rowValues, FIELD_SOURCE_SENSOR_ELO), sourceElo) Then
+		Set ExtractAaHistoricalAlarmSeed = selectedSeed
+		Exit Function
+	End If
+
+	If Not TryParseDouble(GetMapValue(rowValues, FIELD_SOURCE_SENSOR_EHI), sourceEhi) Then
+		Set ExtractAaHistoricalAlarmSeed = selectedSeed
+		Exit Function
+	End If
+
+	If sourceEhi < sourceElo Then
+		Set ExtractAaHistoricalAlarmSeed = selectedSeed
+		Exit Function
+	End If
+
 	For Each fieldName In GetAaAlarmThresholdFieldNames()
 		seedValue = GetDictValueOrDefault(historicalSeed, CStr(fieldName), vbNullString)
 		If Len(seedValue) > 0 Then
-			selectedSeed(CStr(fieldName)) = seedValue
+			If TryParseDouble(seedValue, seedNumericValue) Then
+				If seedNumericValue >= sourceElo And seedNumericValue <= sourceEhi Then
+					selectedSeed(CStr(fieldName)) = seedValue
+				End If
+			End If
 		End If
 	Next fieldName
 
@@ -1507,7 +1529,7 @@ End Function
 Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 	Select Case UCase$(Trim$(blockType))
 		Case "DA"
-			GetBlockDataTemplateArray = Array("DA", "<TAGNAME>", "", "<DESCRIPTION>", "MBE", "EBOOL", "<ADDRESS>", "AUTO", "ON", "1", _
+			GetBlockDataTemplateArray = Array("DA", "<TAGNAME>", "", "<DESCRIPTION>", "MBE", "", "<ADDRESS>", "AUTO", "ON", "1", _
 				"NO", "<OFF CODE>", "<ON CODE>", "ENABLE", "NONE", "LOW", "COS", "NO", "NONE", "NONE", _
 				"NONE", "ALL", "", "", "", "", "", "", "", "", _
 				"", "", "", "", "", "", "", "", "", "", _
@@ -1515,7 +1537,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"0", "NO", "NO", "0", "", "NO", "5,000.0", "0.0", "Milliseconds", "DISABLE", _
 				"0.0000", "Absolute", "0", "DISABLE", "DISABLE")
 		Case "DR"
-			GetBlockDataTemplateArray = Array("DR", "<TAGNAME>", "<DESCRIPTION>", "MBE", "EBOOL", "DECIMAL", "<ADDRESS>", "NO", "NO", "<OFF CODE>", _
+			GetBlockDataTemplateArray = Array("DR", "<TAGNAME>", "<DESCRIPTION>", "MBE", "", "DECIMAL", "<ADDRESS>", "NO", "NO", "<OFF CODE>", _
 				"<ON CODE>", "DISABLE", "NONE", "NONE", "NONE", "NONE", "ALL", "", "", "", _
 				"", "", "", "", "", "", "", "", "", "", _
 				"", "", "", "NONE", "YES", "NO", "REJECT", "1,000", "300,000", "0", _
@@ -1544,7 +1566,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"Absolute", "0", "NO", "NO", "YES", "0.00", "65,535.00", "0.00", "100.00", "DISABLE", _
 				"DISABLE")
 		Case "AR"
-			GetBlockDataTemplateArray = Array("AR", "<TAGNAME>", "<DESCRIPTION>", "MBE", "<DATA TYPE>", "DECIMAL", "<ADDRESS>", "None", "<Sensor Lo Limit (Eng Units)>", "<Sensor HI Limit (Eng Units)>", _
+			GetBlockDataTemplateArray = Array("AR", "<TAGNAME>", "<DESCRIPTION>", "SIM", "<DATA TYPE>", "DECIMAL", "<ADDRESS>", "None", "<Sensor Lo Limit (Eng Units)>", "<Sensor HI Limit (Eng Units)>", _
 				"<UNITS>", "NO", "DISABLE", "NONE", "NONE", "NONE", "NONE", "ALL", "", "", _
 				"", "", "", "", "", "", "", "", "", "", _
 				"", "", "", "", "NONE", "YES", "NO", "REJECT", "1,000", "300,000", _

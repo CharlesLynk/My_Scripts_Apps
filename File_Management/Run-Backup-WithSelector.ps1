@@ -871,7 +871,7 @@ function Show-BackupSelector {
         }
     }
 
-    function Sort-BackupTree {
+    function Get-BackupTreeOrder {
         param([Parameter(Mandatory)]$Node)
 
         $ordered = @(
@@ -888,7 +888,7 @@ function Show-BackupSelector {
 
         foreach ($child in $Node.Children) {
             if ($child.Kind -eq $ItemKind_Category) {
-                Sort-BackupTree -Node $child
+                Get-BackupTreeOrder -Node $child
             }
         }
     }
@@ -991,14 +991,14 @@ function Show-BackupSelector {
         Add-SelectorEntryToTree -RootNode $root -DisplayPath ([string]$entry.DisplayPath) -SelectorPath ([string]$entry.SelectorPath) -IsChecked ([bool]$entry.IsChecked) -IsEnabled ([bool]$entry.IsEnabled)
     }
 
-    Sort-BackupTree -Node $root
+    Get-BackupTreeOrder -Node $root
 
     $topLevelSources = @{}
     foreach ($k in $topLevelSourceSets.Keys) {
         $topLevelSources[[string]$k] = @($topLevelSourceSets[$k])
     }
     Add-TopLevelSourcePathLabel -RootNode $root -TopLevelSourceMap $topLevelSources
-    Sort-BackupTree -Node $root
+    Get-BackupTreeOrder -Node $root
 
     # Show top-level nodes directly (Explorer-like hierarchy beneath)
     $treeView.ItemsSource = $root.Children
@@ -1072,14 +1072,17 @@ function Complete-ProgressSafe {
 }
 
 # Core helpers
-function Ensure-Directory {
+function New-DirectoryIfMissing {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        if ($PSCmdlet.ShouldProcess($Path, 'Create missing directory')) {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        }
     }
 }
 
-function Path-ContainsProtectedFolder {
+function Test-PathContainsProtectedFolder {
     param([Parameter(Mandatory)][string]$Path)
     $current = $Path
     while ($true) {
@@ -1133,7 +1136,7 @@ function Get-BackupSnapshotFolder {
     )
 
     if ($Mode -eq 'CurrentOrCreate') {
-        Ensure-Directory -Path $BackupRootPath
+        New-DirectoryIfMissing -Path $BackupRootPath
 
         $dateTag = Get-Date -Format $script:DateFormat
         $todayFolder = Join-Path $BackupRootPath ("{0}{1}" -f $script:BackupFolderPrefix, $dateTag)
@@ -1172,13 +1175,14 @@ function Get-BackupSnapshotFolder {
 }
 
 function Move-ToDeletionArea {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$PathToMove,
         [Parameter(Mandatory)][string]$DeletionRoot,
         [Parameter(Mandatory)][string]$RelLabel
     )
     if (-not (Test-Path -LiteralPath $PathToMove)) { return }
-    if (Path-ContainsProtectedFolder -Path $PathToMove) {
+    if (Test-PathContainsProtectedFolder -Path $PathToMove) {
         Write-Warning "Protected path detected (BitLocker-like folder in path): '$PathToMove'. Skipping move to deletion area."
         return
     }
@@ -1195,7 +1199,7 @@ function Move-ToDeletionArea {
 
     $dest = Join-Path $DeletionRoot $effectiveRelLabel
     $parentDir = Split-Path -Parent $dest
-    Ensure-Directory -Path $parentDir
+    New-DirectoryIfMissing -Path $parentDir
 
     # If destination already exists, it could mean:
     # 1. This exact item was already moved (don't move again)
@@ -1231,6 +1235,7 @@ function Move-ToDeletionArea {
 }
 
 function Copy-FileIfDifferent {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
         [Parameter(Mandatory)][string]$DestFilePath
@@ -1249,7 +1254,7 @@ function Copy-FileIfDifferent {
     }
 
     if ($copyNeeded) {
-        Ensure-Directory -Path (Split-Path -Parent $DestFilePath)
+        New-DirectoryIfMissing -Path (Split-Path -Parent $DestFilePath)
         if ($PSCmdlet.ShouldProcess($DestFilePath, "Copy from '$($SourceFile.FullName)'")) {
             try {
                 Copy-Item -LiteralPath $SourceFile.FullName -Destination $DestFilePath -Force -ErrorAction Stop
@@ -1772,7 +1777,8 @@ function Resolve-CustomMappingModeConfig {
     }
 }
 
-function Stage-BackupOnlyItems {
+function Move-BackupOnlyItemsToDeletion {
+    [CmdletBinding(SupportsShouldProcess = $true)]
     # Stages backup-only content into deletion area.
     # ItemKinds controls whether directories, files, or both are processed.
     # Files can optionally include timestamp mismatch staging.
@@ -1924,6 +1930,7 @@ function Sync-JobsIncremental {
     .PARAMETER ProgressParentId
     Parent progress ID for nested progress display.
     #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$DestRoot,
@@ -1936,8 +1943,8 @@ function Sync-JobsIncremental {
         return
     }
 
-    Ensure-Directory -Path (Split-Path -Parent $DestRoot)
-    Ensure-Directory -Path $DestRoot
+    New-DirectoryIfMissing -Path (Split-Path -Parent $DestRoot)
+    New-DirectoryIfMissing -Path $DestRoot
 
     if ($Mode -eq 'OneDriveDelta') {
         Write-ProgressSafe -Id $script:ProgressIds.JobsSync -ParentId $ProgressParentId -Activity $script:ProgressText.JobsOneDriveDeltaActivity -Status $script:ProgressText.JobsOneDriveCompareStatus -PercentComplete 30
@@ -1991,7 +1998,7 @@ function Sync-JobsIncremental {
             Write-ProgressSafe -Id $script:ProgressIds.JobsDirCreate -ParentId $ProgressParentId -Activity $script:ProgressText.JobsCreateDirsActivity -Status ($script:ProgressText.CountStatusFormat -f ($i + 1), $dirCount) -PercentComplete $dirPct
         }
         $rel = Get-RelativePathSafe -FullPath $dirs[$i].FullName -BasePath $SourceRoot
-        Ensure-Directory -Path (Join-Path $DestRoot $rel)
+        New-DirectoryIfMissing -Path (Join-Path $DestRoot $rel)
     }
     Complete-ProgressSafe -Id $script:ProgressIds.JobsDirCreate
 
@@ -2051,6 +2058,7 @@ function Move-CurrentJobsFoldersToOld {
     .PARAMETER RemovalLabel
     Relative label prefix used when staging deep removals from Current Jobs.
     #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$CurrentRoot,
@@ -2062,6 +2070,7 @@ function Move-CurrentJobsFoldersToOld {
     if (-not (Test-Path -LiteralPath $CurrentRoot)) { return }
 
     function Merge-DirectoryPreferNewest {
+        [CmdletBinding(SupportsShouldProcess = $true)]
         param(
             [Parameter(Mandatory)][string]$SourceFolder,
             [Parameter(Mandatory)][string]$DestFolder
@@ -2069,7 +2078,7 @@ function Move-CurrentJobsFoldersToOld {
 
         if (-not (Test-Path -LiteralPath $SourceFolder)) { return }
 
-        Ensure-Directory -Path $DestFolder
+        New-DirectoryIfMissing -Path $DestFolder
 
         $hadCopyErrors = $false
         $sourceFiles = @(Get-ChildItem -LiteralPath $SourceFolder -File -Recurse -Force -ErrorAction SilentlyContinue)
@@ -2097,7 +2106,7 @@ function Move-CurrentJobsFoldersToOld {
             }
 
             if ($copySource) {
-                Ensure-Directory -Path (Split-Path -Parent $destFile)
+                New-DirectoryIfMissing -Path (Split-Path -Parent $destFile)
                 if ($PSCmdlet.ShouldProcess($destFile, "Copy newest version from '$($srcFile.FullName)'")) {
                     try {
                         Copy-Item -LiteralPath $srcFile.FullName -Destination $destFile -Force -ErrorAction Stop
@@ -2128,7 +2137,7 @@ function Move-CurrentJobsFoldersToOld {
         }
     }
 
-    Ensure-Directory -Path $OldRoot
+    New-DirectoryIfMissing -Path $OldRoot
 
     $liveTopDirs = @(Get-ChildItem -LiteralPath $SourceRoot -Directory -Force -ErrorAction SilentlyContinue)
     $liveTopSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -2226,6 +2235,7 @@ function Remove-EmptyDirsNotOnLiveJobs {
     .PARAMETER ProgressParentId
     The parent progress ID for nested progress display
     #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$SourceRoot,
         [Parameter(Mandatory)][string]$DestRoot,
@@ -2308,6 +2318,7 @@ function Copy-FolderWithRobocopy {
     .PARAMETER IncludeTimestampMismatch
     When true, backup-only files with timestamp mismatch are staged before mirroring.
     #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [Parameter(Mandatory)][string]$SourceFolder,
         [Parameter(Mandatory)][string]$DestFolder,
@@ -2340,15 +2351,15 @@ function Copy-FolderWithRobocopy {
 
     # Move entire backup-only directories first (one operation per dir, not per file)
     # This prevents a 10000-file directory from being processed file-by-file
-    Stage-BackupOnlyItems -SourceFolder $SourceFolder -DestFolder $DestFolder -DeletionRoot $DeletionRoot -DeletionLabel $DeletionLabel -ItemKinds Directories
+    Move-BackupOnlyItemsToDeletion -SourceFolder $SourceFolder -DestFolder $DestFolder -DeletionRoot $DeletionRoot -DeletionLabel $DeletionLabel -ItemKinds Directories
 
     Write-ProgressSafe -Id $ProgressId -ParentId $ProgressParentId -Activity $activityText -Status $script:ProgressText.Stage1bStatus -PercentComplete 30
 
     # Move individual files BEFORE robocopy runs, so they aren't deleted by robocopy's /MIR flag
-    Stage-BackupOnlyItems -SourceFolder $SourceFolder -DestFolder $DestFolder -DeletionRoot $DeletionRoot -DeletionLabel $DeletionLabel -ItemKinds Files -IncludeTimestampMismatch:$IncludeTimestampMismatch
+    Move-BackupOnlyItemsToDeletion -SourceFolder $SourceFolder -DestFolder $DestFolder -DeletionRoot $DeletionRoot -DeletionLabel $DeletionLabel -ItemKinds Files -IncludeTimestampMismatch:$IncludeTimestampMismatch
 
-    Ensure-Directory -Path (Split-Path -Parent $DestFolder)
-    Ensure-Directory -Path $DestFolder
+    New-DirectoryIfMissing -Path (Split-Path -Parent $DestFolder)
+    New-DirectoryIfMissing -Path $DestFolder
 
     Write-ProgressSafe -Id $ProgressId -ParentId $ProgressParentId -Activity $activityText -Status $script:ProgressText.Stage2Status -PercentComplete 50
 
@@ -2438,14 +2449,14 @@ Write-Host ""
 $runBackupOperations = (-not $DryRunDiffCheck) -or $RunBackupBeforeDiffCheck
 
 # Setup directories
-Ensure-Directory -Path $ActiveBackupRoot
+New-DirectoryIfMissing -Path $ActiveBackupRoot
 if ($runBackupOperations) {
     $BackupRunRoot = Get-BackupSnapshotFolder -BackupRootPath $ActiveBackupRoot -Mode CurrentOrCreate
-    Ensure-Directory -Path $BackupRunRoot
+    New-DirectoryIfMissing -Path $BackupRunRoot
 
     $runStamp = Get-Date -Format $script:DateTimeFormat
     $DeletionSessionRoot = Join-Path (Join-Path $ActiveBackupRoot $script:PathConfig.DeletionRootName) ("{0}{1}" -f $script:PathConfig.DeletionRunPrefix, $runStamp)
-    Ensure-Directory -Path $DeletionSessionRoot
+    New-DirectoryIfMissing -Path $DeletionSessionRoot
 } else {
     $BackupRunRoot = Get-BackupSnapshotFolder -BackupRootPath $ActiveBackupRoot -Mode LatestExisting
     $DeletionSessionRoot = ''
@@ -2527,11 +2538,11 @@ if ($runBackupOperations) {
             Write-ProgressSafe -Id $script:ProgressIds.Main -Activity $script:MainText.ProgressActivityMain -Status $script:MainText.ProgressJobsMoveOnly -PercentComplete (35 * $progressStep / $totalItems)
             if ((Test-Path -LiteralPath $JobsSource) -and (Test-Path -LiteralPath $JobsDest)) {
                 Write-ProgressSafe -Id $script:ProgressIds.JobsDirCheck -ParentId $script:ProgressIds.Main -Activity $script:ProgressText.JobsCheckRemovedDirsActivity -Status $script:ProgressText.ProcessingDirsStatus
-                Stage-BackupOnlyItems -SourceFolder $JobsSource -DestFolder $JobsDest -DeletionRoot $DeletionSessionRoot -DeletionLabel $script:PathConfig.JobsRemovedFromLiveLabelSSD -ItemKinds Directories
+                Move-BackupOnlyItemsToDeletion -SourceFolder $JobsSource -DestFolder $JobsDest -DeletionRoot $DeletionSessionRoot -DeletionLabel $script:PathConfig.JobsRemovedFromLiveLabelSSD -ItemKinds Directories
                 Complete-ProgressSafe -Id $script:ProgressIds.JobsDirCheck
 
                 Write-ProgressSafe -Id $script:ProgressIds.JobsFileCheck -ParentId $script:ProgressIds.Main -Activity $script:ProgressText.JobsCheckRemovedFilesActivity -Status $script:ProgressText.EnumeratingFilesStatus
-                Stage-BackupOnlyItems -SourceFolder $JobsSource -DestFolder $JobsDest -DeletionRoot $DeletionSessionRoot -DeletionLabel $script:PathConfig.JobsRemovedFromLiveLabelSSD -ItemKinds Files -IncludeTimestampMismatch:$false
+                Move-BackupOnlyItemsToDeletion -SourceFolder $JobsSource -DestFolder $JobsDest -DeletionRoot $DeletionSessionRoot -DeletionLabel $script:PathConfig.JobsRemovedFromLiveLabelSSD -ItemKinds Files -IncludeTimestampMismatch:$false
                 Complete-ProgressSafe -Id $script:ProgressIds.JobsFileCheck
             }
 
