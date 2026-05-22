@@ -1544,7 +1544,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"NO", "NO", "0", "", "NO", "5,000.0", "0.0", "Milliseconds", "DISABLE", "0.0000", _
 				"Absolute", "0")
 		Case "MDI"
-			GetBlockDataTemplateArray = Array("MDI", "<TAGNAME>", "", "<DESCRIPTION>", "NO", "NO", "MBE", "", "0:0", "", _
+			GetBlockDataTemplateArray = Array("MDI", "<TAGNAME>", "", "<DESCRIPTION>", "NO", "NO", "SIM", "", "0:0", "", _
 				"", "", "", "", "", "ON", "1", "AUTO", "NO", "", _
 				"", "", "", "", "", "", "", "NO", "NO", "NO", _
 				"NO", "NO", "NO", "NO", "NO", "ENABLE", "NONE", "LOW", "NONE", "NONE", _
@@ -1566,7 +1566,7 @@ Private Function GetBlockDataTemplateArray(ByVal blockType As String) As Variant
 				"Absolute", "0", "NO", "NO", "YES", "0.00", "65,535.00", "0.00", "100.00", "DISABLE", _
 				"DISABLE")
 		Case "AR"
-			GetBlockDataTemplateArray = Array("AR", "<TAGNAME>", "<DESCRIPTION>", "SIM", "<DATA TYPE>", "DECIMAL", "<ADDRESS>", "None", "<Sensor Lo Limit (Eng Units)>", "<Sensor HI Limit (Eng Units)>", _
+			GetBlockDataTemplateArray = Array("AR", "<TAGNAME>", "<DESCRIPTION>", "MBE", "<DATA TYPE>", "DECIMAL", "<ADDRESS>", "None", "<Sensor Lo Limit (Eng Units)>", "<Sensor HI Limit (Eng Units)>", _
 				"<UNITS>", "NO", "DISABLE", "NONE", "NONE", "NONE", "NONE", "ALL", "", "", _
 				"", "", "", "", "", "", "", "", "", "", _
 				"", "", "", "", "NONE", "YES", "NO", "REJECT", "1,000", "300,000", _
