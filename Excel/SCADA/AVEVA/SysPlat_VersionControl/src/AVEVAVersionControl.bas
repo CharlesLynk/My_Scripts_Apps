@@ -398,7 +398,7 @@ CleanExit:
 End Sub
 
 ' Builds/refreshes the Diff sheet
-Public Sub BuildDiffSheet()
+Private Sub BuildDiffSheet()
     Dim prevCalc As XlCalculation
     Dim prevEvents As Boolean
     Dim prevScreen As Boolean
@@ -563,7 +563,7 @@ CleanExit:
 End Sub
 
 ' Reapply status/highlighting on demand (useful after manual edits)
-Public Sub ReapplyDiffSheetFormatting()
+Private Sub ReapplyDiffSheetFormatting()
     Dim wsDiff As Worksheet
     Set wsDiff = GetWorksheetByName(SHEET_DIFF)
     If wsDiff Is Nothing Then Exit Sub
@@ -697,7 +697,7 @@ End Sub
 ' ========= Upsert Core =========
 
 ' Upserts a manifest XML into the given sheet, updating Config_Version & LastImport; adds new rows; preserves existing others.
-Public Function ManifestUpsert_IntoSheet(ByVal xmlPath As String, ByVal targetSheetName As String, Optional ByVal importTime As Variant, _
+Private Function ManifestUpsert_IntoSheet(ByVal xmlPath As String, ByVal targetSheetName As String, Optional ByVal importTime As Variant, _
                                          Optional ByRef errMessage As String, Optional ByVal showMessage As Boolean = True, _
                                          Optional ByVal rebuildDiff As Boolean = True) As Boolean
     Dim rowsData As Variant

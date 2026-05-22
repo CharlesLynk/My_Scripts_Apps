@@ -471,7 +471,7 @@ Public Sub HandleWorkbookOpen(ByVal wb As Workbook)
 End Sub
 
 ' One-time pass for all currently open non-add-in workbooks.
-Public Sub RunOpenTimeDriftCheckAllOpenWorkbooks()
+Private Sub RunOpenTimeDriftCheckAllOpenWorkbooks()
     Dim wb As Workbook
 
     On Error GoTo SafeExit
@@ -1974,7 +1974,7 @@ Fail:
     reason = "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
 End Function
 
-Public Sub ResetTypePickerUserForm()
+Private Sub ResetTypePickerUserForm()
     Dim reason As String
 
     If RebuildTypePickerFormComponent(ThisWorkbook, reason) Then

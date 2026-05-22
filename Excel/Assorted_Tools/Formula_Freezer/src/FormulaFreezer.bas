@@ -21,7 +21,7 @@ End Sub
 ' 1. Pipe (|)
 ' 2. Semicolon (;)
 ' 3. New line
-Public Sub RefreshFrozenFormulaTargets(ByVal targetReferences As String)
+Private Sub RefreshFrozenFormulaTargets(ByVal targetReferences As String)
    Dim normalized As String
    Dim parts() As String
    Dim i As Long
@@ -80,7 +80,7 @@ End Sub
 '
 ' Important: this assumes the target range uses one uniform formula pattern.
 ' Multiple different formulas within the same target range are not supported.
-Public Sub RefreshFrozenFormulaTarget(ByVal targetReference As String)
+Private Sub RefreshFrozenFormulaTarget(ByVal targetReference As String)
    Call RefreshFrozenFormulaTargetCore(targetReference, True)
 End Sub
 
@@ -131,7 +131,7 @@ SafeExit:
 End Function
 
 ' Convenience wrapper if you prefer passing table and column separately in VBA.
-Public Sub RefreshFrozenFormulaColumn(ByVal tableName As String, ByVal targetColumnName As String)
+Private Sub RefreshFrozenFormulaColumn(ByVal tableName As String, ByVal targetColumnName As String)
    RefreshFrozenFormulaTarget BuildStructuredTargetReference(tableName, targetColumnName)
 End Sub
 

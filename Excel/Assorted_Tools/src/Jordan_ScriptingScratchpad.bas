@@ -1,4 +1,4 @@
-Sub UnifyData()
+Private Sub UnifyData()
     Dim ws As Worksheet
     Dim wsSystemArchData As Worksheet
     Dim tblSystemArch As ListObject
@@ -541,7 +541,7 @@ End Sub
 
 
 'These are helper subs and functions that don't do anything on their own
-Sub ReplaceBasedOnObjectID(ws As Worksheet, splitObjectID As Long, columnOfInterest As String, searchString As String, lowerReplacement As String, upperReplacement As String)
+Private Sub ReplaceBasedOnObjectID(ws As Worksheet, splitObjectID As Long, columnOfInterest As String, searchString As String, lowerReplacement As String, upperReplacement As String)
     Dim colIndex As Long, objectIdCol As Long, lastRow As Long, i As Long
     
     colIndex = GetColumnIndex(ws, columnOfInterest)
@@ -582,7 +582,7 @@ Private Sub ReplaceSiteNames(sheetName As String, incorrectNames As Variant, cor
     End With
 End Sub
 
-Function IsInArray(val As String, arr As Variant) As Boolean
+Private Function IsInArray(val As String, arr As Variant) As Boolean
     Dim element As Variant
     For Each element In arr
         If StrComp(val, element, vbTextCompare) = 0 Then
@@ -593,7 +593,7 @@ Function IsInArray(val As String, arr As Variant) As Boolean
     IsInArray = False
 End Function
 
-Function GetColumnIndex(ws As Worksheet, headerName As Variant) As Long
+Private Function GetColumnIndex(ws As Worksheet, headerName As Variant) As Long
     Dim cell As Range
     Dim headerStr As String
     ' Safely convert headerName to string
@@ -622,7 +622,7 @@ Function GetColumnIndex(ws As Worksheet, headerName As Variant) As Long
     GetColumnIndex = 0 ' Not found
 End Function
 
-Function ArrayDimSize(arr As Variant, Optional dimension As Variant) As Long
+Private Function ArrayDimSize(arr As Variant, Optional dimension As Variant) As Long
     On Error GoTo ErrorHandler
 
     ' Default to dimension 1 if not provided or invalid
@@ -808,7 +808,7 @@ Private Sub HighlightSpellingErrors()
 End Sub
 
 
-Sub HighlightMatchingSiteNames()
+Private Sub HighlightMatchingSiteNames()
     Dim siteSheet As Worksheet
     Dim systemSheet As Worksheet
     Dim siteDict As Object
@@ -868,7 +868,7 @@ Sub HighlightMatchingSiteNames()
     Next cell
 End Sub
 
-Sub HighlightDifferencesBetweenSheets()
+Private Sub HighlightDifferencesBetweenSheets()
     Dim ws1 As Worksheet, ws2 As Worksheet
     Dim dict1 As Object, dict2 As Object
     Dim lastRow1 As Long, lastRow2 As Long
@@ -925,7 +925,7 @@ Sub HighlightDifferencesBetweenSheets()
 End Sub
 
 
-Sub HighlightUnmatchedSiteNames()
+Private Sub HighlightUnmatchedSiteNames()
     ThisWorkbook.Activate
     Dim sheetNames As Variant
     'sheetNames = Array("Site", "Building", "Room", "Control Panel", "PLC", "OIT", "Communication Equipment")
@@ -982,7 +982,7 @@ NextSheet:
     MsgBox "Highlighting complete."
 End Sub
 
-Sub CheckOldDictionary()
+Private Sub CheckOldDictionary()
     Dim ws As Worksheet
     Dim lastRow As Long
     Dim siteNamesRange As Range

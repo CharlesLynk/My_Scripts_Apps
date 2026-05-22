@@ -10,39 +10,39 @@ Option Explicit
 '==========================
 
 ' Primary worksheet hosting the layout (configured in InitGlobals)
-Public gWS As Worksheet
+Private gWS As Worksheet
 
 ' --- Configuration: cell addresses (sheet-driven inputs/outputs)
-Public Const SIGNED_CELL     As String = "J10"   ' e.g., "no", "two's comp.", "ones' comp.", "magnitude"
-Public Const WORD_CELL       As String = "J13"   ' bits per word (4/8/16/32/64)
-Public Const ENDIAN_CELL     As String = "J16"   ' "little" or "big"
-Public Const LAST_CONV_CELL  As String = "B19"   ' stores last conversion direction
+Private Const SIGNED_CELL     As String = "J10"   ' e.g., "no", "two's comp.", "ones' comp.", "magnitude"
+Private Const WORD_CELL       As String = "J13"   ' bits per word (4/8/16/32/64)
+Private Const ENDIAN_CELL     As String = "J16"   ' "little" or "big"
+Private Const LAST_CONV_CELL  As String = "B19"   ' stores last conversion direction
 
 ' --- Layout rows/columns (set once; can be changed and re-initialized)
-Public gBitLabelRow  As Long  ' row with bit index labels
-Public gBinRow       As Long  ' row with individual bit cells
-Public gDecRow       As Long  ' row with merged decimal cells
-Public gBinStartCol  As Long  ' first bit column
-Public gBinEndCol    As Long  ' last bit column
+Private gBitLabelRow  As Long  ' row with bit index labels
+Private gBinRow       As Long  ' row with individual bit cells
+Private gDecRow       As Long  ' row with merged decimal cells
+Private gBinStartCol  As Long  ' first bit column
+Private gBinEndCol    As Long  ' last bit column
 
 ' --- Key ranges
-Public gBinRng   As Range   ' range containing bits for all words
-Public gDecRng   As Range   ' range containing decimals (merged by word)
-Public gInputRng As Range   ' user input/output word strings (vertical list)
+Private gBinRng   As Range   ' range containing bits for all words
+Private gDecRng   As Range   ' range containing decimals (merged by word)
+Private gInputRng As Range   ' user input/output word strings (vertical list)
 
 ' --- Settings (sheet-driven) + derived values
-Public gSignedFmt  As String ' "no", "two's comp.", "ones' comp.", "magnitude"
-Public gWordSize   As Long   ' bits per word
-Public gNumWords   As Long   ' number of words across the bit row
-Public gBitLen     As Long   ' total bit cells = gBinEndCol - gBinStartCol + 1
-Public gIsLE       As Boolean ' True if little-endian
-Public gIsSigned   As Boolean ' True if signed mode selected
-Public gLastConv   As String  ' "binary to decimal" | "decimal to binary"
+Private gSignedFmt  As String ' "no", "two's comp.", "ones' comp.", "magnitude"
+Private gWordSize   As Long   ' bits per word
+Private gNumWords   As Long   ' number of words across the bit row
+Private gBitLen     As Long   ' total bit cells = gBinEndCol - gBinStartCol + 1
+Private gIsLE       As Boolean ' True if little-endian
+Private gIsSigned   As Boolean ' True if signed mode selected
+Private gLastConv   As String  ' "binary to decimal" | "decimal to binary"
 
 ' --- State
-Public gInitialized As Boolean
-Public gSubBusy     As Boolean
-Public gOldValue    As Variant ' Optional: set via Worksheet_Change if you want revert behavior
+Private gInitialized As Boolean
+Private gSubBusy     As Boolean
+Private gOldValue    As Variant ' Optional: set via Worksheet_Change if you want revert behavior
 
 '==========================
 ' === Initialization
@@ -74,7 +74,7 @@ Public Sub InitGlobals(Optional ByVal force As Boolean = False)
 End Sub
 
 ' Re-reads current settings from the sheet and recomputes derived values.
-Public Sub RefreshSettings()
+Private Sub RefreshSettings()
     gBitLen = gBinEndCol - gBinStartCol + 1
     gSignedFmt = LCase$(CStr(gWS.Range(SIGNED_CELL).value))      ' "no", "two's comp.", etc.
     gWordSize = CLng(gWS.Range(WORD_CELL).value)
@@ -110,7 +110,7 @@ CleanExit:
 End Sub
 
 ' Clears only the binary bit row.
-Public Sub ClearBinary()
+Private Sub ClearBinary()
     InitGlobals
     gBinRng.value = 0
 End Sub
@@ -156,7 +156,7 @@ CleanExit:
 End Sub
 
 ' Writes bit index labels above the bit row, honoring endianness.
-Public Sub LabelBitPositions()
+Private Sub LabelBitPositions()
 InitGlobals:     RefreshSettings
 
     Dim i As Long, j As Long, startCol As Long, bitIdx As Long
@@ -287,7 +287,7 @@ Private Sub WriteWordBits(ByVal startCol As Long, ByVal bits As Long, ByVal binS
 End Sub
 
 ' Decimal -> Binary string (MSB -> LSB), considering signed format.
-Public Function DecimalToBinary(ByVal decVal As Double, ByVal bits As Long, ByVal isSigned As Boolean) As String
+Private Function DecimalToBinary(ByVal decVal As Double, ByVal bits As Long, ByVal isSigned As Boolean) As String
     Dim s As String, i As Long, tmp As Double
 
     ' Build magnitude representation first (absolute value if signed negative)
@@ -328,7 +328,7 @@ Public Function DecimalToBinary(ByVal decVal As Double, ByVal bits As Long, ByVa
 End Function
 
 ' Binary string -> Decimal (assumes MSB first), considering signed format.
-Public Function BinaryToDecimal(ByVal binStr As String, ByVal isSigned As Boolean) As Double
+Private Function BinaryToDecimal(ByVal binStr As String, ByVal isSigned As Boolean) As Double
     Dim dec As Double, i As Long, l As Long, bitVal As Long
 
     binStr = Trim$(binStr)
@@ -379,7 +379,7 @@ End Function
 '==========================
 
 ' Ensures configuration makes sense (bit length divisible by word size, etc.)
-Public Function CheckSize() As Boolean
+Private Function CheckSize() As Boolean
     RefreshSettings
 
     If gWordSize <= 0 Then
@@ -400,7 +400,7 @@ Public Function CheckSize() As Boolean
 End Function
 
 ' Returns True only if the string is non-empty and contains only 0/1.
-Public Function IsValidBinaryString(ByVal binStr As String) As Boolean
+Private Function IsValidBinaryString(ByVal binStr As String) As Boolean
     Dim i As Long, ch As String
     If Len(binStr) = 0 Then
         IsValidBinaryString = False

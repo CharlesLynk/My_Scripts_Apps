@@ -150,7 +150,7 @@ Public Function LastUsedCol(ws As Worksheet) As Long
     LastUsedCol = IIf(f Is Nothing, 0, f.Column)
 End Function
 
-Public Function LastNonEmptyRowInRange(ws As Worksheet, ByVal startRow As Long, _
+Private Function LastNonEmptyRowInRange(ws As Worksheet, ByVal startRow As Long, _
                                        ByVal startCol As Long, ByVal endCol As Long) As Long
     Dim r As Long, c As Long
     Dim lastRow As Long: lastRow = LastUsedRow(ws)
@@ -420,7 +420,7 @@ Public Function NormalizeKey(ByVal v As Variant) As String
 End Function
 
 ' HTML entity decoder (for pasted config values)
-Public Function SanitizeHTMLEntities(ByVal s As String) As String
+Private Function SanitizeHTMLEntities(ByVal s As String) As String
     Dim t As String: t = CStr(s)
     ' Double-escaped
     t = Replace$(t, "&amp;amp;", "&amp;")
@@ -471,7 +471,7 @@ Public Function RxReplace(ByVal s As String, ByVal pattern As String, _
 End Function
 
 ' Clear regex cache (useful for shared workbooks or memory management)
-Public Sub ClearRegexCache()
+Private Sub ClearRegexCache()
     Set m_RegExpCache = Nothing
 End Sub
 
@@ -558,7 +558,7 @@ Public Sub QuickSortStrings(a() As String, ByVal lo As Long, ByVal hi As Long)
 End Sub
 
 ' Check if value exists in array (for small arrays)
-Public Function ExistsInArray(arr() As Long, ByVal countSoFar As Long, ByVal v As Long) As Boolean
+Private Function ExistsInArray(arr() As Long, ByVal countSoFar As Long, ByVal v As Long) As Boolean
     Dim i As Long
     For i = 1 To countSoFar
         If arr(i) = v Then
@@ -574,7 +574,7 @@ Public Function Min2(ByVal a As Long, ByVal b As Long) As Long
     If a < b Then Min2 = a Else Min2 = b
 End Function
 
-Public Function Max2(ByVal a As Long, ByVal b As Long) As Long
+Private Function Max2(ByVal a As Long, ByVal b As Long) As Long
     If a > b Then Max2 = a Else Max2 = b
 End Function
 
@@ -878,7 +878,7 @@ End Function
 ' Returns a report showing which sheets have issues
 ' This is READ-ONLY and safe to run with multiple users
 ' maxSheets: Administrative safety limit (default 50, modify in code if needed)
-Public Function DiagnoseWorkbookCharacters(Optional ByVal maxSheets As Long = 50) As String
+Private Function DiagnoseWorkbookCharacters(Optional ByVal maxSheets As Long = 50) As String
     Dim ws As Worksheet
     Dim report As String
     Dim sheetCount As Long
@@ -1017,7 +1017,7 @@ End Function
 
 ' Show detailed character codes for a specific cell (debugging helper)
 ' Usage: Call ShowCharacterCodes("Sheet1", "A1") or ShowCharacterCodes(ActiveSheet.Name, Selection.Address)
-Public Sub ShowCharacterCodes(ByVal sheetName As String, ByVal cellAddress As String)
+Private Sub ShowCharacterCodes(ByVal sheetName As String, ByVal cellAddress As String)
     Dim ws As Worksheet
     Dim cell As Range
     Dim s As String
@@ -1136,7 +1136,7 @@ End Function
 
 ' Quick cell inspector - call from Immediate Window or button
 ' Usage: Call InspectActiveCell()
-Public Sub InspectActiveCell()
+Private Sub InspectActiveCell()
     On Error Resume Next
     If TypeName(Selection) = "Range" Then
         ShowCharacterCodes ActiveSheet.Name, Selection.Address

@@ -7,7 +7,7 @@ Attribute VB_Name = "StringWrapVBA"
 '==========================================
 
 '================== PUBLIC FUNCTIONS ==================
-Function StringWrapVBA(txt As String, pos As Long) As String
+Public Function StringWrapVBA(txt As String, pos As Long) As String
     Dim delim As String: delim = ""","""
     Dim nearest As Long: nearest = -1
     Dim i As Long

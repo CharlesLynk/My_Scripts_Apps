@@ -1328,7 +1328,7 @@ End Sub
 
 ' Public helper function for testing normalization in worksheet
 ' Usage in Excel: =TestPLCMatch("PLC-1A", "PLC 1A") returns TRUE if they match
-Public Function TestPLCMatch(ByVal value1 As Variant, ByVal value2 As Variant) As Boolean
+Private Function TestPLCMatch(ByVal value1 As Variant, ByVal value2 As Variant) As Boolean
     Dim key1 As String, key2 As String
     key1 = NormalizeKey(value1)
     key2 = NormalizeKey(value2)
@@ -1337,12 +1337,12 @@ End Function
 
 ' Public helper to see normalized key in worksheet
 ' Usage in Excel: =GetNormalizedPLC("PLC-1A") returns "PLC1A"
-Public Function GetNormalizedPLC(ByVal value As Variant) As String
+Private Function GetNormalizedPLC(ByVal value As Variant) As String
     GetNormalizedPLC = NormalizeKey(value)
 End Function
 
 ' Test filter criteria formula in immediate window
-Public Sub TestFilterCriteria(ByVal sheetName As String, ByVal selectedPLC As String)
+Private Sub TestFilterCriteria(ByVal sheetName As String, ByVal selectedPLC As String)
     Dim ws As Worksheet: Set ws = SheetByName(sheetName)
     If ws Is Nothing Then
         Debug.Print "Sheet not found: " & sheetName

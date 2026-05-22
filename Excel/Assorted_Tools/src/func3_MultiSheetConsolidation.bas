@@ -34,9 +34,9 @@ Private Const H_INST_COND As String = "Instrument Condition Rating"
 Private Const H_INST_NAME As String = "Field Instrument Name"
 
 ' Unified table headers (order defines the table)
-Public gHeaders As Variant
+Private gHeaders As Variant
 ' Source worksheets to ingest (in order)
-Public gSrcSheets As Variant
+Private gSrcSheets As Variant
 
 ' =====================================================================================
 ' ENTRY POINT
@@ -236,7 +236,7 @@ End Sub
 ' CLEANUP & FIX-UPS
 ' =====================================================================================
 
-Public Sub GeneralCleanup()
+Private Sub GeneralCleanup()
     ' Light-weight cleanup across all sheets: normalize quotes, hyphen, line breaks, trim, collapse spaces.
     Dim ws As Worksheet, cell As Range
     Dim unicodeHyphen As String
@@ -245,7 +245,7 @@ Public Sub GeneralCleanup()
     For Each ws In gWB.Worksheets
         With ws.Cells
             .Replace What:=unicodeHyphen, replacement:="-", LookAt:=xlPart
-            .Replace What:="’", replacement:="'", LookAt:=xlPart
+            .Replace What:="ï¿½", replacement:="'", LookAt:=xlPart
             ' Consolidate ampersands (in case "&&" was used)
             .Replace What:="&&", replacement:="&", LookAt:=xlPart
 
@@ -263,7 +263,7 @@ Public Sub GeneralCleanup()
     Next ws
 End Sub
 
-Public Sub FixSitesInSourceSheets()
+Private Sub FixSitesInSourceSheets()
     ' Split ambiguous site names based on ObjectID thresholds in specific sheets
     Dim sheets As Variant, splitObjectID As Variant
     Dim searchString As Variant, columnOfInterest As Variant
@@ -284,7 +284,7 @@ Public Sub FixSitesInSourceSheets()
     Next s
 End Sub
 
-Public Sub FixMismatchedSiteNames()
+Private Sub FixMismatchedSiteNames()
     Dim incorrectSiteNames As Variant, correctSiteNames As Variant
     incorrectSiteNames = Array("1-044 Kufr Asad PS1 & Well 1", "Abu Basal Pumping Station and Well 2", "Abu Basal Well 1", "Al Bwaydah ps", "Al Hdoud PS", "Al Za'tary Well 6", "Al-safi additional PS", "Al-Safi Main PS", "Amman Ps", "Aqeb 94.5 well", "Aqeb k 102 well", "Aqeb k 102.5 well", "Aqeb k 95 well", "Aqeb k104 well", _
     "Aqeb k109 well", "Aqeb k110 well", "Aqeb k114 well", "Aqeb k122 well", "Aqeb k91.5 well", "As-sammar old", "Bushra Pumping Station and Well 4", "Cg 25", "Cg 26", "Cg 27", "Cg 29", "Cg 30", "Cg31", "Check gate 10", "Check gate 12", "Check gate 14", "Check gate 15", "Check gate 17", "Check gate 18", "Check gate 19", _
@@ -295,7 +295,7 @@ Public Sub FixMismatchedSiteNames()
     "Reservoir um njash", "Sumaya 5", "Sumaya 6", "Suwelmeh ps", "T3 10 Well", "T3 17 Well", "T3 Abu Siah Booster", "T3 Booster 11", "T3 Mazra A well11", "T3 Miyahuna Ain Ghazal 7 Well", "T3 Miyahuna Nader pumping station", "T3 miyahuna sebaq well 27", "Tlal althahab", "To 10", "To 18", "To 21 and Check Gate 8", "TO 22.2", _
     "TO 24", "TO 28", "TO 33", "TO 36", "TO 41", "TO 50", "To 53", "TO 62", "To 65", "To 72", "To 78", "To 81", "To 86", "To 91", "To 95", "UmEnjasha Reservoir", "Wadi Arab Pumping Station 1 New", "Wadi Arab Pumping Station 1 New-Old", "Wadi Arab Pumping Station 2 New", "Wadi Arab Pumping Station 2 old", "Wadi Arab Well-1", _
     "Wadi Arab Well-13", "Wadi Arab Well-5", "Wadi Arab Well-6", "Wadi Arab Well-9", "Zai pump station", "Zara mae'en ps", "Zara Ma'in wtp", "Zara Ma'in wtp + pump station 1", "Zarqa mae'en PS", "Zatary Old PS", "Znaieh well 10", "Znaieh well 3", "Znaieh well 4", "Znaieh well 5", "Znaieh well 6", "Weir abu zeghab", _
-    "Al’ Aqeb K104C", "Aqeb 94.5***", "T3 Miyahuna DZ13 F*", "T3 Miyahuna DZ13C*", "Weir Abu Zeghab")
+    "Alï¿½ Aqeb K104C", "Aqeb 94.5***", "T3 Miyahuna DZ13 F*", "T3 Miyahuna DZ13C*", "Weir Abu Zeghab")
     
     correctSiteNames = Array("Kufur Assad PS1 & Kufur Assad 1", "Abu Albassal PS and Abu Albassal 2", "Abu Albassal 1", "Al Bwaydah PS", "Hodoud Pumping Station and Well", "Al Za'tary 6a", "Al-Safi Additional Pump Station", "Al-Safi Main Pump Station", "Amman Pump Station", "Aqeb 94.5", "Aqeb k 102", "Al' Aqeb K102.5", _
     "Al' Aqeb K95b", "Al' Aqeb K104c", "Al' Aqeb K109b", "Al' Aqeb K110", "Al' Aqeb K114", "Al' Aqeb K122", "Aqeb 91.5", "As-Sammar Old Pump Station", "Bushra PS and hakama 4a", "Check Gate 25", "Check Gate 26", "Check Gate 27", "Check Gate 29", "Check Gate 30", "Check Gate 31", "Check Gate 10", "Check Gate 12", _
@@ -311,7 +311,7 @@ Public Sub FixMismatchedSiteNames()
     ReplaceSiteNames ARCH_SHEET, incorrectSiteNames, correctSiteNames
 End Sub
 
-Public Sub SortAndConsolidatePanels()
+Private Sub SortAndConsolidatePanels()
     Dim ws As Worksheet
     Dim lastRow As Long
     Dim key As String
@@ -371,7 +371,7 @@ Public Sub SortAndConsolidatePanels()
     Loop
 End Sub
 
-Public Sub SortAndFill_Muni_Type_Tier()
+Private Sub SortAndFill_Muni_Type_Tier()
     Dim ws As Worksheet
     Dim lastRow As Long, i As Long
 
@@ -407,7 +407,7 @@ Public Sub SortAndFill_Muni_Type_Tier()
     SortTableByHeaders gTbl, Array(H_SITE, H_BUILD, H_ROOM, H_PANEL)
 End Sub
 
-Public Sub FixSystemArchDataTypos()
+Private Sub FixSystemArchDataTypos()
     Dim ws As Worksheet
     Dim lastRow As Long, lastCol As Long
     Dim i As Long, j As Long
@@ -510,7 +510,7 @@ End Sub
 ' REPLACEMENT UTILITIES
 ' =====================================================================================
 
-Public Sub ReplaceBasedOnObjectID(ws As Worksheet, _
+Private Sub ReplaceBasedOnObjectID(ws As Worksheet, _
                                   ByVal splitObjectID As Long, _
                                   ByVal columnOfInterest As String, _
                                   ByVal searchString As String, _
@@ -538,7 +538,7 @@ Public Sub ReplaceBasedOnObjectID(ws As Worksheet, _
     Next i
 End Sub  ' <<<< Fixed missing End Sub
 
-Public Sub ReplaceSiteNames(ByVal sheetName As String, ByVal incorrectNames As Variant, ByVal correctNames As Variant)
+Private Sub ReplaceSiteNames(ByVal sheetName As String, ByVal incorrectNames As Variant, ByVal correctNames As Variant)
     Dim ws As Worksheet
     Dim siteCol As Long
     Dim i As Long
@@ -574,7 +574,7 @@ Private Function HeaderIndexDict(ByVal ws As Worksheet) As Object
 End Function
 
 ' Get column index by header name in a worksheet (row 1)
-Public Function GetColumnIndex(ByVal ws As Worksheet, ByVal headerName As String) As Long
+Private Function GetColumnIndex(ByVal ws As Worksheet, ByVal headerName As String) As Long
     Dim cell As Range, headerStr As String
     headerStr = Trim$(headerName)
     If Len(headerStr) = 0 Then GetColumnIndex = 0: Exit Function
@@ -589,7 +589,7 @@ Public Function GetColumnIndex(ByVal ws As Worksheet, ByVal headerName As String
 End Function
 
 ' Case-insensitive membership test for small arrays
-Public Function IsInArray(ByVal val As String, ByVal arr As Variant) As Boolean
+Private Function IsInArray(ByVal val As String, ByVal arr As Variant) As Boolean
     Dim element As Variant
     For Each element In arr
         If StrComp(val, CStr(element), vbTextCompare) = 0 Then IsInArray = True: Exit Function
