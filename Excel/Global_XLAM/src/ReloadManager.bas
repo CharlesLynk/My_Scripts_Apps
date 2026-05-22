@@ -103,9 +103,6 @@ Private Const TP_GAP_BEFORE_FILE_GROUP As Double = 3
 Private Const TP_GAP_AFTER_FILE_GROUP As Double = 3
 Private Const TP_GAP_BEFORE_FOLDER_L0 As Double = 6
 
-' Temporary troubleshooting mode: writes rendered row metrics to a plaintext report in %TEMP%.
-Private Const TP_DEBUG_ENABLE_ROW_REPORT As Boolean = True
-
 ' Folder row styling by hierarchy depth.
 ' Layer 0 = top-level folder, layer 1 = child folder, etc.
 ' Folder formulas per layer:
@@ -518,59 +515,6 @@ End Sub
 ' Single visible macro entry point for users.
 Public Sub ManageActiveWorkbookTypes()
     ShowReloadManagerCommandCenter
-End Sub
-
-' UserForm picker preview for visual validation.
-Public Sub PreviewWorkbookTypePickerUserForm()
-    Dim wb As Workbook
-    Dim typeMap As Object
-    Dim availableTypeIds As Collection
-    Dim displayLines As Collection
-    Dim ownerTypeIds As Collection
-    Dim selectedIndex As Long
-    Dim reason As String
-
-    Set wb = GetForegroundWorkbook()
-    If wb Is Nothing Then
-        MsgBox "No workbook is currently available.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    If IsAddInWorkbook(wb) Then
-        MsgBox "Select a regular workbook before running picker preview.", vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    If Not CanAccessVBProject(ThisWorkbook, reason) Then
-        MsgBox reason, vbExclamation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    Set availableTypeIds = GetAvailableTypeIdsCollection()
-    If availableTypeIds.Count = 0 Then
-        MsgBox "No valid type IDs were found in local VBA sources." & vbCrLf & _
-               MSG_REQUEST_UPDATE, vbInformation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    Set typeMap = GetWorkbookTypeMap(wb)
-    Set displayLines = New Collection
-    Set ownerTypeIds = New Collection
-    BuildTypePickerTreeLines availableTypeIds, typeMap, displayLines, ownerTypeIds
-
-    If displayLines.Count = 0 Then
-        MsgBox "No .bas entries were found for available type IDs.", vbInformation, SYNC_DIALOG_TITLE
-        Exit Sub
-    End If
-
-    selectedIndex = ShowTypePickerPreviewUserForm(displayLines, ownerTypeIds, "Workbook Type Picker")
-    If selectedIndex <= 0 Then Exit Sub
-    If selectedIndex > ownerTypeIds.Count Then Exit Sub
-
-    MsgBox "Selected preview entry:" & vbCrLf & _
-           CStr(displayLines(selectedIndex)) & vbCrLf & vbCrLf & _
-           "Owning Type ID:" & vbCrLf & _
-           CStr(ownerTypeIds(selectedIndex)), vbInformation, SYNC_DIALOG_TITLE
 End Sub
 
 Private Sub ShowReloadManagerCommandCenter()
@@ -1150,96 +1094,6 @@ NextType:
     Next i
 End Sub
 
-Private Function ShowTypePickerPreviewUserForm(ByVal displayLines As Collection, _
-                                            ByVal ownerTypeIds As Collection, _
-                                            ByVal formCaption As String) As Long
-    Dim vbComp As Object
-    Dim frm As Object
-    Dim entriesHost As Object
-    Dim lbl As Object
-    Dim btnOk As Object
-    Dim btnSyncDrift As Object
-    Dim btnForceSync As Object
-    Dim layoutPlan As Collection
-    Dim layoutContentHeight As Double
-    Dim reason As String
-    Dim stage As String
-
-    On Error GoTo Fail
-
-    stage = "EnsureTypePickerFormComponent"
-    Set vbComp = EnsureTypePickerFormComponent(ThisWorkbook, reason)
-    If vbComp Is Nothing Then
-        MsgBox "Unable to open type picker userform." & vbCrLf & _
-                             "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
-        Exit Function
-    End If
-
-    stage = "UserForms.Add"
-    Set frm = VBA.UserForms.Add(vbComp.Name)
-    frm.Caption = formCaption
-    frm.Tag = "0"
-
-    stage = "Find info label"
-    Set lbl = GetFormControlByName(frm, TYPE_PICKER_INFO_NAME)
-    If lbl Is Nothing Then Err.Raise vbObjectError + 8101, "ReloadManager.ShowTypePickerPreviewUserForm", _
-                                    "Missing control: " & TYPE_PICKER_INFO_NAME
-    ResetTypePickerInfoLabel lbl
-
-    stage = "Find entries host"
-    Set entriesHost = GetFormControlByName(frm, TYPE_PICKER_LIST_NAME)
-    If entriesHost Is Nothing Then Err.Raise vbObjectError + 8102, "ReloadManager.ShowTypePickerPreviewUserForm", _
-                                    "Missing control: " & TYPE_PICKER_LIST_NAME
-    If StrComp(TypeName(entriesHost), "Frame", vbTextCompare) <> 0 Then _
-        Err.Raise vbObjectError + 8103, "ReloadManager.ShowTypePickerPreviewUserForm", _
-                  "Control '" & TYPE_PICKER_LIST_NAME & "' must be a Frame for checkbox rendering."
-    ApplyTypePickerEntriesHostStyle entriesHost
-
-    stage = "Configure action buttons"
-    Set btnOk = GetFormControlByName(frm, TYPE_PICKER_OK_NAME)
-    Set btnSyncDrift = GetFormControlByName(frm, TYPE_PICKER_SYNC_DRIFT_NAME)
-    Set btnForceSync = GetFormControlByName(frm, TYPE_PICKER_FORCE_SYNC_NAME)
-    If Not btnOk Is Nothing Then TrySetObjectProperty btnOk, "Caption", "OK"
-    If Not btnSyncDrift Is Nothing Then TrySetObjectProperty btnSyncDrift, "Visible", False
-    If Not btnForceSync Is Nothing Then TrySetObjectProperty btnForceSync, "Visible", False
-
-    stage = "Build layout plan"
-    Set layoutPlan = BuildTypePickerLayoutPlan(displayLines, ownerTypeIds, 0, layoutContentHeight)
-
-    stage = "AutoSize form"
-    AutoSizeTypePickerForm frm, displayLines, layoutPlan, layoutContentHeight
-
-    stage = "Build checkbox entries"
-    PopulateTypePickerChecklist entriesHost, layoutPlan, layoutContentHeight
-
-    stage = "Show form"
-    frm.Show vbModal
-
-    stage = "Read selection"
-    On Error Resume Next
-    If StrComp(CStr(frm.Tag), TYPE_PICKER_TAG_OK, vbTextCompare) = 0 Then
-        ShowTypePickerPreviewUserForm = GetFirstCheckedChecklistLineIndex(entriesHost, ownerTypeIds)
-    ElseIf Len(CStr(frm.Tag)) > 0 And IsNumeric(CStr(frm.Tag)) Then
-        ShowTypePickerPreviewUserForm = CLng(Val(CStr(frm.Tag)))
-    End If
-    Err.Clear
-    On Error GoTo Fail
-
-    stage = "Cleanup form"
-    On Error Resume Next
-    Unload frm
-    Set frm = Nothing
-    Err.Clear
-    On Error GoTo 0
-    Exit Function
-
-Fail:
-    MsgBox "UserForm failed at stage: " & stage & vbCrLf & _
-           "Error " & CStr(Err.Number) & ": " & Err.Description, vbExclamation, SYNC_DIALOG_TITLE
-    On Error Resume Next
-    If Not frm Is Nothing Then Unload frm
-End Function
-
 Private Function ShowTypePickerCheckedTypeIdsUserForm(ByVal displayLines As Collection, _
                                                       ByVal ownerTypeIds As Collection, _
                                                       ByVal formCaption As String, _
@@ -1376,14 +1230,7 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
     Dim textControlHeight As Double
     Dim textLeft As Double
     Dim textWidth As Double
-    Dim debugEnabled As Boolean
-    Dim debugLines As Collection
-    Dim actualTextFont As Double
-    Dim actualCheckboxFont As Double
-    Dim actualTextFontName As String
-    Dim actualCheckboxFontName As String
     Dim isCheckRow As Boolean
-    Dim textLineForDebug As String
     Dim viewportWidth As Double
     Dim viewportHeight As Double
     Dim scrollHeight As Double
@@ -1402,18 +1249,6 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
     checkboxHeight = ComputeControlHeightFromFontHeight(checkboxFontHeight, 0)
     If checkboxHeight < 6 Then checkboxHeight = 6
     checkboxWidth = checkboxHeight
-    debugEnabled = TP_DEBUG_ENABLE_ROW_REPORT
-    If debugEnabled Then
-        Set debugLines = New Collection
-        debugLines.Add "TypePicker Row Debug Report"
-        debugLines.Add "Timestamp: " & Format$(Now, "yyyy-mm-dd HH:NN:SS")
-        debugLines.Add "TP_FILE_FONT_HEIGHT=" & CStr(TP_FILE_FONT_HEIGHT) & _
-                       " | TP_FILE_FONT_ADDITIONAL_HEIGHT=" & CStr(TP_FILE_FONT_ADDITIONAL_HEIGHT) & _
-                       " | TP_FILE_ROW_ADDITIONAL_SPACING=" & CStr(TP_FILE_ROW_ADDITIONAL_SPACING) & _
-                       " | TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS=" & CStr(TP_FILE_CHECKBOX_FONT_REDUCTION_POINTS) & _
-                       " | TP_FILE_CHECKBOX_BOTTOM_OFFSET=" & CStr(TP_FILE_CHECKBOX_BOTTOM_OFFSET)
-        debugLines.Add String$(100, "-")
-    End If
 
     If Not layoutPlan Is Nothing Then
         For rowCursor = 1 To layoutPlan.Count
@@ -1426,7 +1261,6 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
             rowControlHeight = CDbl(rowInfo(5))
             captionText = CStr(rowInfo(6))
             lineText = CStr(rowInfo(7))
-            textLineForDebug = captionText
 
         offsetLeft = TP_LIST_BASE_LEFT + (depthLevel * TP_INDENT_PIXELS_PER_LEVEL)
         ctlWidth = maxWidth - (depthLevel * TP_INDENT_PIXELS_PER_LEVEL)
@@ -1483,26 +1317,6 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
                 CallByName ctl, "ZOrder", VbMethod, 0
                 Err.Clear
                 On Error GoTo 0
-
-                If debugEnabled Then
-                    actualTextFont = GetControlFontSize(lblText)
-                    actualCheckboxFont = GetControlFontSize(ctl)
-                    actualTextFontName = GetControlFontName(lblText)
-                    actualCheckboxFontName = GetControlFontName(ctl)
-                    debugLines.Add "Row " & CStr(rowIndex) & " | FILE | text='" & Replace(captionText, "'", "''") & _
-                                   "' | intendedTextFont=" & CStr(fontSize) & _
-                                   " | actualTextFont=" & CStr(actualTextFont) & _
-                                   " | actualTextFontName=" & actualTextFontName & _
-                                   " | intendedCheckboxFont=" & CStr(checkboxFontHeight) & _
-                                   " | actualCheckboxFont=" & CStr(actualCheckboxFont) & _
-                                   " | actualCheckboxFontName=" & actualCheckboxFontName & _
-                                   " | rowTop=" & CStr(rowTop) & _
-                                   " | rowStep=" & CStr(rowStep) & _
-                                   " | textTop=" & CStr(textTop) & _
-                                   " | textHeight=" & CStr(textControlHeight) & _
-                                   " | checkboxTop=" & CStr(checkboxTop) & _
-                                   " | checkboxHeight=" & CStr(checkboxRowSize)
-                End If
             Else
                 fontSize = GetFolderFontHeightByDepth(depthLevel)
 
@@ -1515,18 +1329,6 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
                 TrySetObjectProperty ctl, "Height", rowControlHeight
                 TrySetObjectProperty ctl, "WordWrap", False
                 TrySetObjectProperty ctl, "AutoSize", False
-
-                If debugEnabled Then
-                    actualTextFont = GetControlFontSize(ctl)
-                    actualTextFontName = GetControlFontName(ctl)
-                    debugLines.Add "Row " & CStr(rowIndex) & " | FOLDER | text='" & Replace(textLineForDebug, "'", "''") & _
-                                   "' | intendedFont=" & CStr(fontSize) & _
-                                   " | actualFont=" & CStr(actualTextFont) & _
-                                   " | actualFontName=" & actualTextFontName & _
-                                   " | rowTop=" & CStr(rowTop) & _
-                                   " | rowStep=" & CStr(rowStep) & _
-                                   " | rowHeight=" & CStr(rowControlHeight)
-                End If
             End If
         Next rowCursor
     End If
@@ -1541,10 +1343,6 @@ Private Sub PopulateTypePickerChecklist(ByVal entriesHost As Object, _
     On Error Resume Next
     entriesHost.ScrollTop = 0
     On Error GoTo 0
-
-    If debugEnabled Then
-        WriteTypePickerRowDebugReport debugLines
-    End If
 End Sub
 
 Private Sub ApplyUniformControlFontSize(ByVal ctl As Object, ByVal fontSize As Double)
@@ -1561,78 +1359,6 @@ Private Sub ApplyUniformControlFontSize(ByVal ctl As Object, ByVal fontSize As D
     Err.Clear
     On Error GoTo 0
 End Sub
-
-Private Function GetControlFontSize(ByVal ctl As Object) As Double
-    Dim fnt As Object
-
-    If ctl Is Nothing Then
-        GetControlFontSize = -1
-        Exit Function
-    End If
-
-    On Error Resume Next
-    Set fnt = CallByName(ctl, "Font", VbGet)
-    If Not fnt Is Nothing Then
-        GetControlFontSize = CDbl(CallByName(fnt, "Size", VbGet))
-    Else
-        GetControlFontSize = -1
-    End If
-    Err.Clear
-    On Error GoTo 0
-End Function
-
-Private Function GetControlFontName(ByVal ctl As Object) As String
-    Dim fnt As Object
-
-    If ctl Is Nothing Then Exit Function
-
-    On Error Resume Next
-    Set fnt = CallByName(ctl, "Font", VbGet)
-    If Not fnt Is Nothing Then
-        GetControlFontName = CStr(CallByName(fnt, "Name", VbGet))
-    End If
-    Err.Clear
-    On Error GoTo 0
-End Function
-
-Private Sub WriteTypePickerRowDebugReport(ByVal debugLines As Collection)
-    Dim outputPath As String
-    Dim lineItem As Variant
-    Dim fileHandle As Integer
-
-    If debugLines Is Nothing Then Exit Sub
-    If debugLines.Count = 0 Then Exit Sub
-
-    outputPath = GetTypePickerRowDebugReportPath()
-    If Len(outputPath) = 0 Then Exit Sub
-
-    On Error GoTo Fail
-    fileHandle = FreeFile
-    Open outputPath For Output As #fileHandle
-    For Each lineItem In debugLines
-        Print #fileHandle, CStr(lineItem)
-    Next lineItem
-    Close #fileHandle
-
-    MsgBox "Type picker debug report written to:" & vbCrLf & outputPath, vbInformation, SYNC_DIALOG_TITLE
-    Exit Sub
-
-Fail:
-    On Error Resume Next
-    If fileHandle <> 0 Then Close #fileHandle
-    On Error GoTo 0
-End Sub
-
-Private Function GetTypePickerRowDebugReportPath() As String
-    Dim tempPath As String
-
-    tempPath = Environ$("TEMP")
-    If Len(tempPath) = 0 Then tempPath = ThisWorkbook.Path
-    If Len(tempPath) = 0 Then Exit Function
-
-    GetTypePickerRowDebugReportPath = EnsureTrailingPathSeparator(tempPath) & _
-                                      "TypePicker_RowDebug_" & Format$(Now, "yyyymmdd_HHNNSS") & ".txt"
-End Function
 
 Private Function GetHierarchyDepthFromIndent(ByVal indentChars As Long) As Long
     If TP_INDENT_SPACES_PER_LEVEL_INTERNAL <= 0 Then
@@ -1871,31 +1597,6 @@ Private Sub CollectCheckedTypeIdsFromChecklist(ByVal entriesHost As Object, _
     Next i
 End Sub
 
-Private Function GetFirstCheckedChecklistLineIndex(ByVal entriesHost As Object, _
-                                                   ByVal ownerTypeIds As Collection) As Long
-    Dim i As Long
-    Dim ownerTypeId As String
-    Dim chk As Object
-
-    If entriesHost Is Nothing Then Exit Function
-    If ownerTypeIds Is Nothing Then Exit Function
-
-    For i = 1 To ownerTypeIds.Count
-        ownerTypeId = NormalizeTypeId(CStr(ownerTypeIds(i)))
-        If Len(ownerTypeId) > 0 Then
-            Set chk = GetFormControlByName(entriesHost, "chkEntry_" & CStr(i))
-            If Not chk Is Nothing Then
-                On Error Resume Next
-                If CBool(chk.Value) Then
-                    GetFirstCheckedChecklistLineIndex = i
-                    Exit Function
-                End If
-                On Error GoTo 0
-            End If
-        End If
-    Next i
-End Function
-
 Private Function CountLeadingSpaces(ByVal textValue As String) As Long
     CountLeadingSpaces = Len(textValue) - Len(LTrim$(textValue))
 End Function
@@ -1973,17 +1674,6 @@ Private Function EnsureTypePickerFormComponent(ByVal wb As Workbook, ByRef reaso
 Fail:
     reason = "Stage: " & stage & " | Error " & CStr(Err.Number) & ": " & Err.Description
 End Function
-
-Private Sub ResetTypePickerUserForm()
-    Dim reason As String
-
-    If RebuildTypePickerFormComponent(ThisWorkbook, reason) Then
-        MsgBox "Type picker form was rebuilt successfully.", vbInformation, SYNC_DIALOG_TITLE
-    Else
-        MsgBox "Unable to rebuild type picker form." & vbCrLf & _
-               "Reason: " & reason, vbExclamation, SYNC_DIALOG_TITLE
-    End If
-End Sub
 
 Private Function RebuildTypePickerFormComponent(ByVal wb As Workbook, _
                                                     ByRef reason As String, _
