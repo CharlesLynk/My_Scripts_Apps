@@ -1,0 +1,460 @@
+=LET(
+  pTagSuffixToStrip,
+  "_LP1",
+  pExactLookupSuffix,
+  "_JCC1",
+  pOutputReplaceFrom,
+  "JCC1",
+  pOutputReplaceTo,
+  "LP1",
+  pMidReplaceFromList,
+  "JCC1|JCCX",
+  pMidReplaceToList,
+  "LP1|LPX",
+  pReplaceListDelimiter,
+  "|",
+  pEnableTagSuffixStrip,
+  TRUE,
+  pEnableSuffixTextReplace,
+  TRUE,
+  pEnableMidStringTextReplace,
+  TRUE,
+  pSuffixReplacePrefix,
+  "_",
+  pNotNeededTrueList,
+  "TRUE|T|YES|Y|1",
+  pNoDataMarker,
+  "-",
+  pErrMultiTagMatches,
+  "---- MULTIPLE TAGNAME MATCHES ----",
+  pErrNoDesc,
+  "---- NO DESCRIPTION LOCATED ----",
+  pErrBadBlock,
+  "BROKE",
+  infoOnlyNote,
+  "INFO ONLY - references below are not used by logic",
+  infoCurrentDescSource,
+  "[@DESCRIPTION]",
+  infoCurrentTagSource,
+  "[@TAGNAME]",
+  infoLookupTables,
+  "MASTERV3_AR|MASTERV3_DR|MASTERV3_MDI|MASTERV3_AA|MASTERV3_DA",
+  infoLookupTagColumn,
+  "A_TAG",
+  infoLookupDescColumn,
+  "A_DESC",
+  infoLookupNotNeededColumn,
+  "NOT NEEDED",
+  cleanText,
+  LAMBDA(
+    x,
+    LET(
+      raw,
+      CLEAN(
+        x & ""
+      ),
+      toSpace,
+      {
+        9,
+        160,
+        8239,
+        8287,
+        12288
+      },
+      toDrop,
+      {
+        173,
+        8203,
+        8204,
+        8205,
+        8206,
+        8207,
+        8234,
+        8235,
+        8236,
+        8237,
+        8238,
+        65279,
+        8288,
+        8290,
+        8291,
+        8292,
+        8294,
+        8295,
+        8296,
+        8297
+      },
+      spaced,
+      REDUCE(
+        raw,
+        toSpace,
+        LAMBDA(
+          acc,
+          c,
+          SUBSTITUTE(
+            acc,
+            UNICHAR(
+              c
+            ),
+            " "
+          )
+        )
+      ),
+      dropped,
+      REDUCE(
+        spaced,
+        toDrop,
+        LAMBDA(
+          acc,
+          c,
+          SUBSTITUTE(
+            acc,
+            UNICHAR(
+              c
+            ),
+            ""
+          )
+        )
+      ),
+      TRIM(
+        dropped
+      )
+    )
+  ),
+  normalizeBlock,
+  LAMBDA(
+    x,
+    LET(
+      b,
+      UPPER(
+        cleanText(
+          x
+        )
+      ),
+      SUBSTITUTE(
+        SUBSTITUTE(
+          SUBSTITUTE(
+            b,
+            " ",
+            ""
+          ),
+          "-",
+          ""
+        ),
+        "_",
+        ""
+      )
+    )
+  ),
+  isTruthy,
+  LAMBDA(
+    x,
+    LET(
+      token,
+      UPPER(
+        cleanText(
+          x
+        )
+      ),
+      truthList,
+      TEXTSPLIT(
+        UPPER(
+          pNotNeededTrueList
+        ),
+        "|"
+      ),
+      ISNUMBER(
+        XMATCH(
+          token,
+          truthList,
+          0
+        )
+      )
+    )
+  ),
+  applyReplacement,
+  LAMBDA(
+    textIn,
+    LET(
+      withSuffix,
+      IF(
+        pEnableSuffixTextReplace,
+        SUBSTITUTE(
+          textIn,
+          pSuffixReplacePrefix & pOutputReplaceFrom,
+          pSuffixReplacePrefix & pOutputReplaceTo
+        ),
+        textIn
+      ),
+      fromList,
+      TEXTSPLIT(
+        pMidReplaceFromList,
+        pReplaceListDelimiter
+      ),
+      toList,
+      TEXTSPLIT(
+        pMidReplaceToList,
+        pReplaceListDelimiter
+      ),
+      pairCount,
+      MIN(
+        COLUMNS(
+          fromList
+        ),
+        COLUMNS(
+          toList
+        )
+      ),
+      IF(
+        pEnableMidStringTextReplace,
+        REDUCE(
+          withSuffix,
+          SEQUENCE(
+            pairCount
+          ),
+          LAMBDA(
+            acc,
+            i,
+            SUBSTITUTE(
+              acc,
+              INDEX(
+                fromList,
+                1,
+                i
+              ),
+              INDEX(
+                toList,
+                1,
+                i
+              )
+            )
+          )
+        ),
+        withSuffix
+      )
+    )
+  ),
+  descRaw,
+  [@DESCRIPTION] & "",
+  descPresent,
+  LEN(
+    cleanText(
+      descRaw
+    )
+  ) > 0,
+  tagRaw,
+  [@TAGNAME] & "",
+  tagPresent,
+  LEN(
+    tagRaw
+  ) > 0,
+  IF(
+    NOT(
+      tagPresent
+    ),
+    pNoDataMarker,
+    LET(
+      b,
+      normalizeBlock(
+        [@[iFIX BLOCK TYPE]]
+      ),
+      baseRaw,
+      IF(
+        AND(
+          pEnableTagSuffixStrip,
+          LEN(
+            pTagSuffixToStrip
+          ) > 0,
+          RIGHT(
+            UPPER(
+              tagRaw
+            ),
+            LEN(
+              pTagSuffixToStrip
+            )
+          ) = UPPER(
+            pTagSuffixToStrip
+          )
+        ),
+        LEFT(
+          tagRaw,
+          LEN(
+            tagRaw
+          ) - LEN(
+            pTagSuffixToStrip
+          )
+        ),
+        tagRaw
+      ),
+      base,
+      cleanText(
+        baseRaw
+      ),
+      lookupDesc,
+      LAMBDA(
+        tags,
+        descs,
+        notNeeded,
+        LET(
+          tagsClean,
+          cleanText(
+            tags
+          ),
+          neededMask,
+          --(
+            NOT(
+              isTruthy(
+                notNeeded
+              )
+            )
+          ),
+          exactMask,
+          neededMask * --(
+            UPPER(
+              tagsClean
+            ) = UPPER(
+              base & pExactLookupSuffix
+            )
+          ),
+          fallbackMask,
+          neededMask * --(
+            (
+              UPPER(
+                tagsClean
+              ) = UPPER(
+                base
+              )
+            ) +(
+              LEFT(
+                UPPER(
+                  tagsClean
+                ),
+                LEN(
+                  base
+                ) + 1
+              ) = UPPER(
+                base & "_"
+              )
+            ) > 0
+          ),
+          exactCount,
+          SUM(
+            exactMask
+          ),
+          fallbackCount,
+          SUM(
+            fallbackMask
+          ),
+          exactIdx,
+          IF(
+            exactCount > 0,
+            XMATCH(
+              1,
+              exactMask,
+              0
+            ),
+            0
+          ),
+          fallbackIdx,
+          IF(
+            fallbackCount > 0,
+            XMATCH(
+              1,
+              fallbackMask,
+              0
+            ),
+            0
+          ),
+          rawDesc,
+          IF(
+            exactCount = 1,
+            INDEX(
+              descs,
+              exactIdx
+            ),
+            IF(
+              exactCount > 1,
+              pErrMultiTagMatches,
+              IF(
+                fallbackCount = 1,
+                INDEX(
+                  descs,
+                  fallbackIdx
+                ),
+                IF(
+                  fallbackCount > 1,
+                  pErrMultiTagMatches,
+                  pErrNoDesc
+                )
+              )
+            )
+          ),
+          IF(
+            LEFT(
+              rawDesc,
+              4
+            ) = "----",
+            rawDesc,
+            applyReplacement(
+              rawDesc
+            )
+          )
+        )
+      ),
+      oldDesc,
+      IFS(
+        b = "AR",
+        lookupDesc(
+          MASTERV3_AR[A_TAG],
+          MASTERV3_AR[A_DESC],
+          MASTERV3_AR[NOT NEEDED]
+        ),
+        b = "DR",
+        lookupDesc(
+          MASTERV3_DR[A_TAG],
+          MASTERV3_DR[A_DESC],
+          MASTERV3_DR[NOT NEEDED]
+        ),
+        b = "MDI",
+        lookupDesc(
+          MASTERV3_MDI[A_TAG],
+          MASTERV3_MDI[A_DESC],
+          MASTERV3_MDI[NOT NEEDED]
+        ),
+        b = "AA",
+        lookupDesc(
+          MASTERV3_AA[A_TAG],
+          MASTERV3_AA[A_DESC],
+          MASTERV3_AA[NOT NEEDED]
+        ),
+        b = "DA",
+        lookupDesc(
+          MASTERV3_DA[A_TAG],
+          MASTERV3_DA[A_DESC],
+          MASTERV3_DA[NOT NEEDED]
+        ),
+        TRUE,
+        pErrBadBlock
+      ),
+      IF(
+        LEFT(
+          oldDesc,
+          4
+        ) = "----",
+        oldDesc,
+        IF(
+          descPresent,
+          IF(
+            EXACT(
+              descRaw,
+              oldDesc
+            ),
+            pNoDataMarker,
+            oldDesc
+          ),
+          oldDesc
+        )
+      )
+    )
+  )
+)
