@@ -19,6 +19,7 @@
    infoColBlockType,"iFIX BLOCK TYPE",
    normTypeToken,LAMBDA(t,SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(UPPER(TRIM(t))," ",""),"_",""),"-","")),
    normBitToken,LAMBDA(b,IF(b="","",IFERROR(TRIM(TEXT(--b,"0.###############")),TRIM(b)))),
+   normAddrToken,LAMBDA(a,UPPER(TRIM(a))),
    isBitBlock,LAMBDA(b,ISNUMBER(XMATCH(b,pBitBlockTypes,0))),
    IF(
       NOT(pEnableEvaluation),
@@ -31,16 +32,11 @@
          curBitRaw,IFERROR(MASTERV3_DB[@BIT],""),
          curTypeRaw,IFERROR(MASTERV3_DB[@[DATA TYPE]],""),
          curBlk,UPPER(TRIM(IFERROR(MASTERV3_DB[@[iFIX BLOCK TYPE]],""))),
-         tblAddr,IFERROR(MASTERV3_DB[ADDRESS],""),
-         tblPLC,IFERROR(MASTERV3_DB[PLC],""),
-         tblRegRaw,MASTERV3_DB[REGISTER],
-         tblBitRaw,MASTERV3_DB[BIT],
-         tblTypeRaw,MASTERV3_DB[DATA TYPE],
-         tblBlkRaw,MASTERV3_DB[iFIX BLOCK TYPE],
-         tblRow,ROW(MASTERV3_DB[ADDRESS]),
          maxKnownSpan,MAX(pTypeSpans),
          status,
          LET(
+            analogCanon,{"UINT","FLOAT"},
+            normCurAddr,normAddrToken(curAddr),
             normCurPLC,UPPER(TRIM(curPLC)),
             normCurBit,normBitToken(curBitRaw),
             curTypeKey,normTypeToken(curTypeRaw),
@@ -48,6 +44,7 @@
             curIsBitStyle,isBitBlock(curBlk),
             curIsEbool,AND(curIsBitStyle,curTypeCanon="EBOOL"),
             curIsNonEbool,NOT(curIsEbool),
+            curIsAnalog,ISNUMBER(XMATCH(curTypeCanon,analogCanon,0)),
             curHasBit,LEN(normCurBit)>0,
             curWhole,OR(curIsNonEbool,AND(curIsEbool,NOT(curHasBit))),
             curBitSpecific,AND(curIsEbool,curHasBit),
@@ -57,49 +54,101 @@
                NOT(curRowGood),
                pStatusPotential,
                LET(
+                  tblAddr,IFERROR(MASTERV3_DB[ADDRESS],""),
+                  tblPLC,IFERROR(MASTERV3_DB[PLC],""),
+                  tblRegRaw,MASTERV3_DB[REGISTER],
+                  tblTypeRaw,MASTERV3_DB[DATA TYPE],
+                  tblRow,ROW(MASTERV3_DB[ADDRESS]),
                   normArrPLC,UPPER(TRIM(tblPLC)),
                   arrRegNum,IFERROR(--tblRegRaw,0),
                   arrRegIsNum,IFERROR(ISNUMBER(--tblRegRaw),FALSE),
-                  normArrBit,IFERROR(normBitToken(tblBitRaw),""),
-                  arrTypeKey,normTypeToken(IFERROR(tblTypeRaw,"")),
-                  normArrBlk,IFERROR(UPPER(TRIM(tblBlkRaw)),""),
-                  arrTypeCanon,XLOOKUP(arrTypeKey,pTypeAliasKeys,pTypeAliasCanon,""),
-                  arrIsBitStyle,isBitBlock(normArrBlk),
-                  arrIsEbool,--arrIsBitStyle*--(arrTypeCanon="EBOOL"),
-                  arrIsNonEbool,--NOT(arrIsEbool),
+                  normArrAddr,IFERROR(normAddrToken(tblAddr),""),
                   otherMask,tblRow<>selfRow,
                   validMask,(tblAddr<>"")*(normArrPLC<>"")*--arrRegIsNum,
-                  peerWholeEbool,arrIsEbool*--(normArrBit=""),
-                  peerWholeNonEbool,arrIsNonEbool,
-                  peerWhole,(peerWholeEbool+peerWholeNonEbool)>0,
-                  peerBit,arrIsEbool*--(normArrBit<>""),
-                  arrTypeSpanKnown,XLOOKUP(arrTypeCanon,pTypeKeys,pTypeSpans,0),
-                  curTypeSpanKnown,XLOOKUP(curTypeCanon,pTypeKeys,pTypeSpans,0),
-                  unknownSpan,LET(mx,MAX(arrTypeSpanKnown),IF(mx>0,mx,maxKnownSpan)),
-                  arrSpanMax,IF(arrIsEbool,1,IF(arrTypeSpanKnown>0,arrTypeSpanKnown,unknownSpan)),
-                  arrSpanMin,IF(arrIsEbool,1,IF(arrTypeSpanKnown>0,arrTypeSpanKnown,1)),
-                  curSpanMax,IF(curIsEbool,1,IF(curTypeSpanKnown>0,curTypeSpanKnown,unknownSpan)),
-                  curSpanMin,IF(curIsEbool,1,IF(curTypeSpanKnown>0,curTypeSpanKnown,1)),
-                  arrEndMax,arrRegNum+arrSpanMax-1,
-                  arrEndMin,arrRegNum+arrSpanMin-1,
-                  curEndMax,curRegNum+curSpanMax-1,
-                  curEndMin,curRegNum+curSpanMin-1,
                   samePLC,normArrPLC=normCurPLC,
-                  sameReg,--(arrRegNum=curRegNum),
                   baseMask,--samePLC*--otherMask*--validMask,
-                  directConflict,
-                  IF(curWhole,SUMPRODUCT(baseMask*--sameReg*--peerWhole),0)+
-                  IF(curBitSpecific,SUMPRODUCT(baseMask*--sameReg*--peerBit*--(normArrBit=normCurBit)),0),
-                  ovMax,--(arrRegNum<=curEndMax)*--(arrEndMax>=curRegNum),
-                  ovDef,--(arrRegNum<=curEndMin)*--(arrEndMin>=curRegNum),
-                  ovPot,ovMax*(1-ovDef),
-                  defWholeBit,
-                  IF(curWhole,SUMPRODUCT(baseMask*--ovMax*--peerBit*--curIsNonEbool),IF(curBitSpecific,SUMPRODUCT(baseMask*--ovMax*--peerWholeNonEbool),0)),
-                  potWholeBit,
-                  IF(curWhole,SUMPRODUCT(baseMask*--ovMax*--peerBit*--curIsEbool),IF(curBitSpecific,SUMPRODUCT(baseMask*--ovMax*--peerWholeEbool),0)),
-                  defRange,SUMPRODUCT(baseMask*--ovDef*--(((--curIsNonEbool)+arrIsNonEbool)>0)),
-                  potRange,SUMPRODUCT(baseMask*--ovPot*--(((--curIsNonEbool)+arrIsNonEbool)>0)),
-                  IF(directConflict+defWholeBit+defRange>0,pStatusConflict,IF(potWholeBit+potRange>0,pStatusPotential,pStatusOk))
+                  analogAddrConflict,
+                  IF(
+                     curIsAnalog,
+                     LET(
+                        arrTypeKeyForAnalog,normTypeToken(IFERROR(tblTypeRaw,"")),
+                        arrTypeCanonForAnalog,XLOOKUP(arrTypeKeyForAnalog,pTypeAliasKeys,pTypeAliasCanon,""),
+                        arrIsAnalog,--ISNUMBER(XMATCH(arrTypeCanonForAnalog,analogCanon,0)),
+                        SUMPRODUCT(--otherMask*--validMask*arrIsAnalog*--(normArrAddr=normCurAddr))>0
+                     ),
+                     FALSE
+                  ),
+                  IF(
+                     analogAddrConflict,
+                     pStatusConflict,
+                     IF(
+                        SUMPRODUCT(baseMask)=0,
+                        pStatusOk,
+                        LET(
+                           tblBitRaw,MASTERV3_DB[BIT],
+                           tblBlkRaw,MASTERV3_DB[iFIX BLOCK TYPE],
+                           normArrBit,IFERROR(normBitToken(tblBitRaw),""),
+                           arrTypeKey,normTypeToken(IFERROR(tblTypeRaw,"")),
+                           normArrBlk,IFERROR(UPPER(TRIM(tblBlkRaw)),""),
+                           arrTypeCanon,XLOOKUP(arrTypeKey,pTypeAliasKeys,pTypeAliasCanon,""),
+                           arrIsBitStyle,isBitBlock(normArrBlk),
+                           arrIsEbool,--arrIsBitStyle*--(arrTypeCanon="EBOOL"),
+                           arrIsNonEbool,--NOT(arrIsEbool),
+                           peerWholeEbool,arrIsEbool*--(normArrBit=""),
+                           peerWholeNonEbool,arrIsNonEbool,
+                           peerWhole,(peerWholeEbool+peerWholeNonEbool)>0,
+                           peerBit,arrIsEbool*--(normArrBit<>""),
+                           sameReg,--(arrRegNum=curRegNum),
+                           sameRegBitVsNonEboolConflict,
+                           IF(curBitSpecific,SUMPRODUCT(baseMask*--sameReg*--peerWholeNonEbool),0)+
+                           IF(curIsNonEbool,SUMPRODUCT(baseMask*--sameReg*--peerBit),0),
+                           directConflict,
+                           IF(curWhole,SUMPRODUCT(baseMask*--sameReg*--peerWhole),0)+
+                           IF(curBitSpecific,SUMPRODUCT(baseMask*--sameReg*--peerBit*--(normArrBit=normCurBit)),0),
+                           IF(
+                              directConflict+sameRegBitVsNonEboolConflict>0,
+                              pStatusConflict,
+                              LET(
+                                 curMaySpanMulti,IF(curIsEbool,FALSE,IF(curTypeCanon="",TRUE,XLOOKUP(curTypeCanon,pTypeKeys,pTypeSpans,1)>1)),
+                                 peerMaySpanMulti,--IF(arrIsEbool,FALSE,IF(arrTypeCanon="",TRUE,XLOOKUP(arrTypeCanon,pTypeKeys,pTypeSpans,1)>1)),
+                                 rangeEvalNeeded,OR(curMaySpanMulti,SUMPRODUCT(baseMask*peerMaySpanMulti)>0),
+                                 IF(
+                                    NOT(rangeEvalNeeded),
+                                    LET(
+                                       sameRegEboolWholeBitPotential,
+                                       IF(AND(curWhole,curIsEbool),SUMPRODUCT(baseMask*--sameReg*--peerBit),0)+
+                                       IF(curBitSpecific,SUMPRODUCT(baseMask*--sameReg*--peerWholeEbool),0),
+                                       IF(sameRegEboolWholeBitPotential>0,pStatusPotential,pStatusOk)
+                                    ),
+                                    LET(
+                                       arrTypeSpanKnown,XLOOKUP(arrTypeCanon,pTypeKeys,pTypeSpans,0),
+                                       curTypeSpanKnown,XLOOKUP(curTypeCanon,pTypeKeys,pTypeSpans,0),
+                                       unknownSpan,LET(mx,MAX(arrTypeSpanKnown),IF(mx>0,mx,maxKnownSpan)),
+                                       arrSpanMax,IF(arrIsEbool,1,IF(arrTypeSpanKnown>0,arrTypeSpanKnown,unknownSpan)),
+                                       arrSpanMin,IF(arrIsEbool,1,IF(arrTypeSpanKnown>0,arrTypeSpanKnown,1)),
+                                       curSpanMax,IF(curIsEbool,1,IF(curTypeSpanKnown>0,curTypeSpanKnown,unknownSpan)),
+                                       curSpanMin,IF(curIsEbool,1,IF(curTypeSpanKnown>0,curTypeSpanKnown,1)),
+                                       arrEndMax,arrRegNum+arrSpanMax-1,
+                                       arrEndMin,arrRegNum+arrSpanMin-1,
+                                       curEndMax,curRegNum+curSpanMax-1,
+                                       curEndMin,curRegNum+curSpanMin-1,
+                                       ovMax,--(arrRegNum<=curEndMax)*--(arrEndMax>=curRegNum),
+                                       ovDef,--(arrRegNum<=curEndMin)*--(arrEndMin>=curRegNum),
+                                       ovPot,ovMax*(1-ovDef),
+                                       defWholeBit,
+                                       IF(curWhole,SUMPRODUCT(baseMask*--ovMax*--peerBit*--curIsNonEbool),IF(curBitSpecific,SUMPRODUCT(baseMask*--ovMax*--peerWholeNonEbool),0)),
+                                       potWholeBit,
+                                       IF(curWhole,SUMPRODUCT(baseMask*--ovMax*--peerBit*--curIsEbool),IF(curBitSpecific,SUMPRODUCT(baseMask*--ovMax*--peerWholeEbool),0)),
+                                       defRange,SUMPRODUCT(baseMask*--ovDef*--(((--curIsNonEbool)+arrIsNonEbool)>0)),
+                                       potRange,SUMPRODUCT(baseMask*--ovPot*--(((--curIsNonEbool)+arrIsNonEbool)>0)),
+                                       IF(defWholeBit+defRange>0,pStatusConflict,IF(potWholeBit+potRange>0,pStatusPotential,pStatusOk))
+                                    )
+                                 )
+                              )
+                           )
+                        )
+                     )
+                  )
                )
             )
          ),

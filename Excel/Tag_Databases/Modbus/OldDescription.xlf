@@ -45,6 +45,63 @@
   "A_DESC",
   infoLookupNotNeededColumn,
   "NOT NEEDED",
+  pWhitespaceToSpace,
+  {
+    9,
+    160,
+    8239,
+    8287,
+    12288
+  },
+  pCharsToDrop,
+  {
+    173,
+    8203,
+    8204,
+    8205,
+    8206,
+    8207,
+    8234,
+    8235,
+    8236,
+    8237,
+    8238,
+    65279,
+    8288,
+    8290,
+    8291,
+    8292,
+    8294,
+    8295,
+    8296,
+    8297
+  },
+  pTruthList,
+  TEXTSPLIT(
+    UPPER(
+      pNotNeededTrueList
+    ),
+    "|"
+  ),
+  pMidReplaceFromArr,
+  TEXTSPLIT(
+    pMidReplaceFromList,
+    pReplaceListDelimiter
+  ),
+  pMidReplaceToArr,
+  TEXTSPLIT(
+    pMidReplaceToList,
+    pReplaceListDelimiter
+  ),
+  pMidReplacePairCount,
+  MIN(
+    COLUMNS(
+      pMidReplaceFromArr
+    ),
+    COLUMNS(
+      pMidReplaceToArr
+    )
+  ),
   cleanText,
   LAMBDA(
     x,
@@ -53,41 +110,10 @@
       CLEAN(
         x & ""
       ),
-      toSpace,
-      {
-        9,
-        160,
-        8239,
-        8287,
-        12288
-      },
-      toDrop,
-      {
-        173,
-        8203,
-        8204,
-        8205,
-        8206,
-        8207,
-        8234,
-        8235,
-        8236,
-        8237,
-        8238,
-        65279,
-        8288,
-        8290,
-        8291,
-        8292,
-        8294,
-        8295,
-        8296,
-        8297
-      },
       spaced,
       REDUCE(
         raw,
-        toSpace,
+        pWhitespaceToSpace,
         LAMBDA(
           acc,
           c,
@@ -103,7 +129,7 @@
       dropped,
       REDUCE(
         spaced,
-        toDrop,
+        pCharsToDrop,
         LAMBDA(
           acc,
           c,
@@ -156,17 +182,10 @@
           x
         )
       ),
-      truthList,
-      TEXTSPLIT(
-        UPPER(
-          pNotNeededTrueList
-        ),
-        "|"
-      ),
       ISNUMBER(
         XMATCH(
           token,
-          truthList,
+          pTruthList,
           0
         )
       )
@@ -186,31 +205,12 @@
         ),
         textIn
       ),
-      fromList,
-      TEXTSPLIT(
-        pMidReplaceFromList,
-        pReplaceListDelimiter
-      ),
-      toList,
-      TEXTSPLIT(
-        pMidReplaceToList,
-        pReplaceListDelimiter
-      ),
-      pairCount,
-      MIN(
-        COLUMNS(
-          fromList
-        ),
-        COLUMNS(
-          toList
-        )
-      ),
       IF(
         pEnableMidStringTextReplace,
         REDUCE(
           withSuffix,
           SEQUENCE(
-            pairCount
+            pMidReplacePairCount
           ),
           LAMBDA(
             acc,
@@ -218,12 +218,12 @@
             SUBSTITUTE(
               acc,
               INDEX(
-                fromList,
+                pMidReplaceFromArr,
                 1,
                 i
               ),
               INDEX(
-                toList,
+                pMidReplaceToArr,
                 1,
                 i
               )
@@ -290,12 +290,30 @@
       cleanText(
         baseRaw
       ),
+      blockSupported,
+      ISNUMBER(
+        XMATCH(
+          b,
+          {
+            "AR",
+            "DR",
+            "MDI",
+            "AA",
+            "DA"
+          },
+          0
+        )
+      ),
       lookupDesc,
       LAMBDA(
         tags,
         descs,
         notNeeded,
         LET(
+          baseLen,
+          LEN(
+            base
+          ),
           tagsUpper,
           UPPER(
             tags & ""
@@ -303,6 +321,14 @@
           exactTarget,
           UPPER(
             base & pExactLookupSuffix
+          ),
+          baseTarget,
+          UPPER(
+            base
+          ),
+          basePrefixTarget,
+          UPPER(
+            base & "_"
           ),
           fastExactCount,
           SUM(
@@ -332,32 +358,36 @@
               )
             )
           ),
-          fastRawDesc,
           IF(
-            fastIsNeeded,
-            INDEX(
-              descs,
-              fastExactIdx
-            ),
-            ""
-          ),
-          fastDesc,
-          IF(
-            LEFT(
-              fastRawDesc,
-              4
-            ) = "----",
-            fastRawDesc,
-            applyReplacement(
-              fastRawDesc
-            )
-          ),
-          slowDesc,
-          LAMBDA(
-            LET(
+            baseLen = 0,
+            pErrNoDesc,
+            IF(
+              fastIsNeeded,
+              LET(
+                fastRawDesc,
+                INDEX(
+                  descs,
+                  fastExactIdx
+                ),
+                IF(
+                  LEFT(
+                    fastRawDesc,
+                    4
+                  ) = "----",
+                  fastRawDesc,
+                  applyReplacement(
+                    fastRawDesc
+                  )
+                )
+              ),
+              LET(
           tagsClean,
           cleanText(
             tags
+          ),
+          tagsNorm,
+          UPPER(
+            tagsClean
           ),
           neededMask,
           --(
@@ -369,31 +399,17 @@
           ),
           exactMask,
           neededMask * --(
-            UPPER(
-              tagsClean
-            ) = UPPER(
-              base & pExactLookupSuffix
-            )
+            tagsNorm = exactTarget
           ),
           fallbackMask,
           neededMask * --(
             (
-              UPPER(
-                tagsClean
-              ) = UPPER(
-                base
-              )
+              tagsNorm = baseTarget
             ) +(
               LEFT(
-                UPPER(
-                  tagsClean
-                ),
-                LEN(
-                  base
-                ) + 1
-              ) = UPPER(
-                base & "_"
-              )
+                tagsNorm,
+                baseLen + 1
+              ) = basePrefixTarget
             ) > 0
           ),
           exactCount,
@@ -458,50 +474,49 @@
               rawDesc
             )
           )
-            )
-          ),
-          IF(
-            fastIsNeeded,
-            fastDesc,
-            slowDesc(
+              )
             )
           )
         )
       ),
       oldDesc,
-      IFS(
-        b = "AR",
-        lookupDesc(
-          MASTERV3_AR[A_TAG],
-          MASTERV3_AR[A_DESC],
-          MASTERV3_AR[NOT NEEDED]
+      IF(
+        NOT(
+          blockSupported
         ),
-        b = "DR",
-        lookupDesc(
-          MASTERV3_DR[A_TAG],
-          MASTERV3_DR[A_DESC],
-          MASTERV3_DR[NOT NEEDED]
-        ),
-        b = "MDI",
-        lookupDesc(
-          MASTERV3_MDI[A_TAG],
-          MASTERV3_MDI[A_DESC],
-          MASTERV3_MDI[NOT NEEDED]
-        ),
-        b = "AA",
-        lookupDesc(
-          MASTERV3_AA[A_TAG],
-          MASTERV3_AA[A_DESC],
-          MASTERV3_AA[NOT NEEDED]
-        ),
-        b = "DA",
-        lookupDesc(
-          MASTERV3_DA[A_TAG],
-          MASTERV3_DA[A_DESC],
-          MASTERV3_DA[NOT NEEDED]
-        ),
-        TRUE,
-        pErrBadBlock
+        pErrBadBlock,
+        IFS(
+          b = "AR",
+          lookupDesc(
+            MASTERV3_AR[A_TAG],
+            MASTERV3_AR[A_DESC],
+            MASTERV3_AR[NOT NEEDED]
+          ),
+          b = "DR",
+          lookupDesc(
+            MASTERV3_DR[A_TAG],
+            MASTERV3_DR[A_DESC],
+            MASTERV3_DR[NOT NEEDED]
+          ),
+          b = "MDI",
+          lookupDesc(
+            MASTERV3_MDI[A_TAG],
+            MASTERV3_MDI[A_DESC],
+            MASTERV3_MDI[NOT NEEDED]
+          ),
+          b = "AA",
+          lookupDesc(
+            MASTERV3_AA[A_TAG],
+            MASTERV3_AA[A_DESC],
+            MASTERV3_AA[NOT NEEDED]
+          ),
+          b = "DA",
+          lookupDesc(
+            MASTERV3_DA[A_TAG],
+            MASTERV3_DA[A_DESC],
+            MASTERV3_DA[NOT NEEDED]
+          )
+        )
       ),
       IF(
         LEFT(
