@@ -18,15 +18,31 @@
 ## 1L Tiny / Mini / Micro
 
 ### Dell OptiPlex Micro
+    
+- $227 - 5070 - eBay
+	- CPU: 9700T
+	- RAM: 16GB
+	- Storage: 256
+
+- $221 - 3070 - eBay
+	- CPU: 8700T
+	- RAM: 16GB
+	- Storage: 256
+
+- $227 - 3080 - eBay
+	- CPU: 10600T
+	- RAM: 16GB
+	- Storage: 256
 
 - $280 - 7080 - FB
 	- CPU: 10700
 	- RAM: 16GB
 	- Storage: 256
-- $000 - Model Name - Site
-	- CPU:
-	- RAM:
-	- Storage:
+
+- $302 - 7080 - eBay
+	- CPU: 10700T
+	- RAM: 16GB
+	- Storage: 256
 
 - 
 
@@ -41,6 +57,11 @@
 	- CPU: 10500T
 	- RAM: 16GB
 	- Storage: 256 NVMe
+
+- $191 - 405 G6 - eBay
+	- CPU: 5 PRO 4650GE
+	- RAM: 16GB
+	- Storage: 256
 
 - 
 
@@ -75,6 +96,11 @@
 	- RAM: 8GB
 	- Storage: 256
 
+- $191 - 3080 - eBay
+	- CPU: 10600
+	- RAM: 16GB
+	- Storage: 256
+
 - 
 
 ## Dell Precision SFF
@@ -92,6 +118,25 @@
 
 ### Lenovo ThinkCentre SFF
 
+- $260 - M70q G2 - eBay
+	- CPU: 11500T
+	- RAM: 16GB
+	- Storage: 256
+
+- $277 - M75q G2 - eBay
+	- CPU: 5650GE
+	- RAM: 16GB
+	- Storage: 256
+    
+- $298 - M75q G2 - eBay
+	- CPU: 5650GE
+	- RAM: 16GB
+	- Storage: 256
+
+- $249 - M75S G2 - eBay
+	- CPU: 5650G
+	- RAM: 16GB
+	- Storage: 256
 - 
 
 ---
