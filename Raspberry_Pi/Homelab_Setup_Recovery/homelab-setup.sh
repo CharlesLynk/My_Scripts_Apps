@@ -41,6 +41,10 @@ readonly CONNECTION_RETRY_DELAY=2
 readonly CURL_RETRY_ATTEMPTS=15
 readonly CURL_RETRY_DELAY=2
 
+# apt repository/package retries
+readonly APT_RETRY_ATTEMPTS=5
+readonly APT_RETRY_DELAY=4
+
 # Image pull retry strategy
 readonly IMAGE_PULL_OUTER_RETRY_MAX=3
 readonly PROGRESS_CHECK_INTERVAL=5
@@ -657,14 +661,14 @@ check_all_prerequisites() {
         log_warning "Missing packages detected: ${missing_packages[*]}"
         log_info "Installing missing packages..."
         
-        if ! apt-get update -qq; then
+        if ! retry_apt_update; then
             err "Failed to update package lists. Check internet connection."
         fi
         
         # Deduplicate and install all packages in one command
         local unique_packages=($(echo "${missing_packages[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
         
-        if ! apt-get install -y "${unique_packages[@]}"; then
+        if ! retry_apt_install "${unique_packages[@]}"; then
             log_error "Failed to install packages: ${unique_packages[*]}"
             log_error "Try manually: sudo apt-get install ${unique_packages[*]}"
             err "Package installation failed"
@@ -728,6 +732,19 @@ retry_until_connected() {
     printf "\r%80s\r" " "
     log_error "Failed to establish connection after ${max_attempts} attempts"
     return $exitCode
+}
+
+# Retry apt metadata refresh with transient-network tolerance
+retry_apt_update() {
+    retry_until_connected --attempts ${APT_RETRY_ATTEMPTS} --delay ${APT_RETRY_DELAY} \
+        apt-get -o Acquire::Retries=3 update -qq
+}
+
+# Retry apt package installation with transient-network tolerance
+retry_apt_install() {
+    [[ $# -eq 0 ]] && return 0
+    retry_until_connected --attempts ${APT_RETRY_ATTEMPTS} --delay ${APT_RETRY_DELAY} \
+        apt-get -o Acquire::Retries=3 install -y "$@"
 }
 
 # Stage 2: Monitor download progress with user interaction
@@ -1214,7 +1231,7 @@ detect_lan_subnet() {
     # Ensure ipcalc is available for reliable subnet detection
     if ! command_exists ipcalc; then
         log_info "ipcalc not found, installing..."
-        if ! apt-get update -qq || ! apt-get install -y ipcalc >/dev/null 2>&1; then
+        if ! retry_apt_update || ! retry_apt_install ipcalc >/dev/null 2>&1; then
             log_error "Failed to install ipcalc package"
             log_error "Cannot safely detect network subnet without ipcalc"
             return 1
@@ -1476,10 +1493,10 @@ mode_install_docker() {
         docker compose version
     else
         log_info "Installing docker-compose-plugin..."
-        if ! apt-get update -qq; then
+        if ! retry_apt_update; then
             err "Failed to update package lists"
         fi
-        if ! apt-get install -y docker-compose-plugin; then
+        if ! retry_apt_install docker-compose-plugin; then
             log_error "Try running: sudo apt-get update && sudo apt-get install docker-compose-plugin"
             err "Failed to install docker-compose-plugin"
         fi
@@ -1500,7 +1517,7 @@ mode_install_docker() {
         glow --version
     else
         log_info "Installing glow for reading documentation..."
-        if ! apt-get install -y glow 2>/dev/null; then
+        if ! retry_apt_install glow 2>/dev/null; then
             log_warning "glow not available in apt repos, trying manual installation..."
             
             # Detect architecture
@@ -1527,7 +1544,8 @@ mode_install_docker() {
                 if [[ -z "$temp_dir" ]] || [[ ! -d "$temp_dir" ]]; then
                     log_warning "Failed to create temporary directory for glow installation"
                     log_info "You can still read markdown with: less /root/README.md"
-                elif curl -fsSL "$glow_url" -o "${temp_dir}/glow.tar.gz" && \
+                elif retry_until_connected --attempts ${CURL_RETRY_ATTEMPTS} --delay ${CURL_RETRY_DELAY} \
+                    curl -fsSL "$glow_url" -o "${temp_dir}/glow.tar.gz" && \
                    tar -xzf "${temp_dir}/glow.tar.gz" -C "${temp_dir}" && \
                    mv "${temp_dir}/glow" /usr/local/bin/glow && \
                    chmod +x /usr/local/bin/glow; then

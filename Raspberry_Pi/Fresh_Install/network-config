@@ -1,0 +1,15 @@
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp6: true
+      optional: true
+  wifis:
+    wlan0:
+      dhcp4: true
+      regulatory-domain: "US"
+      access-points:
+        "LynkNet":
+          password: "25c100f6f65b30a1b3a95855a0ae6d0b7ef3b48138b89a938209832f10a498d6"
+      optional: true

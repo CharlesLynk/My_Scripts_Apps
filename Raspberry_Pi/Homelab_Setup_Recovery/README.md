@@ -96,12 +96,16 @@ Menu options:
 5) Switch to Hybrid (boot on current device, root on another)
 6) Switch to USB-only (full USB storage setup with boot+root)
 7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd)
+8) Configure EEPROM boot order (SD/USB priority)
 
 Key behaviors:
 - Performs SSH/WiFi checks before options 4–7.
+- Option 2 can prompt for target-first-boot SSH enable/disable and WiFi SSID/password, then update target boot seed files (`ssh`, `network-config`, `user-data`) when a next boot target is detected.
+- Option 2 warns when the target appears to have already completed first boot (seed-file edits may not reconfigure an already-initialized system).
 - Creates a backup of `/boot/firmware/cmdline.txt` before changes.
 - Options 4–6 auto-configure all USB boot partitions; option 7 configures only the flashed device.
-- Option 7 can optionally copy your user, SSH keys, and network config to the new image.
+- Option 7 now applies Fresh_Install-formatted `cmdline.txt`, `config.txt`, `network-config`, `user-data`, and `ssh` files after flash.
+- Option 7 prompts for plaintext WiFi SSID/password, username/password, and hostname, then dynamically rewrites target PARTUUID/fstab.
 
 ### `homelab-setup.sh` – Docker Stack Installer
 
@@ -118,6 +122,13 @@ Modes:
 
 ## 🧭 Detailed Usage
 
+### `switch-root.sh` option 2 – Verify + pre-boot target connectivity update
+- Verifies local SSH/WiFi state.
+- Checks boot-target readiness when applicable.
+- Offers connectivity sync for validated targets.
+- Optionally writes first-boot seed connectivity files (`ssh`, `network-config`, `user-data`) on the next boot target.
+- Shows a first-boot applicability warning before writing seed files if cloud-init appears already finalized.
+
 ### `switch-root.sh` option 6 – USB-only setup
 - Partitions USB (512MB FAT32 boot + ext4 root)
 - Clones /boot/firmware to USB boot
@@ -129,8 +140,13 @@ Modes:
 ### `switch-root.sh` option 7 – Flash fresh OS to USB
 - Downloads Raspberry Pi OS image and SHA256 checksum
 - Validates XZ integrity and verifies checksum when available (prompts if checksum download fails)
-- Writes image via `dd` and reconfigures USB boot
-- Optionally copies user/SSH/network configs from the current system
+- Writes image via `dd`, regenerates partition identifiers, and rewrites boot/root mappings
+- Applies Fresh_Install-style first-boot files with prompted WiFi/user/hostname values
+
+### `switch-root.sh` option 8 – Configure EEPROM boot order
+- Reads and validates current EEPROM boot order.
+- Lets you choose SD/USB preference safely.
+- Re-checks target boot continuity/readiness after change.
 
 ### `homelab-setup.sh install-docker`
 What it does:

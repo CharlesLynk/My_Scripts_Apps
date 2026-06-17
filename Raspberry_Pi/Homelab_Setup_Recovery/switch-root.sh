@@ -43,6 +43,7 @@ BACKUP="$BOOT_DIR/cmdline.txt.bak"
 MIN_MEMORY_COPY_MB=512
 MIN_MEMORY_FLASH_MB=256
 MIN_DISK_SPACE_FLASH_MB=2048
+DEFAULT_FLASH_CACHE_DIR="/var/cache/switch-root/images"
 
 # WiFi verification settings (connection not required)
 readonly WIFI_SSID="LynkNet"
@@ -80,6 +81,19 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Download control state (used by Ctrl+C menu)
 DOWNLOAD_MENU_ACTION=""
+
+# Boot-order continuity check summary (updated by check_boot_order_ssh_continuity)
+BOOT_ORDER_LAST_CHECKED=0
+BOOT_ORDER_LAST_FAILURES=0
+BOOT_ORDER_LAST_SKIPPED=0
+BOOT_ORDER_VALIDATED_BOOT_PARTS=()
+BOOT_ORDER_VALIDATED_ROOT_PARTS=()
+BOOT_ORDER_NEXT_TARGET_BOOT=""
+BOOT_ORDER_NEXT_TARGET_ROOT=""
+
+# EEPROM USB boot profile targets (Pi 4 USB boot hardening)
+readonly EEPROM_USB_DISCOVER_TIMEOUT_TARGET=20000
+readonly EEPROM_USB_PWR_OFF_TIME_TARGET=1000
 
 # Conditional timestamp - only shown when --debug flag is active
 timestamp() {
@@ -172,13 +186,18 @@ prompt_yn() {
   local prompt="$1"
   local default_yes="${2:-false}"
   local answer=""
+  local answer_normalized=""
   
   if [[ "$default_yes" == "true" ]]; then
-    read -rp "$prompt (Y/n): " answer
-    [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]
+    read -rp "$prompt [Y/n]: " answer
+    answer_normalized="${answer,,}"
+    answer_normalized="${answer_normalized//[[:space:]]/}"
+    [[ -z "$answer_normalized" || "$answer_normalized" == "y" || "$answer_normalized" == "yes" ]]
   else
-    read -rp "$prompt (y/n): " answer
-    [[ "$answer" =~ ^[Yy]$ ]]
+    read -rp "$prompt [y/N]: " answer
+    answer_normalized="${answer,,}"
+    answer_normalized="${answer_normalized//[[:space:]]/}"
+    [[ "$answer_normalized" == "y" || "$answer_normalized" == "yes" ]]
   fi
 }
 
@@ -340,7 +359,7 @@ monitor_download_progress() {
       fi
 
         sleep $PROGRESS_CHECK_INTERVAL
-        ((check_count++))
+        check_count=$((check_count + 1))
         
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
@@ -355,7 +374,7 @@ monitor_download_progress() {
         
         # Detect stalls (no I/O activity)
         if (( current_size == last_size && last_size > 0 )); then
-            ((stall_count++))
+            stall_count=$((stall_count + 1))
             if (( stall_count >= 3 )); then
                 log_warning "Download appears stalled (no I/O activity for $((stall_count * PROGRESS_CHECK_INTERVAL))s)"
                 log_info "Press Ctrl+C for options menu"
@@ -371,14 +390,6 @@ monitor_download_progress() {
             local size_mb=$((current_size / 1024 / 1024))
             printf "${BLUE}[PROGRESS]${NC} %s - %dm %ds elapsed, %dMB transferred\n" \
                 "$operation_name" "$elapsed_min" "$elapsed_sec" "$size_mb"
-            
-            # Show last few lines of log for context
-            if [[ -f "$temp_log" ]]; then
-                local last_line=$(tail -n 1 "$temp_log" 2>/dev/null | tr -d '\n' | cut -c1-80)
-                if [[ -n "$last_line" ]]; then
-                    echo "  Last: $last_line"
-                fi
-            fi
         fi
     done
     
@@ -591,10 +602,10 @@ copy_scripts_to_boot() {
         chmod 644 "${boot_mount}/${filename}" 2>/dev/null
       fi
       log_success "Copied ${filename} to boot partition"
-      ((copied++))
+      copied=$((copied + 1))
     else
       log_error "Failed to copy ${filename}"
-      ((failed++))
+      failed=$((failed + 1))
     fi
   done
   
@@ -641,7 +652,7 @@ wait_for_partitions() {
       sleep 1
     fi
     
-    ((attempt++))
+    attempt=$((attempt + 1))
   done
   
   log_error "Only $(lsblk -ln "$device" 2>/dev/null | grep -c part || echo 0) of $expected_count partitions detected"
@@ -743,27 +754,73 @@ add_usb_power_settings() {
   
   [[ ! -f "$config_file" ]] && return 1
   
-  # Already present - success
-  if grep -q "usb_max_current_enable" "$config_file" 2>/dev/null; then
-    return 0
-  fi
-  
-  # Add settings
+  # Remove legacy forced host overlay from older script versions.
+  # This overlay is not required for Pi 4 USB boot and can reduce compatibility.
+  remove_legacy_usb_host_overlay "$config_file" || return 1
+
+  # Apply model-specific USB power tweak when appropriate.
   if ! append_usb_power_settings "$config_file"; then
-    return 1  # Error writing file
+    return 1
   fi
-  
+
   sync
-  return 0  # Success
+  return 0
 }
 
 # Helper: Append USB power settings block without heredoc (avoid editor indentation issues)
 append_usb_power_settings() {
   local config_file="$1"
 
-  printf '\n# Unlock power for USB Boot on USB-Compliant power supply (added by switch-root.sh)\n' >> "$config_file" || return 1
-  printf 'dtoverlay=dwc2,dr_mode=host\n' >> "$config_file" || return 1
+  # usb_max_current_enable is relevant to Pi 5 firmware behavior.
+  # Do not add model-specific power flags on other boards.
+  if ! is_raspberry_pi_5; then
+    return 0
+  fi
+
+  if grep -q '^\s*usb_max_current_enable\s*=\s*1\s*$' "$config_file" 2>/dev/null; then
+    return 0
+  fi
+
+  printf '\n# USB power tweak for Pi 5 (added by switch-root.sh)\n' >> "$config_file" || return 1
   printf 'usb_max_current_enable=1\n' >> "$config_file" || return 1
+  return 0
+}
+
+# Helper: Detect Raspberry Pi 5 from device-tree model string
+is_raspberry_pi_5() {
+  local model=""
+  model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
+  [[ "$model" == *"Raspberry Pi 5"* ]]
+}
+
+# Helper: Remove legacy forced host overlay added by old versions of this script
+remove_legacy_usb_host_overlay() {
+  local config_file="$1"
+  local tmp_file
+
+  [[ -f "$config_file" ]] || return 1
+
+  if ! grep -qE '^\s*dtoverlay=dwc2,dr_mode=host\s*$' "$config_file" 2>/dev/null && \
+     ! grep -q 'Unlock power for USB Boot on USB-Compliant power supply (added by switch-root.sh)' "$config_file" 2>/dev/null; then
+    return 0
+  fi
+
+  tmp_file=$(mktemp /tmp/switch-root-config-XXXXXX) || return 1
+  if ! sed \
+      -e '/^\s*dtoverlay=dwc2,dr_mode=host\s*$/d' \
+      -e '/Unlock power for USB Boot on USB-Compliant power supply (added by switch-root.sh)/d' \
+      "$config_file" > "$tmp_file"; then
+    rm -f "$tmp_file" 2>/dev/null || true
+    return 1
+  fi
+
+  if ! cp "$tmp_file" "$config_file"; then
+    rm -f "$tmp_file" 2>/dev/null || true
+    return 1
+  fi
+
+  rm -f "$tmp_file" 2>/dev/null || true
+  log_warning "Removed legacy dtoverlay=dwc2,dr_mode=host from $(basename "$config_file") for safer USB boot compatibility"
   return 0
 }
 
@@ -776,7 +833,7 @@ with_mount() {
   shift 2
   
   local verify_boot=false
-  if [[ "$1" == "--verify-boot" ]]; then
+  if [[ "${1:-}" == "--verify-boot" ]]; then
     verify_boot=true
     shift
   fi
@@ -837,11 +894,107 @@ retry_until() {
       sleep "$interval"
     fi
     
-    ((attempt++))
+    attempt=$((attempt + 1))
   done
   
   log_error "Timeout: $description failed after ${max_attempts} attempts"
   return 1
+}
+
+# Helper: Resolve a disk basename from any block device path.
+# Usage: resolve_disk_name_for_device "/dev/sda1" -> "sda"
+resolve_disk_name_for_device() {
+  local device="$1"
+  local base="${device##*/}"
+
+  if [[ -b "$device" ]]; then
+    local type
+    type=$(lsblk -no TYPE "$device" 2>/dev/null | head -n1 || true)
+    if [[ "$type" == "part" ]]; then
+      local pkname
+      pkname=$(lsblk -no PKNAME "$device" 2>/dev/null | head -n1 || true)
+      if [[ -n "$pkname" ]]; then
+        echo "$pkname"
+        return 0
+      fi
+    fi
+  fi
+
+  echo "$base"
+}
+
+# Helper: Read disk transport with kernel-name fallbacks for blank TRAN values.
+get_disk_transport_for_name() {
+  local disk_name="$1"
+  local transport
+  transport=$(lsblk -no TRAN "/dev/${disk_name}" 2>/dev/null | head -n1 || true)
+
+  if [[ -z "$transport" && "$disk_name" =~ ^mmcblk ]]; then
+    transport="mmc"
+  fi
+  if [[ -z "$transport" && "$disk_name" =~ ^nvme ]]; then
+    transport="nvme"
+  fi
+
+  echo "$transport"
+}
+
+get_disk_hotplug_for_name() {
+  local disk_name="$1"
+  lsblk -ndo HOTPLUG "/dev/${disk_name}" 2>/dev/null | head -n1 || echo "0"
+}
+
+get_disk_removable_for_name() {
+  local disk_name="$1"
+  lsblk -ndo RM "/dev/${disk_name}" 2>/dev/null | head -n1 || echo "0"
+}
+
+is_disk_usb_bridge_for_name() {
+  local disk_name="$1"
+  local sys_path
+  sys_path=$(readlink -f "/sys/block/${disk_name}" 2>/dev/null || true)
+  [[ "$sys_path" == *"/usb"* ]]
+}
+
+# Helper: Classify a disk basename by transport class (sd|usb|pcie).
+# Usage: disk_matches_transport_class "sda" "usb"
+disk_matches_transport_class() {
+  local disk_name="$1"
+  local class="$2"
+  local transport
+  local hotplug
+  local removable
+  local usb_bridge=false
+
+  transport=$(get_disk_transport_for_name "$disk_name")
+  hotplug=$(get_disk_hotplug_for_name "$disk_name")
+  removable=$(get_disk_removable_for_name "$disk_name")
+  if is_disk_usb_bridge_for_name "$disk_name"; then
+    usb_bridge=true
+  fi
+
+  case "$class" in
+    sd)
+      [[ "$transport" == "mmc" || "$disk_name" =~ ^mmcblk ]]
+      ;;
+    usb)
+      # Never classify built-in SD/eMMC as USB.
+      if [[ "$disk_name" =~ ^mmcblk ]]; then
+        return 1
+      fi
+      [[ "$transport" == "usb" ]] && return 0
+      [[ ( "$transport" == "ata" || "$transport" == "sata" ) && ( "$hotplug" == "1" || "$usb_bridge" == "true" ) ]] && return 0
+      [[ -z "$transport" && "$removable" == "1" && "$hotplug" == "1" ]] && return 0
+      [[ "$usb_bridge" == "true" ]] && return 0
+      return 1
+      ;;
+    pcie)
+      [[ "$transport" == "pci" || "$transport" == "pcie" || "$transport" == "nvme" || "$disk_name" =~ ^nvme ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # Helper: Unified device validation with configurable check levels
@@ -864,24 +1017,15 @@ validate_target_device() {
   
   # Level: standard - check for acceptable removable/portable devices
   if [[ "$check_level" == "standard" || "$check_level" == "full" ]]; then
-    local transport=$(lsblk -ndo TRAN "$device" 2>/dev/null || echo "unknown")
-    local removable=$(lsblk -ndo RM "$device" 2>/dev/null || echo "0")
-    local is_mmc=false
-    [[ "$device" =~ /dev/mmcblk ]] && is_mmc=true
+    local disk_name
+    disk_name=$(resolve_disk_name_for_device "$device")
+    local transport
+    transport=$(get_disk_transport_for_name "$disk_name")
+    local removable
+    removable=$(get_disk_removable_for_name "$disk_name")
 
-    local dev_name
-    dev_name=$(basename "$device")
-    local hotplug
-    hotplug=$(lsblk -ndo HOTPLUG "$device" 2>/dev/null | head -n1 || echo "0")
-    local sys_path
-    sys_path=$(readlink -f "/sys/block/${dev_name}" 2>/dev/null || true)
-    local is_usb_bridge=false
-    [[ "$sys_path" == *"/usb"* ]] && is_usb_bridge=true
-    local is_ata=false
-    [[ "$transport" == "ata" || "$transport" == "sata" ]] && is_ata=true
-
-    # Accept USB, removable devices, and SD/eMMC (mmcblk)
-    if [[ "$transport" != "usb" && "$removable" != "1" && "$is_mmc" != "true" && ! ( "$is_ata" == "true" && ( "$hotplug" == "1" || "$is_usb_bridge" == "true" ) ) ]]; then
+    # Accept USB-like disks, removable media, and SD/eMMC.
+    if ! disk_matches_transport_class "$disk_name" "usb" && [[ "$removable" != "1" ]] && [[ ! "$disk_name" =~ ^mmcblk ]]; then
       log_error "Device $device is not detected as USB/removable/SD (transport: $transport, removable: $removable)"
       log_error "This appears to be internal storage - refusing to proceed"
       ERROR_HINT="Use a USB drive/adapter or SD card. Check: lsblk -o NAME,TRAN,RM"
@@ -1136,7 +1280,7 @@ cleanup_failed_mounts() {
     if mountpoint -q "$mnt" 2>/dev/null; then
       log_success "Cleaning up orphaned mount: $mnt"
       umount -l "$mnt" 2>/dev/null || true
-      ((cleaned++))
+      cleaned=$((cleaned + 1))
     fi
     
     if [[ -d "$mnt" ]] && [[ ! "$(ls -A "$mnt" 2>/dev/null)" ]]; then
@@ -1194,10 +1338,35 @@ check_space_available() {
 # Usage: regenerate_partuuids "/dev/sda"
 regenerate_partuuids() {
   local device="$1"
+  local part_table_type
+  part_table_type=$(lsblk -ndo PTTYPE "$device" 2>/dev/null | head -n1 || true)
+
+  # Raspberry Pi OS images are frequently MBR (dos) rather than GPT.
+  # For MBR, randomize the disk identifier so derived PARTUUID values differ.
+  if [[ "$part_table_type" == "dos" ]]; then
+    if command -v sfdisk >/dev/null 2>&1; then
+      local new_disk_id
+      new_disk_id="0x$(od -An -N4 -tx4 /dev/urandom 2>/dev/null | tr -d ' \n')"
+
+      if [[ -n "$new_disk_id" ]] && sfdisk --disk-id "$device" "$new_disk_id" >/dev/null 2>&1; then
+        log_success "Updated MBR disk identifier on $device ($new_disk_id)"
+        partprobe "$device" 2>/dev/null || true
+        udevadm settle 2>/dev/null || true
+        sleep 1
+        return 0
+      fi
+
+      log_error "Failed to update MBR disk identifier on $device"
+      return 1
+    fi
+
+    log_warning "sfdisk not available, skipping MBR disk identifier update"
+    return 0
+  fi
   
   if ! command -v sgdisk >/dev/null 2>&1; then
-    log_warning "sgdisk not available, skipping PARTUUID regeneration"
-    return 1
+    log_warning "sgdisk not available, skipping GPT GUID regeneration"
+    return 0
   fi
   
   log_success "Regenerating PARTUUIDs on $device to avoid conflicts..."
@@ -1309,6 +1478,29 @@ update_cmdline_root_from_map() {
   return 0
 }
 
+# Helper: Read required PARTUUID with configurable acquire and verify modes.
+# Usage: read_required_partuuid_checked "/dev/sda1" "label" [acquire_mode] [verify_mode]
+# Returns PARTUUID on stdout or non-zero on failure.
+read_required_partuuid_checked() {
+  local device="$1"
+  local label="$2"
+  local acquire_mode="${3:-$PARTUUID_DUP_MODE}"
+  local verify_mode="${4:-}"
+
+  local partuuid
+  partuuid="$(get_partuuid_safe "$device" "$acquire_mode" 2>/dev/null || true)"
+  if [[ -z "$partuuid" ]]; then
+    log_error "Could not determine PARTUUID of ${label} (${device})"
+    return 1
+  fi
+
+  if [[ -n "$verify_mode" ]]; then
+    handle_partuuid_uniqueness "$partuuid" "$device" "$verify_mode" || return 1
+  fi
+
+  echo "$partuuid"
+}
+
 # Helper: Update fstab entries for PARTUUIDs (either direct or from a map file)
 # Usage: update_fstab_partuuid_entries "/etc/fstab" "boot_partuuid" "root_partuuid" [map_file]
 update_fstab_partuuid_entries() {
@@ -1373,6 +1565,7 @@ update_fstab_from_map() {
 update_partuuid_map_for_disk() {
   local disk="$1"
   local pre_map_file="$2"
+  local strict_mode="${3:-false}"
 
   partprobe "$disk" 2>/dev/null || true
   udevadm settle 2>/dev/null || true
@@ -1423,7 +1616,16 @@ update_partuuid_map_for_disk() {
     log_warning "No root fstab updated on ${disk} (no root filesystem found)"
   fi
 
+  if [[ "$strict_mode" == "true" ]]; then
+    if [[ "$boot_updated" != "true" || "$root_updated" != "true" ]]; then
+      log_error "Strict PARTUUID map update failed on ${disk} (boot_updated=${boot_updated}, root_updated=${root_updated})"
+      rm -f "$map_file" 2>/dev/null || true
+      return 1
+    fi
+  fi
+
   rm -f "$map_file" 2>/dev/null || true
+  return 0
 }
 
 # Helper: Ensure PARTUUID is unique system-wide, auto-resolving duplicates
@@ -1475,43 +1677,81 @@ ensure_partuuid_unique_or_fix() {
 
   log_warning "Duplicate PARTUUID detected: ${partuuid}"
   log_warning "Keeping: ${keep_device}"
-  log_warning "Regenerating GUIDs on other disk(s) to resolve duplication..."
 
-  local changed=0
-  for dev in "${devices[@]}"; do
-    [[ "$dev" == "$keep_device" ]] && continue
-
-    local disk_name
-    disk_name=$(lsblk -no PKNAME "$dev" 2>/dev/null | head -n1)
-    if [[ -z "$disk_name" ]]; then
-      disk_name=$(basename "$dev")
-    fi
-    local disk="/dev/${disk_name}"
-
-    local pre_map_file
-    pre_map_file=$(mktemp /tmp/partuuid-pre-XXXXXX)
-    lsblk -nrpo NAME,PARTUUID "$disk" 2>/dev/null > "$pre_map_file" || true
-
-    log_warning "  - Regenerating GUIDs on ${disk} (contains ${dev})"
-    if sgdisk --randomize-guids "$disk" >/dev/null 2>&1; then
-      update_partuuid_map_for_disk "$disk" "$pre_map_file"
-      ((changed++))
-    else
-      log_error "Failed to regenerate GUIDs on ${disk}"
-      err --debug "Unable to resolve PARTUUID conflict on ${disk}"
-    fi
-
-    rm -f "$pre_map_file" 2>/dev/null || true
-  done
-
-  if (( changed > 0 )); then
-    log_success "PARTUUID conflict resolved (updated ${changed} disk(s))"
+  if [[ -z "$preferred_device" ]]; then
+    log_error "Refusing automatic fix without explicit target device"
+    err --debug "Attach only target media or provide explicit preferred target partition for conflict repair"
   fi
+
+  local resolved_preferred
+  resolved_preferred=$(readlink -f "$preferred_device" 2>/dev/null || echo "$preferred_device")
+  local preferred_in_conflict=false
+  for dev in "${devices[@]}"; do
+    if [[ "$(readlink -f "$dev" 2>/dev/null || echo "$dev")" == "$resolved_preferred" ]]; then
+      preferred_in_conflict=true
+      break
+    fi
+  done
+  if [[ "$preferred_in_conflict" != "true" ]]; then
+    log_error "Preferred device ${preferred_device} does not match conflicted PARTUUID entries"
+    err --debug "Refusing to modify non-target disks; detach unrelated drives and retry"
+  fi
+
+  local preferred_disk_name
+  preferred_disk_name=$(lsblk -no PKNAME "$preferred_device" 2>/dev/null | head -n1)
+  if [[ -z "$preferred_disk_name" ]]; then
+    preferred_disk_name=$(basename "$preferred_device")
+  fi
+  local preferred_disk="/dev/${preferred_disk_name}"
+
+  local current_root_dev
+  current_root_dev=$(findmnt -no SOURCE / 2>/dev/null || true)
+  local current_root_disk=""
+  if [[ -n "$current_root_dev" ]]; then
+    current_root_disk=$(lsblk -no PKNAME "$current_root_dev" 2>/dev/null | head -n1 || true)
+  fi
+
+  local current_boot_dev
+  current_boot_dev=$(findmnt -no SOURCE "$BOOT_DIR" 2>/dev/null || true)
+  local current_boot_disk=""
+  if [[ -n "$current_boot_dev" ]]; then
+    current_boot_disk=$(lsblk -no PKNAME "$current_boot_dev" 2>/dev/null | head -n1 || true)
+  fi
+
+  if [[ -n "$current_root_disk" && "$preferred_disk_name" == "$current_root_disk" ]]; then
+    log_error "Refusing to randomize current root disk: ${preferred_disk}"
+    err --debug "Conflict requires manual resolution; do not modify the running root disk"
+  fi
+  if [[ -n "$current_boot_disk" && "$preferred_disk_name" == "$current_boot_disk" ]]; then
+    log_error "Refusing to randomize current boot disk: ${preferred_disk}"
+    err --debug "Conflict requires manual resolution; do not modify the current boot disk"
+  fi
+
+  local pre_map_file
+  pre_map_file=$(mktemp /tmp/partuuid-pre-XXXXXX)
+  lsblk -nrpo NAME,PARTUUID "$preferred_disk" 2>/dev/null > "$pre_map_file" || true
+
+  log_warning "Regenerating GUIDs only on target disk: ${preferred_disk}"
+  if sgdisk --randomize-guids "$preferred_disk" >/dev/null 2>&1; then
+    if ! update_partuuid_map_for_disk "$preferred_disk" "$pre_map_file" "true"; then
+      rm -f "$pre_map_file" 2>/dev/null || true
+      err --debug "Randomized GUIDs on ${preferred_disk} but failed strict cmdline/fstab remap"
+    fi
+    log_success "PARTUUID conflict repair applied to target disk only: ${preferred_disk}"
+  else
+    rm -f "$pre_map_file" 2>/dev/null || true
+    log_error "Failed to regenerate GUIDs on ${preferred_disk}"
+    err --debug "Unable to resolve PARTUUID conflict on target disk"
+  fi
+
+  rm -f "$pre_map_file" 2>/dev/null || true
 
   local count
   count=$(blkid -s PARTUUID | grep -c "PARTUUID=\"${partuuid}\"" || echo 0)
   if (( count > 1 )); then
-    err --debug "PARTUUID conflict persists after attempted fix (PARTUUID=${partuuid})"
+    log_error "PARTUUID conflict persists after target-only fix (PARTUUID=${partuuid})"
+    log_error "Unmodified conflicting devices still present. Detach non-target drives and retry."
+    err --debug "Target-only PARTUUID fix incomplete due to remaining duplicates on other disks"
   fi
 
   return 0
@@ -1652,6 +1892,16 @@ update_cmdline_root() {
     rm "$temp_backup" 2>/dev/null
     log_error "sed command failed"
     return 1
+  fi
+
+  # Enforce rootwait for USB/media timing reliability during early boot.
+  if ! grep -qE '(^| )rootwait( |$)' "$target_cmdline"; then
+    if ! sed -i -E 's#$# rootwait#' "$target_cmdline"; then
+      cp "$temp_backup" "$target_cmdline" 2>/dev/null
+      rm "$temp_backup" 2>/dev/null
+      log_error "Failed to append rootwait to cmdline.txt"
+      return 1
+    fi
   fi
   
   # Validate: must be single line
@@ -1806,7 +2056,7 @@ collect_sshd_config_files() {
       done
     done
 
-    ((i++))
+    i=$((i + 1))
   done
 
   printf '%s\n' "${files[@]}"
@@ -1850,6 +2100,103 @@ get_effective_sshd_setting() {
     }
     END { if (val != "") print val }
   ' "${config_files[@]}"
+}
+
+# Helper: Validate SSH auth/access policy using effective sshd settings
+# Usage: evaluate_sshd_access_policy "/etc/ssh/sshd_config" "/etc/ssh/sshd_config.d" "username" "group1 group2" [context_prefix]
+SSHD_POLICY_ISSUES=()
+evaluate_sshd_access_policy() {
+  local ssh_config_main="$1"
+  local ssh_config_d="$2"
+  local target_user="${3:-}"
+  local target_groups="${4:-}"
+  local context_prefix="${5:-}"
+
+  SSHD_POLICY_ISSUES=()
+
+  local effective_password_auth
+  local effective_kbd_auth
+  local effective_challenge_auth
+  local effective_use_pam
+  local effective_auth_methods
+  local effective_allow_users
+  local effective_deny_users
+  local effective_allow_groups
+  local effective_deny_groups
+  local effective_permit_root
+
+  if sshd_config_has_match "$ssh_config_main" "$ssh_config_d"; then
+    log_warning "${context_prefix}SSH config contains Match blocks - settings may be conditional"
+  fi
+
+  effective_password_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "PasswordAuthentication")
+  effective_kbd_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "KbdInteractiveAuthentication")
+  effective_challenge_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "ChallengeResponseAuthentication")
+  effective_use_pam=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "UsePAM")
+  effective_auth_methods=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AuthenticationMethods")
+  effective_allow_users=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AllowUsers")
+  effective_deny_users=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "DenyUsers")
+  effective_allow_groups=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AllowGroups")
+  effective_deny_groups=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "DenyGroups")
+  effective_permit_root=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "PermitRootLogin")
+
+  if [[ -n "$effective_auth_methods" ]]; then
+    if ! grep -qiE '(password|keyboard-interactive)' <<< "$effective_auth_methods"; then
+      SSHD_POLICY_ISSUES+=("${context_prefix}SSH AuthenticationMethods does not allow password or keyboard-interactive authentication")
+    fi
+  fi
+
+  if [[ "${effective_password_auth,,}" == "no" ]]; then
+    SSHD_POLICY_ISSUES+=("${context_prefix}SSH config disables PasswordAuthentication")
+  fi
+
+  if [[ "${effective_password_auth,,}" == "no" && "${effective_kbd_auth,,}" == "no" && "${effective_challenge_auth,,}" == "no" ]]; then
+    SSHD_POLICY_ISSUES+=("${context_prefix}SSH config disables all password-based auth methods")
+  fi
+
+  if [[ "${effective_use_pam,,}" == "no" && ( "${effective_password_auth,,}" == "yes" || "${effective_kbd_auth,,}" == "yes" || "${effective_challenge_auth,,}" == "yes" ) ]]; then
+    log_warning "${context_prefix}UsePAM is disabled; password authentication may fail"
+  fi
+
+  if [[ -n "$target_user" ]]; then
+    if [[ -n "$effective_allow_users" && ! " $effective_allow_users " =~ [[:space:]]${target_user}[[:space:]] ]]; then
+      SSHD_POLICY_ISSUES+=("${context_prefix}SSH config AllowUsers does not include ${target_user}")
+    fi
+
+    if [[ -n "$effective_deny_users" && " $effective_deny_users " =~ [[:space:]]${target_user}[[:space:]] ]]; then
+      SSHD_POLICY_ISSUES+=("${context_prefix}SSH config DenyUsers includes ${target_user}")
+    fi
+
+    if [[ -n "$effective_allow_groups" ]]; then
+      local allowed=false
+      local grp
+      for grp in $effective_allow_groups; do
+        if [[ " $target_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
+          allowed=true
+          break
+        fi
+      done
+      if [[ "$allowed" != "true" ]]; then
+        SSHD_POLICY_ISSUES+=("${context_prefix}SSH config AllowGroups does not include ${target_user}")
+      fi
+    fi
+
+    if [[ -n "$effective_deny_groups" ]]; then
+      local grp
+      for grp in $effective_deny_groups; do
+        if [[ " $target_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
+          SSHD_POLICY_ISSUES+=("${context_prefix}SSH config DenyGroups includes ${target_user} (group: ${grp})")
+          break
+        fi
+      done
+    fi
+  fi
+
+  if [[ -n "$effective_permit_root" && "${effective_permit_root,,}" == "yes" ]]; then
+    log_warning "${context_prefix}SSH config allows root login (PermitRootLogin yes)"
+  fi
+
+  (( ${#SSHD_POLICY_ISSUES[@]} == 0 ))
 }
 
 # Check if SSH is properly configured with default credentials
@@ -1902,81 +2249,14 @@ check_ssh_config() {
     
     # Check SSH configuration allows password authentication (main + drop-ins + Include)
     if [[ -f "$ssh_config_main" || -d "$ssh_config_d" ]]; then
-        local effective_password_auth
-        local effective_kbd_auth
-        local effective_challenge_auth
-        local effective_use_pam
-        local effective_auth_methods
-        local effective_allow_users
-        local effective_deny_users
-        local effective_allow_groups
-        local effective_deny_groups
+      local user_groups=""
+      if [[ -n "$target_user" ]]; then
+        user_groups=$(id -nG "$target_user" 2>/dev/null || echo "")
+      fi
 
-        if sshd_config_has_match "$ssh_config_main" "$ssh_config_d"; then
-          log_warning "SSH config contains Match blocks - some settings may be conditional"
-        fi
-
-        effective_password_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "PasswordAuthentication")
-        effective_kbd_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "KbdInteractiveAuthentication")
-        effective_challenge_auth=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "ChallengeResponseAuthentication")
-        effective_use_pam=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "UsePAM")
-        effective_auth_methods=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AuthenticationMethods")
-        effective_allow_users=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AllowUsers")
-        effective_deny_users=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "DenyUsers")
-        effective_allow_groups=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "AllowGroups")
-        effective_deny_groups=$(get_effective_sshd_setting "$ssh_config_main" "$ssh_config_d" "DenyGroups")
-
-        # AuthenticationMethods may override password auth entirely
-        if [[ -n "$effective_auth_methods" ]]; then
-          if ! grep -qiE '(password|keyboard-interactive)' <<< "$effective_auth_methods"; then
-            errors+=("SSH AuthenticationMethods does not allow password or keyboard-interactive authentication")
-          fi
-        fi
-
-        # If all password-capable methods are explicitly disabled, fail
-        if [[ "${effective_password_auth,,}" == "no" && "${effective_kbd_auth,,}" == "no" && "${effective_challenge_auth,,}" == "no" ]]; then
-          errors+=("All password-based SSH auth methods are disabled (PasswordAuthentication, KbdInteractiveAuthentication, ChallengeResponseAuthentication)")
-        fi
-
-        # UsePAM disabled may break password auth on modern systems
-        if [[ "${effective_use_pam,,}" == "no" && ( "${effective_password_auth,,}" == "yes" || "${effective_kbd_auth,,}" == "yes" || "${effective_challenge_auth,,}" == "yes" ) ]]; then
-          log_warning "UsePAM is disabled; password authentication may fail"
-        fi
-
-        # Validate Allow/Deny user/group rules if a target user is known
-        if [[ -n "$target_user" ]]; then
-          if [[ -n "$effective_allow_users" && ! " $effective_allow_users " =~ [[:space:]]${target_user}[[:space:]] ]]; then
-            errors+=("AllowUsers is set and does not include ${target_user}")
-          fi
-          if [[ -n "$effective_deny_users" && " $effective_deny_users " =~ [[:space:]]${target_user}[[:space:]] ]]; then
-            errors+=("DenyUsers includes ${target_user}")
-          fi
-
-          local user_groups
-          user_groups=$(id -nG "$target_user" 2>/dev/null || echo "")
-
-          if [[ -n "$effective_allow_groups" ]]; then
-            local allowed=false
-            for grp in $effective_allow_groups; do
-              if [[ " $user_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
-                allowed=true
-                break
-              fi
-            done
-            if [[ "$allowed" != "true" ]]; then
-              errors+=("AllowGroups is set and ${target_user} is not in an allowed group")
-            fi
-          fi
-
-          if [[ -n "$effective_deny_groups" ]]; then
-            for grp in $effective_deny_groups; do
-              if [[ " $user_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
-                errors+=("DenyGroups includes ${target_user} (group: ${grp})")
-                break
-              fi
-            done
-          fi
-        fi
+      if ! evaluate_sshd_access_policy "$ssh_config_main" "$ssh_config_d" "$target_user" "$user_groups"; then
+        errors+=("${SSHD_POLICY_ISSUES[@]}")
+      fi
     fi
     
     # Report results
@@ -2113,6 +2393,22 @@ check_wifi_config() {
       fi
     fi
 
+    # If NetworkManager is actively connected, suppress static-profile warnings.
+    if [[ "$nm_active_match" == "true" ]]; then
+      local filtered_warnings=()
+      local warning
+      for warning in "${warnings[@]}"; do
+        case "$warning" in
+          "/etc/wpa_supplicant/wpa_supplicant.conf not found"|"${WIFI_SSID} not found in /etc/NetworkManager/system-connections"|"/etc/NetworkManager/system-connections not found")
+            ;;
+          *)
+            filtered_warnings+=("$warning")
+            ;;
+        esac
+      done
+      warnings=("${filtered_warnings[@]}")
+    fi
+
     if [[ "$nm_configured" == "true" ]]; then
       wifi_configured=true
     fi
@@ -2160,7 +2456,56 @@ check_wifi_config() {
 }
 
 # Check initial Pi configuration (SSH and WiFi)
+check_boot_target_readiness() {
+    echo
+    log_success "Checking configured boot targets (read-only)..."
+  log_info "Mode 2 target check includes boot readiness diagnostics (cmdline/fstab/root mapping) and SSH continuity"
+
+    if ! eeprom_tool_available; then
+      log_warning "EEPROM tools not available - skipping target boot readiness check"
+      return 0
+    fi
+
+    local current_order
+    current_order=$(get_eeprom_boot_order)
+    if [[ -z "$current_order" ]]; then
+      log_warning "Could not read EEPROM BOOT_ORDER - skipping target boot readiness check"
+      return 0
+    fi
+
+    if check_boot_order_ssh_continuity "$current_order"; then
+      if (( BOOT_ORDER_LAST_CHECKED == 0 )); then
+        log_warning "Boot target readiness is inconclusive: 0 devices validated"
+        log_info "Current system SSH/WiFi may be healthy, but the next boot target was not verified"
+        log_info "To verify a specific target now, attach it and run option 8 or option 7/6 followed by option 2"
+        log_warning "Boot target readiness check: INCONCLUSIVE"
+        return 0
+      fi
+      if [[ -n "$BOOT_ORDER_NEXT_TARGET_BOOT" && -n "$BOOT_ORDER_NEXT_TARGET_ROOT" ]]; then
+        log_success "Next non-current boot candidate validated: ${BOOT_ORDER_NEXT_TARGET_BOOT} -> ${BOOT_ORDER_NEXT_TARGET_ROOT}"
+      else
+        log_info "No validated non-current boot candidate found in BOOT_ORDER (current device remains primary)"
+      fi
+      log_success "Boot target readiness check: PASSED"
+      return 0
+    fi
+
+    log_error "Boot target readiness check: FAILED"
+    return 1
+}
+
+# Check initial Pi configuration (SSH and WiFi)
 check_initial_config() {
+    local include_boot_targets=false
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --include-boot-targets)
+          include_boot_targets=true
+          ;;
+      esac
+      shift
+    done
+
     echo
     print_separator
     echo "Initial Configuration Verification"
@@ -2168,15 +2513,28 @@ check_initial_config() {
     
     local ssh_status=0
     local wifi_status=0
+    local target_status=0
     
     check_ssh_config || ssh_status=$?
     check_wifi_config || wifi_status=$?
+    if [[ "$include_boot_targets" == "true" ]]; then
+      check_boot_target_readiness || target_status=$?
+    fi
     
     echo
     print_separator
     
-    if [[ $ssh_status -eq 0 ]] && [[ $wifi_status -eq 0 ]]; then
-        log_success "All configuration checks passed!"
+    if [[ $ssh_status -eq 0 ]] && [[ $wifi_status -eq 0 ]] && [[ $target_status -eq 0 ]]; then
+        if [[ "$include_boot_targets" == "true" ]] && (( BOOT_ORDER_LAST_CHECKED > 0 )); then
+          offer_sync_connectivity_to_validated_targets || true
+          offer_preboot_connectivity_update_to_next_target || true
+        fi
+
+        if [[ "$include_boot_targets" == "true" ]] && (( BOOT_ORDER_LAST_CHECKED == 0 )); then
+          log_warning "Current-device checks passed, but boot-target readiness is inconclusive"
+        else
+          log_success "All configuration checks passed!"
+        fi
         print_separator
         return 0
     else
@@ -2196,6 +2554,13 @@ check_initial_config() {
           log_info "  - Configure SSID/PSK in /etc/wpa_supplicant/wpa_supplicant.conf"
           log_info "  - Or add a NetworkManager profile in /etc/NetworkManager/system-connections"
             log_info "  - Ensure wlan interface is up and connected"
+        fi
+
+        if [[ $target_status -ne 0 ]]; then
+            log_info "Boot target readiness issues detected. To fix:"
+            log_info "  - Run option 7 again to re-apply SSH/user/network settings on target"
+            log_info "  - Verify EEPROM BOOT_ORDER points to your intended boot device"
+            log_info "  - Use option 8 to validate target SSH continuity in selected boot order"
         fi
 
         print_separator
@@ -2264,6 +2629,314 @@ ensure_ssh_continuity() {
   return 0
 }
 
+# Helper: Copy SSH server config (sshd_config + drop-ins) to target root
+# Usage: copy_ssh_server_config_to_target "/mnt/target" "target label"
+copy_ssh_server_config_to_target() {
+  local root_mount_point="$1"
+  local target_label="$2"
+  local ssh_target_dir="${root_mount_point}/etc/ssh"
+  local ssh_config_d_src="/etc/ssh/sshd_config.d"
+
+  if [[ ! -d "$ssh_target_dir" ]]; then
+    log_warning "Target SSH directory missing on ${target_label}: ${ssh_target_dir}"
+    return 1
+  fi
+
+  if [[ -f /etc/ssh/sshd_config ]]; then
+    if cp /etc/ssh/sshd_config "${ssh_target_dir}/sshd_config" 2>/dev/null; then
+      log_success "Copied sshd_config to ${target_label}"
+    else
+      log_warning "Failed to copy sshd_config to ${target_label}"
+      return 1
+    fi
+  else
+    log_warning "Source /etc/ssh/sshd_config not found - skipping"
+  fi
+
+  if [[ -d "$ssh_config_d_src" ]]; then
+    local target_dropin_dir="${ssh_target_dir}/sshd_config.d"
+    mkdir -p "$target_dropin_dir"
+
+    local copied_dropins=0
+    local conf
+    for conf in "$ssh_config_d_src"/*.conf; do
+      [[ -f "$conf" ]] || continue
+      if cp "$conf" "$target_dropin_dir/" 2>/dev/null; then
+        copied_dropins=$((copied_dropins + 1))
+      fi
+    done
+
+    if (( copied_dropins > 0 )); then
+      chmod 644 "$target_dropin_dir"/*.conf 2>/dev/null || true
+      chown root:root "$target_dropin_dir"/*.conf 2>/dev/null || true
+      log_success "Copied ${copied_dropins} sshd_config.d drop-in file(s)"
+    fi
+  fi
+
+  return 0
+}
+
+# Helper: Apply shared connectivity baseline on target root
+# Usage: apply_connectivity_baseline_to_target "/mnt/target" "target label" [copy_network_mode] [enable_ssh_mode]
+apply_connectivity_baseline_to_target() {
+  local root_mount_point="$1"
+  local target_label="$2"
+  local copy_network_mode="${3:-default}"
+  local enable_ssh_mode="${4:-nonfatal}"
+  local enable_failed=0
+
+  if ! enable_ssh_service_on_target "$root_mount_point" "$target_label"; then
+    log_warning "Failed to enable SSH service on ${target_label}"
+    enable_failed=1
+  fi
+
+  if [[ "$copy_network_mode" == "force" ]]; then
+    copy_network_config "$root_mount_point" "force" || true
+  else
+    copy_network_config "$root_mount_point" || true
+  fi
+
+  if [[ "$enable_ssh_mode" == "fatal" && $enable_failed -ne 0 ]]; then
+    return 1
+  fi
+
+  if [[ $enable_failed -ne 0 ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+# Helper: Apply shared connectivity sync steps (SSH config copy + baseline apply).
+# Usage: run_connectivity_sync_steps "/mnt/target" "target label" [copy_network_mode] [baseline_mode]
+# baseline_mode: fatal|nonfatal
+run_connectivity_sync_steps() {
+  local root_mount_point="$1"
+  local target_label="$2"
+  local copy_network_mode="${3:-default}"
+  local baseline_mode="${4:-nonfatal}"
+
+  if ! copy_ssh_server_config_to_target "$root_mount_point" "$target_label"; then
+    log_warning "SSH server config copy incomplete for ${target_label}"
+  fi
+
+  if ! apply_connectivity_baseline_to_target "$root_mount_point" "$target_label" "$copy_network_mode" "$baseline_mode"; then
+    if [[ "$baseline_mode" == "fatal" ]]; then
+      return 1
+    fi
+    log_warning "Connectivity baseline apply incomplete for ${target_label}"
+    return 1
+  fi
+
+  return 0
+}
+
+# Helper: Sync current SSH and WiFi connectivity settings to a mounted target root
+# Usage (via with_mount): sync_connectivity_on_mounted_root "/mnt/target" "/dev/sda2" "target label"
+sync_connectivity_on_mounted_root() {
+  local root_mount_point="$1"
+  local mounted_device="$2"
+  local target_label="${3:-$mounted_device}"
+
+  log_info "Syncing connectivity settings to ${target_label}"
+
+  run_connectivity_sync_steps "$root_mount_point" "$target_label" "default" "nonfatal" || true
+
+  # Read-only verify SSH continuity after sync
+  if ! ensure_ssh_continuity_on_target "$root_mount_point" "$target_label" "check"; then
+    log_warning "Post-sync SSH continuity check did not fully pass on ${target_label}"
+  fi
+
+  return 0
+}
+
+# Helper: Check whether connectivity sync is needed for a mounted target root.
+# Returns: 0 if sync is needed, 1 if target is already aligned.
+# Usage: connectivity_sync_needed_on_mounted_root "/mnt/target" "/dev/sda2"
+connectivity_sync_needed_on_mounted_root() {
+  local root_mount_point="$1"
+  local target_label="$2"
+  local -a drift_items=()
+
+  compare_if_present() {
+    local src="$1"
+    local rel="$2"
+    local dst="${root_mount_point}${rel}"
+
+    [[ -f "$src" ]] || return 0
+    if [[ ! -f "$dst" ]]; then
+      drift_items+=("${rel} (missing on target)")
+      return 0
+    fi
+    if ! cmp -s "$src" "$dst" 2>/dev/null; then
+      drift_items+=("${rel} (content differs)")
+    fi
+  }
+
+  compare_if_present "/etc/ssh/sshd_config" "/etc/ssh/sshd_config"
+  compare_if_present "/etc/hostname" "/etc/hostname"
+  compare_if_present "/etc/hosts" "/etc/hosts"
+
+  # Static network config is only copied when interface stanzas are present.
+  if [[ -f /etc/dhcpcd.conf ]] && grep -q "^interface" /etc/dhcpcd.conf; then
+    compare_if_present "/etc/dhcpcd.conf" "/etc/dhcpcd.conf"
+  fi
+
+  if [[ -d /etc/ssh/sshd_config.d ]]; then
+    local src_dropin
+    for src_dropin in /etc/ssh/sshd_config.d/*.conf; do
+      [[ -f "$src_dropin" ]] || continue
+      compare_if_present "$src_dropin" "/etc/ssh/sshd_config.d/$(basename "$src_dropin")"
+    done
+  fi
+
+  local nm_profiles_present=false
+  if [[ -d /etc/NetworkManager/system-connections ]]; then
+    local src_nm
+    for src_nm in /etc/NetworkManager/system-connections/*; do
+      [[ -f "$src_nm" ]] || continue
+      nm_profiles_present=true
+      compare_if_present "$src_nm" "/etc/NetworkManager/system-connections/$(basename "$src_nm")"
+    done
+  fi
+
+  compare_if_present "/etc/wpa_supplicant/wpa_supplicant.conf" "/etc/wpa_supplicant/wpa_supplicant.conf"
+
+  # Baseline enablement checks that sync would enforce.
+  if [[ ! -e "${root_mount_point}/etc/systemd/system/multi-user.target.wants/ssh.service" ]]; then
+    drift_items+=("/etc/systemd/system/multi-user.target.wants/ssh.service (missing)")
+  fi
+
+  if [[ "$nm_profiles_present" == "true" && -f "${root_mount_point}/lib/systemd/system/NetworkManager.service" ]]; then
+    if [[ ! -e "${root_mount_point}/etc/systemd/system/multi-user.target.wants/NetworkManager.service" ]]; then
+      drift_items+=("/etc/systemd/system/multi-user.target.wants/NetworkManager.service (missing)")
+    fi
+  fi
+
+  if (( ${#drift_items[@]} == 0 )); then
+    return 1
+  fi
+
+  log_info "Connectivity drift detected on ${target_label}:"
+  local item
+  for item in "${drift_items[@]}"; do
+    log_info "  - ${item}"
+  done
+  return 0
+}
+
+# Helper: Assess a mounted target and emit "needs" or "same" to output file.
+# Usage (via with_mount): assess_connectivity_sync_need_on_mounted_root "/mnt/target" "/dev/sda2" "/tmp/out" "label"
+assess_connectivity_sync_need_on_mounted_root() {
+  local root_mount_point="$1"
+  local mounted_device="$2"
+  local output_file="$3"
+  local target_label="${4:-$mounted_device}"
+
+  if connectivity_sync_needed_on_mounted_root "$root_mount_point" "$target_label"; then
+    printf '%s\n' "needs" > "$output_file"
+  else
+    printf '%s\n' "same" > "$output_file"
+  fi
+
+  return 0
+}
+
+# Helper: Offer to sync connectivity settings from current system to validated target roots
+offer_sync_connectivity_to_validated_targets() {
+  local -A unique_targets=()
+  local root_dev
+
+  for root_dev in "${BOOT_ORDER_VALIDATED_ROOT_PARTS[@]}"; do
+    [[ -z "$root_dev" ]] && continue
+    [[ "$root_dev" == "$CURRENT_ROOT" ]] && continue
+    unique_targets["$root_dev"]=1
+  done
+
+  local targets=()
+  local target
+  for target in "${!unique_targets[@]}"; do
+    targets+=("$target")
+  done
+
+  if (( ${#targets[@]} == 0 )); then
+    log_info "No non-current validated target roots found for connectivity sync"
+    return 0
+  fi
+
+  local targets_needing_sync=()
+  local targets_already_synced=()
+  local assessment_failed=()
+
+  for target in "${targets[@]}"; do
+    local need_file
+    need_file=$(mktemp /tmp/connectivity-sync-need-XXXXXX)
+
+    if with_mount "$target" assess_connectivity_sync_need_on_mounted_root "$need_file" "$target"; then
+      local need_status
+      need_status=$(cat "$need_file" 2>/dev/null || true)
+      if [[ "$need_status" == "needs" ]]; then
+        targets_needing_sync+=("$target")
+      else
+        targets_already_synced+=("$target")
+      fi
+    else
+      assessment_failed+=("$target")
+    fi
+
+    rm -f "$need_file" 2>/dev/null || true
+  done
+
+  if (( ${#targets_already_synced[@]} > 0 )); then
+    log_info "Connectivity already aligned on validated target(s):"
+    for target in "${targets_already_synced[@]}"; do
+      log_info "  - ${target}"
+    done
+  fi
+
+  if (( ${#assessment_failed[@]} > 0 )); then
+    log_warning "Could not assess connectivity drift on:"
+    for target in "${assessment_failed[@]}"; do
+      log_warning "  - ${target}"
+    done
+  fi
+
+  if (( ${#targets_needing_sync[@]} == 0 )); then
+    if (( ${#assessment_failed[@]} == 0 )); then
+      log_success "All validated target roots already match current SSH/WiFi settings"
+    else
+      log_info "No assessed targets require connectivity sync"
+    fi
+    return 0
+  fi
+
+  echo
+  log_info "Validated target root devices that need connectivity sync:"
+  for target in "${targets_needing_sync[@]}"; do
+    log_info "  - ${target}"
+  done
+
+  if ! prompt_yn "Copy current SSH/WiFi settings to these target root devices now?"; then
+    log_info "Skipped connectivity sync"
+    return 0
+  fi
+
+  local synced=0
+  local failed=0
+  for target in "${targets_needing_sync[@]}"; do
+    if with_mount "$target" sync_connectivity_on_mounted_root "$target"; then
+      synced=$((synced + 1))
+      log_success "Connectivity settings synced to ${target}"
+    else
+      failed=$((failed + 1))
+      log_warning "Connectivity sync failed for ${target}"
+    fi
+  done
+
+  log_info "Connectivity sync results: ${synced} synced, ${failed} failed"
+  return 0
+}
+
 # Ensure all USB boot partitions have power settings and scripts
 ensure_all_usb_boot_partitions() {
   log_step "Checking all USB boot partitions"
@@ -2279,12 +2952,23 @@ ensure_all_usb_boot_partitions() {
     return 0
   fi
   
-  # Get all USB FAT32 partitions in one query, excluding current boot disk
-  mapfile -t partition_devices < <(
-    lsblk -nrpo NAME,FSTYPE,TRAN,PKNAME | \
-    awk -v boot="$current_boot_disk" \
-      '$2=="vfat" && $3=="usb" && $4!=boot && $4!="" {print $1}'
-  )
+  # Get USB boot partitions using parent-disk transport classification.
+  # Note: TRAN is often blank on partition rows (only populated on parent disks),
+  # so we reuse the same robust detector used by BOOT_ORDER checks.
+  mapfile -t partition_devices < <(list_boot_partitions_for_transport_class "usb")
+
+  # Exclude partitions on the current boot disk.
+  local filtered_partitions=()
+  local part_dev
+  for part_dev in "${partition_devices[@]}"; do
+    local pkname
+    pkname=$(lsblk -no PKNAME "$part_dev" 2>/dev/null | head -n1 || true)
+    [[ -z "$pkname" ]] && continue
+    if [[ "$pkname" != "$current_boot_disk" ]]; then
+      filtered_partitions+=("$part_dev")
+    fi
+  done
+  partition_devices=("${filtered_partitions[@]}")
   
   if [[ ${#partition_devices[@]} -eq 0 ]]; then
     log_info "No additional USB devices detected (other than current boot device)."
@@ -2301,10 +2985,10 @@ ensure_all_usb_boot_partitions() {
     
     # Mount, verify as boot partition, configure, and unmount
     if with_mount "$part_dev" ensure_boot_configured --verify-boot "$part_dev"; then
-      ((configured++))
+      configured=$((configured + 1))
       log_success "Configured $part_dev"
     else
-      ((failed++))
+      failed=$((failed + 1))
       log_error "Failed to configure $part_dev"
     fi
   done
@@ -2406,7 +3090,7 @@ sync_system_configs() {
     
     if cp "$config" "${root_mount_point}${config}" 2>/dev/null; then
       log_success "Synced $config"
-      ((synced++))
+      synced=$((synced + 1))
     fi
   done
   
@@ -2582,7 +3266,6 @@ ensure_ssh_continuity_on_target() {
   local action="${3:-apply}"
   local detected_user
   local target_sshd_config="${root_mount_point}/etc/ssh/sshd_config"
-  local sshd_config_d_src="/etc/ssh/sshd_config.d"
   local sshd_config_d_target="${root_mount_point}/etc/ssh/sshd_config.d"
   local access_dropin="${sshd_config_d_target}/99-switch-root-access.conf"
 
@@ -2620,25 +3303,6 @@ ensure_ssh_continuity_on_target() {
     fi
   fi
 
-  # Ensure sshd_config is present on target
-  if [[ "$action" != "check" ]]; then
-    if [[ -f /etc/ssh/sshd_config ]] && [[ -d "${root_mount_point}/etc/ssh" ]]; then
-      cp /etc/ssh/sshd_config "$target_sshd_config" 2>/dev/null || true
-      log_success "Copied sshd_config to target"
-    fi
-  fi
-
-  # Copy sshd_config.d drop-ins if present (common on newer OS releases)
-  if [[ "$action" != "check" ]]; then
-    if [[ -d "$sshd_config_d_src" ]]; then
-      mkdir -p "$sshd_config_d_target"
-      cp "$sshd_config_d_src"/*.conf "$sshd_config_d_target"/ 2>/dev/null || true
-      chmod 644 "$sshd_config_d_target"/*.conf 2>/dev/null || true
-      chown root:root "$sshd_config_d_target"/*.conf 2>/dev/null || true
-      log_success "Copied sshd_config.d drop-ins to target"
-    fi
-  fi
-
   # Enforce single-user access, password auth, and disable root SSH
   if [[ "$action" != "check" ]]; then
     mkdir -p "$sshd_config_d_target"
@@ -2657,99 +3321,23 @@ ensure_ssh_continuity_on_target() {
     return 1
   fi
 
-  # Validate effective SSH settings on target (main + drop-ins + Include)
-  local target_password_auth
-  local target_kbd_auth
-  local target_challenge_auth
-  local target_use_pam
-  local target_auth_methods
-  local target_allow_users
-  local target_deny_users
-  local target_allow_groups
-  local target_deny_groups
-  local target_permit_root
-  target_password_auth=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "PasswordAuthentication")
-  target_kbd_auth=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "KbdInteractiveAuthentication")
-  target_challenge_auth=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "ChallengeResponseAuthentication")
-  target_use_pam=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "UsePAM")
-  target_auth_methods=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "AuthenticationMethods")
-  target_allow_users=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "AllowUsers")
-  target_deny_users=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "DenyUsers")
-  target_allow_groups=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "AllowGroups")
-  target_deny_groups=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "DenyGroups")
-  target_permit_root=$(get_effective_sshd_setting "$target_sshd_config" "$sshd_config_d_target" "PermitRootLogin")
-
-  if sshd_config_has_match "$target_sshd_config" "$sshd_config_d_target"; then
-    log_warning "Target SSH config contains Match blocks - settings may be conditional"
-  fi
-
-  if [[ -n "$target_auth_methods" ]]; then
-    if ! grep -qiE '(password|keyboard-interactive)' <<< "$target_auth_methods"; then
-      log_error "Target SSH AuthenticationMethods does not allow password or keyboard-interactive authentication"
-      return 1
-    fi
-  fi
-
-  if [[ "${target_password_auth,,}" == "no" ]]; then
-    log_error "Target SSH config disables PasswordAuthentication (drop-in override detected)"
-    return 1
-  fi
-
-  if [[ "${target_password_auth,,}" == "no" && "${target_kbd_auth,,}" == "no" && "${target_challenge_auth,,}" == "no" ]]; then
-    log_error "Target SSH config disables all password-based auth methods"
-    return 1
-  fi
-
-  if [[ "${target_use_pam,,}" == "no" && ( "${target_password_auth,,}" == "yes" || "${target_kbd_auth,,}" == "yes" || "${target_challenge_auth,,}" == "yes" ) ]]; then
-    log_warning "Target UsePAM is disabled; password authentication may fail"
-  fi
-
-  if [[ -n "$target_allow_users" && ! " $target_allow_users " =~ [[:space:]]${detected_user}[[:space:]] ]]; then
-    log_error "Target SSH config AllowUsers does not include ${detected_user}"
-    return 1
-  fi
-
-  if [[ -n "$target_deny_users" && " $target_deny_users " =~ [[:space:]]${detected_user}[[:space:]] ]]; then
-    log_error "Target SSH config DenyUsers includes ${detected_user}"
-    return 1
-  fi
-
-  if [[ -n "$target_allow_groups" || -n "$target_deny_groups" ]]; then
-    local target_groups
+  local target_groups=""
+  if [[ -n "$detected_user" ]]; then
     target_groups=$(get_user_groups_from_root "$root_mount_point" "$detected_user")
-
-    if [[ -n "$target_allow_groups" ]]; then
-      local allowed=false
-      for grp in $target_allow_groups; do
-        if [[ " $target_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
-          allowed=true
-          break
-        fi
-      done
-      if [[ "$allowed" != "true" ]]; then
-        log_error "Target SSH config AllowGroups does not include ${detected_user}"
-        return 1
-      fi
-    fi
-
-    if [[ -n "$target_deny_groups" ]]; then
-      for grp in $target_deny_groups; do
-        if [[ " $target_groups " =~ [[:space:]]${grp}[[:space:]] ]]; then
-          log_error "Target SSH config DenyGroups includes ${detected_user} (group: ${grp})"
-          return 1
-        fi
-      done
-    fi
   fi
 
-  if [[ -n "$target_permit_root" && "${target_permit_root,,}" == "yes" ]]; then
-    log_warning "Target SSH config allows root login (PermitRootLogin yes)"
+  if ! evaluate_sshd_access_policy "$target_sshd_config" "$sshd_config_d_target" "$detected_user" "$target_groups" "Target "; then
+    local policy_issue
+    for policy_issue in "${SSHD_POLICY_ISSUES[@]}"; do
+      log_error "$policy_issue"
+    done
+    return 1
   fi
 
   if [[ "$action" != "check" ]]; then
-    # Enable SSH service on target (no host key copy)
-    if ! enable_ssh_service_on_target "$root_mount_point" "$target_label"; then
-      log_error "Failed to enable SSH service on ${target_label}"
+    # Apply shared SSH service + network baseline
+    if ! run_connectivity_sync_steps "$root_mount_point" "$target_label" "force" "fatal"; then
+      log_error "Failed to apply connectivity baseline on ${target_label}"
       return 1
     fi
 
@@ -2758,9 +3346,6 @@ ensure_ssh_continuity_on_target() {
       log_error "Failed to set default SSH password on ${target_label}"
       return 1
     fi
-
-    # Copy network configuration to ensure connectivity
-    copy_network_config "$root_mount_point" "force" || true
 
     log_success "SSH access configured for user: ${detected_user}"
     log_success "Default SSH password set for ${detected_user}"
@@ -2854,30 +3439,274 @@ list_boot_partitions_for_transport_class() {
   local class="$1"
   local part
   local pkname
-  local transport
-  local match=false
+  local fstype
 
-  while read -r part pkname; do
-    [[ -z "$part" || -z "$pkname" ]] && continue
-    transport=$(lsblk -no TRAN "/dev/$pkname" 2>/dev/null | head -n1)
-    match=false
+  while read -r part; do
+    [[ -z "$part" ]] && continue
 
-    case "$class" in
-      sd)
-        [[ "$transport" == "mmc" ]] && match=true
-        ;;
-      usb)
-        [[ "$transport" == "usb" || "$transport" == "ata" || "$transport" == "sata" ]] && match=true
-        ;;
-      pcie)
-        [[ "$transport" == "pci" || "$transport" == "pcie" || "$transport" == "nvme" ]] && match=true
-        ;;
+    # Derive parent disk per partition and normalize to basename (sda, mmcblk0, nvme0n1).
+    pkname=$(lsblk -no PKNAME "$part" 2>/dev/null | head -n1 || true)
+    pkname="${pkname##*/}"
+    [[ -n "$pkname" ]] || continue
+
+    # Read FSTYPE per-partition to avoid column-shift parsing issues when fields are blank.
+    fstype=$(lsblk -no FSTYPE "$part" 2>/dev/null | head -n1 || true)
+    [[ -z "$fstype" ]] && fstype=$(blkid -s TYPE -o value "$part" 2>/dev/null | head -n1 || true)
+
+    # Accept common FAT filesystem labels for boot partitions.
+    case "${fstype,,}" in
+      vfat|fat|fat16|fat32|msdos) ;;
+      *) continue ;;
     esac
 
-    if [[ "$match" == "true" ]]; then
+    if disk_matches_transport_class "$pkname" "$class"; then
       printf '%s\n' "$part"
     fi
-  done < <(lsblk -nrpo NAME,FSTYPE,TYPE,PKNAME | awk '$2=="vfat" && $3=="part" {print $1, $4}')
+  done < <(lsblk -nrpo NAME,TYPE | awk '$2=="part" {print $1}')
+}
+
+# Resolve a filesystem identifier (PARTUUID/UUID/LABEL/PARTLABEL/device path) to a block device.
+resolve_device_identifier() {
+  local identifier="$1"
+  local resolved=""
+
+  case "$identifier" in
+    PARTUUID=*)
+      resolved=$(blkid -t "PARTUUID=${identifier#PARTUUID=}" -o device 2>/dev/null | head -n1)
+      ;;
+    UUID=*)
+      resolved=$(blkid -t "UUID=${identifier#UUID=}" -o device 2>/dev/null | head -n1)
+      ;;
+    LABEL=*)
+      resolved=$(blkid -t "LABEL=${identifier#LABEL=}" -o device 2>/dev/null | head -n1)
+      ;;
+    PARTLABEL=*)
+      resolved=$(blkid -t "PARTLABEL=${identifier#PARTLABEL=}" -o device 2>/dev/null | head -n1)
+      ;;
+    /dev/*)
+      resolved="$identifier"
+      ;;
+    *)
+      resolved=""
+      ;;
+  esac
+
+  echo "$resolved"
+}
+
+# Verify boot cmdline points to the expected root device.
+# Usage (via with_mount): verify_boot_cmdline_targets_root "/mnt/boot" "/dev/sda1" "/dev/sda2" "root_partuuid" "label"
+verify_boot_cmdline_targets_root() {
+  local boot_mount_point="$1"
+  local boot_device="$2"
+  local expected_root_device="$3"
+  local expected_root_partuuid="$4"
+  local target_label="$5"
+  local cmdline_file="${boot_mount_point}/cmdline.txt"
+
+  [[ -f "$cmdline_file" ]] || { log_error "cmdline.txt missing on ${target_label}"; return 1; }
+
+  local cmdline_root
+  local cmdline_root_value
+  local resolved_root
+  cmdline_root="$(grep -o 'root=[^ ]*' "$cmdline_file" || true)"
+  cmdline_root_value="${cmdline_root#root=}"
+
+  log_info "[diag] ${target_label}: cmdline root token=${cmdline_root_value:-missing}"
+
+  if [[ -z "$cmdline_root_value" || "$cmdline_root_value" == "$cmdline_root" ]]; then
+    log_error "root=... not found in ${cmdline_file} (${target_label})"
+    return 1
+  fi
+
+  resolved_root="$(resolve_device_identifier "$cmdline_root_value")"
+  if [[ -z "$resolved_root" ]]; then
+    log_error "Could not resolve cmdline root '${cmdline_root_value}' on ${target_label}"
+    return 1
+  fi
+
+  log_info "[diag] ${target_label}: cmdline root resolves to ${resolved_root}"
+
+  if [[ "$resolved_root" != "$expected_root_device" ]]; then
+    log_error "Cmdline root mismatch on ${target_label}: ${cmdline_root_value} -> ${resolved_root}, expected ${expected_root_device}"
+    return 1
+  fi
+
+  if [[ "$cmdline_root_value" == PARTUUID=* && -n "$expected_root_partuuid" ]]; then
+    local cmd_partuuid="${cmdline_root_value#PARTUUID=}"
+    if [[ "$cmd_partuuid" != "$expected_root_partuuid" ]]; then
+      log_error "Cmdline PARTUUID mismatch on ${target_label}: ${cmd_partuuid}, expected ${expected_root_partuuid}"
+      return 1
+    fi
+  fi
+
+  if ! grep -qE '(^| )rootwait( |$)' "$cmdline_file"; then
+    log_error "rootwait is missing in ${cmdline_file} (${target_label})"
+    return 1
+  fi
+
+  return 0
+}
+
+# Verify root fstab points to the expected boot/root devices.
+# Usage (via with_mount): verify_root_fstab_targets_boot_and_root "/mnt/root" "/dev/sda2" "/dev/sda1" "root_partuuid" "boot_partuuid" "label"
+verify_root_fstab_targets_boot_and_root() {
+  local root_mount_point="$1"
+  local mounted_root_device="$2"
+  local expected_boot_device="$3"
+  local expected_root_partuuid="$4"
+  local expected_boot_partuuid="$5"
+  local target_label="$6"
+  local fstab_path="${root_mount_point}/etc/fstab"
+
+  [[ -f "$fstab_path" ]] || { log_error "fstab missing on ${target_label}"; return 1; }
+
+  local root_source
+  local boot_source
+  root_source=$(awk '!/^\s*#/ && $2=="/" {print $1; exit}' "$fstab_path")
+  boot_source=$(awk '!/^\s*#/ && $2=="/boot/firmware" {print $1; exit}' "$fstab_path")
+
+  log_info "[diag] ${target_label}: fstab / source=${root_source:-missing}"
+  log_info "[diag] ${target_label}: fstab /boot/firmware source=${boot_source:-missing}"
+
+  [[ -n "$root_source" ]] || { log_error "Root fstab entry missing on ${target_label}"; return 1; }
+  [[ -n "$boot_source" ]] || { log_error "Boot fstab entry missing on ${target_label}"; return 1; }
+
+  local resolved_root
+  resolved_root="$(resolve_device_identifier "$root_source")"
+  if [[ -z "$resolved_root" ]]; then
+    log_error "Could not resolve fstab root source '${root_source}' on ${target_label}"
+    return 1
+  fi
+  log_info "[diag] ${target_label}: fstab / resolves to ${resolved_root}"
+  if [[ "$resolved_root" != "$mounted_root_device" ]]; then
+    log_error "fstab root mismatch on ${target_label}: ${root_source} -> ${resolved_root}, expected ${mounted_root_device}"
+    return 1
+  fi
+
+  local resolved_boot
+  resolved_boot="$(resolve_device_identifier "$boot_source")"
+  if [[ -z "$resolved_boot" ]]; then
+    log_error "Could not resolve fstab boot source '${boot_source}' on ${target_label}"
+    return 1
+  fi
+  log_info "[diag] ${target_label}: fstab /boot/firmware resolves to ${resolved_boot}"
+  if [[ "$resolved_boot" != "$expected_boot_device" ]]; then
+    log_error "fstab boot mismatch on ${target_label}: ${boot_source} -> ${resolved_boot}, expected ${expected_boot_device}"
+    return 1
+  fi
+
+  if [[ "$root_source" == PARTUUID=* && -n "$expected_root_partuuid" ]]; then
+    local fstab_root_partuuid="${root_source#PARTUUID=}"
+    if [[ "$fstab_root_partuuid" != "$expected_root_partuuid" ]]; then
+      log_error "fstab root PARTUUID mismatch on ${target_label}: ${fstab_root_partuuid}, expected ${expected_root_partuuid}"
+      return 1
+    fi
+  fi
+
+  if [[ "$boot_source" == PARTUUID=* && -n "$expected_boot_partuuid" ]]; then
+    local fstab_boot_partuuid="${boot_source#PARTUUID=}"
+    if [[ "$fstab_boot_partuuid" != "$expected_boot_partuuid" ]]; then
+      log_error "fstab boot PARTUUID mismatch on ${target_label}: ${fstab_boot_partuuid}, expected ${expected_boot_partuuid}"
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
+# Verify that a boot/root partition pair is internally consistent for boot.
+# Usage: diagnose_boot_pair_readiness "/dev/sda1" "/dev/sda2" "label"
+diagnose_boot_pair_readiness() {
+  local boot_device="$1"
+  local root_device="$2"
+  local target_label="${3:-${boot_device} -> ${root_device}}"
+
+  local boot_partuuid=""
+  local root_partuuid=""
+
+  log_step "Boot Readiness Diagnostics: ${target_label}"
+
+  boot_partuuid="$(get_partuuid_safe "$boot_device" "warn" 2>/dev/null || true)"
+  root_partuuid="$(get_partuuid_safe "$root_device" "warn" 2>/dev/null || true)"
+
+  log_info "Expected boot device: ${boot_device} (PARTUUID=${boot_partuuid:-unknown})"
+  log_info "Expected root device: ${root_device} (PARTUUID=${root_partuuid:-unknown})"
+
+  print_boot_readiness_failure_guidance() {
+    local bdev="$1"
+    local rdev="$2"
+    local label="$3"
+    echo
+    log_info "Boot readiness recovery hints for ${label}:"
+    log_info "  1. Verify boot/root identifiers:"
+    log_info "     - sudo blkid ${bdev} ${rdev}"
+    log_info "  2. Re-run diagnostics and target checks:"
+    log_info "     - option 2 (verify initial configuration)"
+    log_info "     - option 8 (EEPROM boot order)"
+    log_info "  3. Re-apply target config if identifiers drifted:"
+    log_info "     - option 7 (fresh flash) or option 6 (clone)"
+    log_info "  4. Verify EEPROM points to intended media first (USB+SD or SD+USB)"
+    echo
+  }
+
+  if ! with_mount "$boot_device" verify_boot_cmdline_targets_root --verify-boot "$root_device" "$root_partuuid" "$target_label"; then
+    log_error "Boot cmdline diagnostic failed for ${target_label}"
+    print_boot_readiness_failure_guidance "$boot_device" "$root_device" "$target_label"
+    return 1
+  fi
+
+  if ! with_mount "$root_device" verify_root_fstab_targets_boot_and_root "$boot_device" "$root_partuuid" "$boot_partuuid" "$target_label"; then
+    log_error "Root fstab diagnostic failed for ${target_label}"
+    print_boot_readiness_failure_guidance "$boot_device" "$root_device" "$target_label"
+    return 1
+  fi
+
+  log_success "Boot readiness diagnostics passed for ${target_label}"
+  return 0
+}
+
+# Check whether boot partition has cloud-init seed files staged for first boot.
+# Usage (via with_mount): boot_partition_has_first_boot_seed "/mnt/boot" "/dev/sda1"
+boot_partition_has_first_boot_seed() {
+  local boot_mount_point="$1"
+
+  [[ -f "${boot_mount_point}/user-data" ]] || return 1
+  [[ -f "${boot_mount_point}/network-config" ]] || return 1
+  return 0
+}
+
+# Check whether root partition still appears to be pre-first-boot cloud-init state.
+# Usage (via with_mount): root_partition_cloud_init_pending "/mnt/root" "/dev/sda2"
+root_partition_cloud_init_pending() {
+  local root_mount_point="$1"
+
+  if [[ -f "${root_mount_point}/var/lib/cloud/instance/boot-finished" ]]; then
+    return 1
+  fi
+
+  if [[ -d "${root_mount_point}/etc/cloud" || -d "${root_mount_point}/var/lib/cloud" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Treat non-current targets with staged cloud-init as pending until first boot completes.
+# Usage: is_target_ssh_continuity_pending_first_boot "/dev/sda1" "/dev/sda2"
+is_target_ssh_continuity_pending_first_boot() {
+  local boot_part="$1"
+  local root_dev="$2"
+
+  if ! with_mount "$boot_part" boot_partition_has_first_boot_seed --verify-boot; then
+    return 1
+  fi
+
+  if ! with_mount "$root_dev" root_partition_cloud_init_pending; then
+    return 1
+  fi
+
+  return 0
 }
 
 # Helper: Check SSH continuity across all bootable devices in the desired EEPROM boot order
@@ -2886,13 +3715,25 @@ check_boot_order_ssh_continuity() {
   local order="${desired#0x}"
   order="${order,,}"
 
-  log_step "SSH Continuity Check (EEPROM Boot Order)"
+  BOOT_ORDER_LAST_CHECKED=0
+  BOOT_ORDER_LAST_FAILURES=0
+  BOOT_ORDER_LAST_SKIPPED=0
+  BOOT_ORDER_VALIDATED_BOOT_PARTS=()
+  BOOT_ORDER_VALIDATED_ROOT_PARTS=()
+  BOOT_ORDER_NEXT_TARGET_BOOT=""
+  BOOT_ORDER_NEXT_TARGET_ROOT=""
+
+  log_step "Boot Target Readiness Check (EEPROM Boot Order)"
   log_info "Read-only check: no changes will be made to any device"
+  log_info "Checks include: boot files, cmdline root mapping, fstab boot/root mapping, SSH continuity"
   log_info "Desired BOOT_ORDER: ${desired}"
   log_info "Boot order: $(describe_boot_order "$desired")"
 
   local checked=0
   local failures=0
+  local skipped_nonboot=0
+  local pending_first_boot=0
+  declare -A seen_boot_parts=()
 
   for (( i=${#order}-1; i>=0; i-- )); do
     local digit="${order:$i:1}"
@@ -2902,7 +3743,11 @@ check_boot_order_ssh_continuity() {
       0|1) class="sd" ;;
       4|5) class="usb" ;;
       6) class="pcie" ;;
-      2|3|7|e|f)
+      e|f)
+        log_info "Reached BOOT_ORDER terminator ($(boot_order_digit_label "$digit")); no further boot device checks"
+        break
+        ;;
+      2|3|7)
         log_info "Skipping $(boot_order_digit_label "$digit") (no local storage to verify)"
         continue
         ;;
@@ -2920,15 +3765,21 @@ check_boot_order_ssh_continuity() {
     fi
 
     for boot_part in "${boot_parts[@]}"; do
+      if [[ -n "${seen_boot_parts[$boot_part]:-}" ]]; then
+        log_info "Skipping ${boot_part} (already checked via earlier BOOT_ORDER class)"
+        continue
+      fi
+      seen_boot_parts[$boot_part]=1
+
       log_info "Evaluating boot partition: ${boot_part}"
 
       local root_dev_file
       root_dev_file=$(mktemp /tmp/boot-root-dev-XXXXXX)
 
       if ! with_mount "$boot_part" extract_root_device_from_boot_partition --verify-boot "$root_dev_file"; then
-        log_warning "Skipping ${boot_part} (unable to determine root device)"
+        log_info "Skipping ${boot_part} (not a Raspberry Pi boot partition or cmdline could not be parsed)"
         rm -f "$root_dev_file"
-        ((failures++))
+        skipped_nonboot=$((skipped_nonboot + 1))
         continue
       fi
 
@@ -2937,44 +3788,98 @@ check_boot_order_ssh_continuity() {
       rm -f "$root_dev_file"
 
       if [[ -z "$root_dev" ]]; then
-        log_warning "Skipping ${boot_part} (root device unresolved)"
-        ((failures++))
+        log_info "Skipping ${boot_part} (root device unresolved from cmdline)"
+        skipped_nonboot=$((skipped_nonboot + 1))
         continue
       fi
 
       log_info "Root device for ${boot_part}: ${root_dev}"
 
+      if ! diagnose_boot_pair_readiness "$boot_part" "$root_dev" "${boot_part} -> ${root_dev}"; then
+        failures=$((failures + 1))
+        continue
+      fi
+
       if [[ "$root_dev" == "$CURRENT_ROOT" ]]; then
         if ! ensure_ssh_continuity "/" "$root_dev" "nonfatal" "check"; then
           log_error "SSH continuity check failed for current root (${root_dev})"
-          ((failures++))
+          failures=$((failures + 1))
         else
-          ((checked++))
+          checked=$((checked + 1))
+          BOOT_ORDER_VALIDATED_BOOT_PARTS+=("$boot_part")
+          BOOT_ORDER_VALIDATED_ROOT_PARTS+=("$root_dev")
         fi
         continue
       fi
 
       if [[ ! -b "$root_dev" ]]; then
         log_warning "Root device not found: ${root_dev}"
-        ((failures++))
+        failures=$((failures + 1))
         continue
       fi
 
       if ! with_mount "$root_dev" ensure_ssh_continuity "nonfatal" "check"; then
+        if is_target_ssh_continuity_pending_first_boot "$boot_part" "$root_dev"; then
+          log_warning "SSH continuity on ${root_dev} is pending first boot cloud-init"
+          log_info "Run one successful boot on this target, then re-run option 2/8 for strict SSH validation"
+          pending_first_boot=$((pending_first_boot + 1))
+          continue
+        fi
+
         log_error "SSH continuity check failed for ${root_dev}"
-        ((failures++))
+        failures=$((failures + 1))
       else
-        ((checked++))
+        checked=$((checked + 1))
+        BOOT_ORDER_VALIDATED_BOOT_PARTS+=("$boot_part")
+        BOOT_ORDER_VALIDATED_ROOT_PARTS+=("$root_dev")
+        if [[ "$root_dev" != "$CURRENT_ROOT" && -z "$BOOT_ORDER_NEXT_TARGET_ROOT" ]]; then
+          BOOT_ORDER_NEXT_TARGET_BOOT="$boot_part"
+          BOOT_ORDER_NEXT_TARGET_ROOT="$root_dev"
+          log_info "Next non-current boot candidate: ${BOOT_ORDER_NEXT_TARGET_BOOT} -> ${BOOT_ORDER_NEXT_TARGET_ROOT}"
+        fi
       fi
     done
   done
 
   if (( failures > 0 )); then
-    log_error "SSH continuity check failed for ${failures} device(s)"
+    BOOT_ORDER_LAST_CHECKED=$checked
+    BOOT_ORDER_LAST_FAILURES=$failures
+    BOOT_ORDER_LAST_SKIPPED=$skipped_nonboot
+    log_error "Boot target readiness check failed for ${failures} device(s)"
+    echo
+    log_error "One or more boot targets are not safe to boot"
+    log_info "Recommended next steps:"
+    log_info "  - Run option 8 to confirm EEPROM BOOT_ORDER"
+    log_info "  - Run option 7 (fresh flash) or option 6 (clone) to rebuild target mapping"
+    log_info "  - Re-run option 2 and confirm diagnostics pass"
     return 1
   fi
 
-  log_success "SSH continuity verified for ${checked} bootable device(s)"
+  if (( skipped_nonboot > 0 )); then
+    log_info "Ignored ${skipped_nonboot} non-boot USB/SD candidate partition(s)"
+  fi
+
+  if (( pending_first_boot > 0 )); then
+    log_info "Deferred SSH continuity on ${pending_first_boot} target(s) pending first boot cloud-init"
+  fi
+
+  if (( checked == 0 )); then
+    log_warning "No bootable devices were validated for BOOT_ORDER ${desired}"
+    log_info "This often means the intended target media is not attached or not yet configured as a Pi boot device"
+    log_info "Tip: Run option 7 (flash) or option 6 (clone), then re-run option 2 or option 8"
+  else
+    log_info "Validated SSH target root devices:"
+    local idx
+    for idx in "${!BOOT_ORDER_VALIDATED_ROOT_PARTS[@]}"; do
+      log_info "  - boot ${BOOT_ORDER_VALIDATED_BOOT_PARTS[$idx]} -> root ${BOOT_ORDER_VALIDATED_ROOT_PARTS[$idx]}"
+    done
+  fi
+
+  BOOT_ORDER_LAST_CHECKED=$checked
+  BOOT_ORDER_LAST_FAILURES=$failures
+  BOOT_ORDER_LAST_SKIPPED=$skipped_nonboot
+
+  log_success "Boot target readiness verified for ${checked} bootable device(s)"
   return 0
 }
 
@@ -2983,9 +3888,23 @@ check_boot_order_ssh_continuity() {
 copy_network_config() {
   local root_mount_point="$1"
   local wifi_copied=false
+  local nm_profiles_copied=false
+  local nm_service_file="${root_mount_point}/lib/systemd/system/NetworkManager.service"
+  local nm_service_link="${root_mount_point}/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
   if [[ "$root_mount_point" == "/" ]]; then
     return 0
+  fi
+
+  # Preserve host identity so mDNS and router naming stay consistent after flash.
+  if [[ -f /etc/hostname ]]; then
+    cp /etc/hostname "$root_mount_point/etc/hostname" 2>/dev/null || true
+    log_success "hostname copied"
+  fi
+
+  if [[ -f /etc/hosts ]]; then
+    cp /etc/hosts "$root_mount_point/etc/hosts" 2>/dev/null || true
+    log_success "hosts file copied"
   fi
 
   # Copy network configuration if using static IP
@@ -3004,7 +3923,15 @@ copy_network_config() {
     chmod 600 "$root_mount_point/etc/NetworkManager/system-connections/"* 2>/dev/null || true
     chown root:root "$root_mount_point/etc/NetworkManager/system-connections/"* 2>/dev/null || true
     log_success "NetworkManager profiles copied"
+    nm_profiles_copied=true
     wifi_copied=true
+  fi
+
+  # If NetworkManager profiles were copied, make sure NetworkManager starts at boot.
+  if [[ "$nm_profiles_copied" == "true" && -f "$nm_service_file" ]]; then
+    mkdir -p "${root_mount_point}/etc/systemd/system/multi-user.target.wants"
+    ln -sf /lib/systemd/system/NetworkManager.service "$nm_service_link" 2>/dev/null || true
+    log_success "NetworkManager service enabled on target"
   fi
 
   # Copy wpa_supplicant configuration if present (headless WiFi continuity)
@@ -3024,6 +3951,649 @@ copy_network_config() {
     log_warning "No WiFi configuration copied (NetworkManager profiles and wpa_supplicant.conf not copied)"
   fi
   
+  return 0
+}
+
+
+################################################################################
+# FRESH INSTALL TEMPLATE HELPERS (OPTION 7)
+################################################################################
+
+FLASH_WIFI_SSID=""
+FLASH_WIFI_PASSWORD=""
+FLASH_USERNAME=""
+FLASH_USER_PASSWORD=""
+FLASH_HOSTNAME=""
+
+is_valid_linux_username() {
+  local username="$1"
+  [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+}
+
+is_valid_hostname_label() {
+  local hostname="$1"
+  [[ "$hostname" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]
+}
+
+yaml_escape_double_quotes() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+# Generate a cloud-init compatible password hash from plaintext.
+generate_cloud_password_hash() {
+  local plaintext_password="$1"
+
+  if command -v mkpasswd >/dev/null 2>&1; then
+    mkpasswd -m yescrypt "$plaintext_password" 2>/dev/null && return 0
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    openssl passwd -6 "$plaintext_password" 2>/dev/null && return 0
+  fi
+
+  return 1
+}
+
+# Resolve Fresh_Install template directory when available.
+resolve_fresh_install_template_dir() {
+  local script_dir
+  script_dir="$(dirname "$(readlink -f "$0")")"
+
+  local -a candidates=()
+  candidates+=("${FRESH_INSTALL_DIR:-}")
+  candidates+=("${script_dir}/../Fresh_Install")
+  candidates+=("${script_dir}/Fresh_Install")
+  candidates+=("$(pwd)/../Fresh_Install")
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    candidates+=("/home/${SUDO_USER}/My_Scripts_Apps/Raspberry_Pi/Fresh_Install")
+  fi
+  candidates+=("/home/admin/My_Scripts_Apps/Raspberry_Pi/Fresh_Install")
+  candidates+=("/root/My_Scripts_Apps/Raspberry_Pi/Fresh_Install")
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    [[ -n "$candidate" ]] || continue
+    if [[ -f "$candidate/cmdline.txt" && -f "$candidate/config.txt" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+prompt_fresh_flash_identity() {
+  local confirm=""
+
+  FLASH_WIFI_SSID=""
+  FLASH_WIFI_PASSWORD=""
+  FLASH_USERNAME=""
+  FLASH_USER_PASSWORD=""
+  FLASH_HOSTNAME=""
+
+  echo
+  print_box "Mode 7 First-Boot Personalization" \
+    "" \
+    "Enter plaintext values for first boot provisioning:" \
+    "  - WiFi SSID/password" \
+    "  - Username/password" \
+    "  - Hostname" \
+    ""
+
+  while true; do
+    read -rp "WiFi SSID: " FLASH_WIFI_SSID
+    [[ -n "$FLASH_WIFI_SSID" ]] && break
+    log_warning "WiFi SSID cannot be empty"
+  done
+
+  while true; do
+    read -rsp "WiFi password: " FLASH_WIFI_PASSWORD
+    echo
+    [[ -n "$FLASH_WIFI_PASSWORD" ]] || { log_warning "WiFi password cannot be empty"; continue; }
+
+    read -rsp "Confirm WiFi password: " confirm
+    echo
+    [[ "$FLASH_WIFI_PASSWORD" == "$confirm" ]] && break
+    log_warning "WiFi passwords do not match - try again"
+  done
+
+  while true; do
+    read -rp "Username: " FLASH_USERNAME
+    if ! is_valid_linux_username "$FLASH_USERNAME"; then
+      log_warning "Invalid username. Use lowercase letters, digits, _ or -, and start with a letter/_"
+      continue
+    fi
+    if [[ "$FLASH_USERNAME" == "root" ]]; then
+      log_warning "Username 'root' is not allowed for this workflow"
+      continue
+    fi
+    break
+  done
+
+  while true; do
+    read -rsp "User password: " FLASH_USER_PASSWORD
+    echo
+    [[ -n "$FLASH_USER_PASSWORD" ]] || { log_warning "User password cannot be empty"; continue; }
+
+    read -rsp "Confirm user password: " confirm
+    echo
+    [[ "$FLASH_USER_PASSWORD" == "$confirm" ]] && break
+    log_warning "User passwords do not match - try again"
+  done
+
+  while true; do
+    read -rp "Hostname: " FLASH_HOSTNAME
+    if ! is_valid_hostname_label "$FLASH_HOSTNAME"; then
+      log_warning "Invalid hostname label (letters, digits, hyphen; cannot start/end with hyphen)"
+      continue
+    fi
+    break
+  done
+
+  echo
+  log_info "First-boot settings queued for flash target:"
+  log_info "  - Hostname: ${FLASH_HOSTNAME}"
+  log_info "  - Username: ${FLASH_USERNAME}"
+  log_info "  - WiFi SSID: ${FLASH_WIFI_SSID}"
+}
+
+write_default_fresh_cmdline_template() {
+  local output_file="$1"
+  printf '%s\n' 'console=serial0,115200 console=tty1 root=PARTUUID=7d23366b-02 rootfstype=ext4 fsck.repair=yes rootwait resize cfg80211.ieee80211_regdom=US' > "$output_file"
+}
+
+write_default_fresh_config_template() {
+  local output_file="$1"
+  cat > "$output_file" <<'EOF'
+# For more options and information see
+# http://rptl.io/configtxt
+# Some settings may impact device functionality. See link above for details
+
+# Uncomment some or all of these to enable the optional hardware interfaces
+#dtparam=i2c_arm=on
+#dtparam=i2s=on
+#dtparam=spi=on
+
+# Enable audio (loads snd_bcm2835)
+dtparam=audio=on
+
+# Additional overlays and parameters are documented
+# /boot/firmware/overlays/README
+
+# Automatically load overlays for detected cameras
+camera_auto_detect=1
+
+# Automatically load overlays for detected DSI displays
+display_auto_detect=1
+
+# Automatically load initramfs files, if found
+auto_initramfs=1
+
+# Enable DRM VC4 V3D driver
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+
+# Don't have the firmware create an initial video= setting in cmdline.txt.
+# Use the kernel's default instead.
+disable_fw_kms_setup=1
+
+# Run in 64-bit mode
+arm_64bit=1
+
+# Disable compensation for displays with overscan
+disable_overscan=1
+
+# Run as fast as firmware / board allows
+arm_boost=1
+
+[cm4]
+# Enable host mode on the 2711 built-in XHCI USB controller.
+# This line should be removed if the legacy DWC2 controller is required
+# (e.g. for USB device mode) or if USB support is not required.
+otg_mode=1
+
+[cm5]
+dtoverlay=dwc2,dr_mode=host
+
+[all]
+EOF
+}
+
+write_default_fresh_network_template() {
+  local output_file="$1"
+  local wifi_ssid_escaped="$2"
+  local wifi_password_escaped="$3"
+
+  cat > "$output_file" <<EOF
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp6: true
+      optional: true
+  wifis:
+    wlan0:
+      dhcp4: true
+      regulatory-domain: "US"
+      access-points:
+        "${wifi_ssid_escaped}":
+          password: "${wifi_password_escaped}"
+      optional: true
+EOF
+}
+
+write_default_fresh_user_data_template() {
+  local output_file="$1"
+  local hostname="$2"
+  local username="$3"
+  local password_hash_escaped="$4"
+
+  cat > "$output_file" <<EOF
+#cloud-config
+manage_resolv_conf: false
+hostname: ${hostname}
+manage_etc_hosts: true
+packages:
+- avahi-daemon
+apt:
+  preserve_sources_list: true
+  conf: |
+    Acquire {
+      Check-Date "false";
+    };
+timezone: America/Chicago
+keyboard:
+  model: pc105
+  layout: "us"
+users:
+- name: ${username}
+  groups: users,adm,dialout,audio,netdev,video,plugdev,cdrom,games,input,gpio,spi,i2c,render,sudo
+  shell: /bin/bash
+  lock_passwd: false
+  passwd: "${password_hash_escaped}"
+enable_ssh: true
+ssh_pwauth: true
+rpi:
+  interfaces:
+    serial: true
+EOF
+}
+
+render_network_from_template() {
+  local template_file="$1"
+  local output_file="$2"
+  local wifi_ssid_escaped="$3"
+  local wifi_password_escaped="$4"
+
+  local ssid_done=false
+  local password_done=false
+  local in_access_points=false
+
+  : > "$output_file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*access-points:[[:space:]]*$ ]]; then
+      in_access_points=true
+      printf '%s\n' "$line" >> "$output_file"
+      continue
+    fi
+
+    if [[ "$in_access_points" == "true" && "$ssid_done" == "false" && "$line" =~ ^([[:space:]]*)\".*\":[[:space:]]*$ ]]; then
+      printf '%s"%s":\n' "${BASH_REMATCH[1]}" "$wifi_ssid_escaped" >> "$output_file"
+      ssid_done=true
+      continue
+    fi
+
+    if [[ "$in_access_points" == "true" && "$password_done" == "false" && "$line" =~ ^([[:space:]]*)password:[[:space:]]*.*$ ]]; then
+      printf '%spassword: "%s"\n' "${BASH_REMATCH[1]}" "$wifi_password_escaped" >> "$output_file"
+      password_done=true
+      continue
+    fi
+
+    printf '%s\n' "$line" >> "$output_file"
+  done < "$template_file"
+
+  [[ "$ssid_done" == "true" && "$password_done" == "true" ]]
+}
+
+render_user_data_from_template() {
+  local template_file="$1"
+  local output_file="$2"
+  local hostname="$3"
+  local username="$4"
+  local password_hash_escaped="$5"
+
+  local hostname_done=false
+  local username_done=false
+  local password_done=false
+
+  : > "$output_file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$hostname_done" == "false" && "$line" =~ ^hostname:[[:space:]]*.*$ ]]; then
+      printf 'hostname: %s\n' "$hostname" >> "$output_file"
+      hostname_done=true
+      continue
+    fi
+
+    if [[ "$username_done" == "false" && "$line" =~ ^([[:space:]]*)-[[:space:]]name:[[:space:]]*.*$ ]]; then
+      printf '%s- name: %s\n' "${BASH_REMATCH[1]}" "$username" >> "$output_file"
+      username_done=true
+      continue
+    fi
+
+    if [[ "$password_done" == "false" && "$line" =~ ^([[:space:]]*)passwd:[[:space:]]*.*$ ]]; then
+      printf '%spasswd: "%s"\n' "${BASH_REMATCH[1]}" "$password_hash_escaped" >> "$output_file"
+      password_done=true
+      continue
+    fi
+
+    printf '%s\n' "$line" >> "$output_file"
+  done < "$template_file"
+
+  [[ "$hostname_done" == "true" && "$username_done" == "true" && "$password_done" == "true" ]]
+}
+
+# Apply Fresh_Install-formatted first-boot files to a mounted boot partition.
+# Usage (via with_mount): apply_fresh_install_boot_files "/mnt/boot" "/dev/sda1" "root_partuuid" "ssid" "wifi_pass" "username" "user_pass" "hostname"
+apply_fresh_install_boot_files() {
+  local boot_mount_point="$1"
+  local mounted_boot_device="$2"
+  local root_partuuid="$3"
+  local wifi_ssid="$4"
+  local wifi_password="$5"
+  local username="$6"
+  local user_password="$7"
+  local hostname="$8"
+
+  local template_dir=""
+  local password_hash=""
+  local wifi_ssid_escaped=""
+  local wifi_password_escaped=""
+  local password_hash_escaped=""
+
+  [[ -n "$root_partuuid" ]] || { log_error "Root PARTUUID is empty"; return 1; }
+  [[ -f "$boot_mount_point/cmdline.txt" ]] || { log_error "cmdline.txt missing on ${mounted_boot_device}"; return 1; }
+
+  if ! check_writable "$boot_mount_point"; then
+    log_error "Boot partition is not writable: ${mounted_boot_device}"
+    return 1
+  fi
+
+  if ! password_hash=$(generate_cloud_password_hash "$user_password"); then
+    log_error "Failed to generate password hash (install whois for mkpasswd or openssl)"
+    return 1
+  fi
+
+  template_dir="$(resolve_fresh_install_template_dir || true)"
+  if [[ -n "$template_dir" ]]; then
+    log_info "Using Fresh_Install templates from: ${template_dir}"
+  else
+    log_warning "Fresh_Install directory not found - using embedded template defaults"
+  fi
+
+  if [[ -n "$template_dir" && -f "$template_dir/cmdline.txt" ]]; then
+    cp "$template_dir/cmdline.txt" "$boot_mount_point/cmdline.txt" || return 1
+  else
+    write_default_fresh_cmdline_template "$boot_mount_point/cmdline.txt" || return 1
+  fi
+
+  if [[ -n "$template_dir" && -f "$template_dir/config.txt" ]]; then
+    cp "$template_dir/config.txt" "$boot_mount_point/config.txt" || return 1
+  else
+    write_default_fresh_config_template "$boot_mount_point/config.txt" || return 1
+  fi
+
+  if ! update_cmdline_root "$boot_mount_point/cmdline.txt" "$root_partuuid" "PARTUUID"; then
+    return 1
+  fi
+
+  if ! add_usb_power_settings "$boot_mount_point/config.txt"; then
+    log_warning "Failed to apply USB power settings to config.txt"
+  fi
+
+  wifi_ssid_escaped="$(yaml_escape_double_quotes "$wifi_ssid")"
+  wifi_password_escaped="$(yaml_escape_double_quotes "$wifi_password")"
+  password_hash_escaped="$(yaml_escape_double_quotes "$password_hash")"
+
+  if [[ -n "$template_dir" && -f "$template_dir/network-config" ]]; then
+    if ! render_network_from_template "$template_dir/network-config" "$boot_mount_point/network-config" "$wifi_ssid_escaped" "$wifi_password_escaped"; then
+      log_warning "Could not render network-config from template - using built-in fallback"
+      write_default_fresh_network_template "$boot_mount_point/network-config" "$wifi_ssid_escaped" "$wifi_password_escaped"
+    fi
+  else
+    write_default_fresh_network_template "$boot_mount_point/network-config" "$wifi_ssid_escaped" "$wifi_password_escaped"
+  fi
+
+  if [[ -n "$template_dir" && -f "$template_dir/user-data" ]]; then
+    if ! render_user_data_from_template "$template_dir/user-data" "$boot_mount_point/user-data" "$hostname" "$username" "$password_hash_escaped"; then
+      log_warning "Could not render user-data from template - using built-in fallback"
+      write_default_fresh_user_data_template "$boot_mount_point/user-data" "$hostname" "$username" "$password_hash_escaped"
+    fi
+  else
+    write_default_fresh_user_data_template "$boot_mount_point/user-data" "$hostname" "$username" "$password_hash_escaped"
+  fi
+
+  chmod 644 "$boot_mount_point/network-config" "$boot_mount_point/user-data" 2>/dev/null || true
+  touch "$boot_mount_point/ssh" 2>/dev/null || true
+
+  sync
+  log_success "Applied Fresh_Install-format files on ${mounted_boot_device}"
+  return 0
+}
+
+# Prompt for option 2 target connectivity settings.
+# Populates OPTION2_SSH_ENABLED/OPTION2_WIFI_SSID/OPTION2_WIFI_PASSWORD globals.
+OPTION2_SSH_ENABLED=""
+OPTION2_WIFI_SSID=""
+OPTION2_WIFI_PASSWORD=""
+
+prompt_option2_target_connectivity_settings() {
+  local confirm=""
+  local ssh_choice=""
+
+  OPTION2_SSH_ENABLED="true"
+  OPTION2_WIFI_SSID=""
+  OPTION2_WIFI_PASSWORD=""
+
+  echo
+  print_box "Mode 2 Target Boot Connectivity" \
+    "" \
+    "This updates pre-boot connectivity seed files on the target boot drive:" \
+    "  - ssh/ssh.txt flag file" \
+    "  - network-config (WiFi SSID/password)" \
+    "  - user-data (enable_ssh / ssh_pwauth)" \
+    ""
+
+  while true; do
+    read -rp "Enable SSH on target first boot? [Y/n]: " ssh_choice
+    ssh_choice="${ssh_choice,,}"
+    ssh_choice="${ssh_choice//[[:space:]]/}"
+    case "$ssh_choice" in
+      ""|y|yes)
+        OPTION2_SSH_ENABLED="true"
+        break
+        ;;
+      n|no)
+        OPTION2_SSH_ENABLED="false"
+        break
+        ;;
+      *)
+        log_warning "Please answer y or n"
+        ;;
+    esac
+  done
+
+  while true; do
+    read -rp "WiFi SSID for target first boot: " OPTION2_WIFI_SSID
+    [[ -n "$OPTION2_WIFI_SSID" ]] && break
+    log_warning "WiFi SSID cannot be empty"
+  done
+
+  while true; do
+    read -rsp "WiFi password for target first boot: " OPTION2_WIFI_PASSWORD
+    echo
+    [[ -n "$OPTION2_WIFI_PASSWORD" ]] || { log_warning "WiFi password cannot be empty"; continue; }
+
+    read -rsp "Confirm WiFi password: " confirm
+    echo
+    [[ "$OPTION2_WIFI_PASSWORD" == "$confirm" ]] && break
+    log_warning "WiFi passwords do not match - try again"
+  done
+
+  log_info "Target connectivity settings captured (SSH=${OPTION2_SSH_ENABLED}, SSID=${OPTION2_WIFI_SSID})"
+}
+
+# Update a top-level cloud-init YAML boolean key or append if missing.
+# Usage: set_cloud_init_bool_key "/path/user-data" "enable_ssh" "true"
+set_cloud_init_bool_key() {
+  local yaml_file="$1"
+  local key="$2"
+  local bool_value="$3"
+
+  [[ -f "$yaml_file" ]] || return 1
+
+  if grep -qE "^${key}:[[:space:]]*(true|false)" "$yaml_file" 2>/dev/null; then
+    sed -i -E "s#^${key}:[[:space:]]*(true|false).*#${key}: ${bool_value}#" "$yaml_file" || return 1
+  elif grep -qE "^${key}:" "$yaml_file" 2>/dev/null; then
+    sed -i -E "s#^${key}:.*#${key}: ${bool_value}#" "$yaml_file" || return 1
+  else
+    printf '%s\n' "${key}: ${bool_value}" >> "$yaml_file" || return 1
+  fi
+
+  return 0
+}
+
+# Apply option 2 connectivity settings to a mounted target boot partition.
+# Usage (via with_mount): apply_option2_target_connectivity_settings "/mnt/boot" "/dev/sda1" "true|false" "ssid" "wifi_password"
+apply_option2_target_connectivity_settings() {
+  local boot_mount_point="$1"
+  local mounted_boot_device="$2"
+  local ssh_enabled="$3"
+  local wifi_ssid="$4"
+  local wifi_password="$5"
+
+  local template_dir=""
+  local source_network=""
+  local source_user_data=""
+  local tmp_network=""
+  local tmp_user_data=""
+  local wifi_ssid_escaped=""
+  local wifi_password_escaped=""
+
+  [[ -n "$wifi_ssid" && -n "$wifi_password" ]] || {
+    log_error "WiFi SSID/password are required for target connectivity update"
+    return 1
+  }
+
+  if ! check_writable "$boot_mount_point"; then
+    log_error "Boot partition is not writable: ${mounted_boot_device}"
+    return 1
+  fi
+
+  template_dir="$(resolve_fresh_install_template_dir || true)"
+  wifi_ssid_escaped="$(yaml_escape_double_quotes "$wifi_ssid")"
+  wifi_password_escaped="$(yaml_escape_double_quotes "$wifi_password")"
+
+  source_network="$boot_mount_point/network-config"
+  if [[ ! -f "$source_network" && -n "$template_dir" && -f "$template_dir/network-config" ]]; then
+    source_network="$template_dir/network-config"
+  fi
+
+  if [[ -f "$source_network" ]]; then
+    tmp_network=$(mktemp /tmp/option2-network-XXXXXX)
+    if render_network_from_template "$source_network" "$tmp_network" "$wifi_ssid_escaped" "$wifi_password_escaped"; then
+      cp "$tmp_network" "$boot_mount_point/network-config" || { rm -f "$tmp_network"; return 1; }
+      rm -f "$tmp_network"
+    else
+      rm -f "$tmp_network"
+      write_default_fresh_network_template "$boot_mount_point/network-config" "$wifi_ssid_escaped" "$wifi_password_escaped" || return 1
+    fi
+  else
+    write_default_fresh_network_template "$boot_mount_point/network-config" "$wifi_ssid_escaped" "$wifi_password_escaped" || return 1
+  fi
+
+  source_user_data="$boot_mount_point/user-data"
+  if [[ ! -f "$source_user_data" && -n "$template_dir" && -f "$template_dir/user-data" ]]; then
+    source_user_data="$template_dir/user-data"
+  fi
+
+  if [[ -f "$source_user_data" ]]; then
+    tmp_user_data=$(mktemp /tmp/option2-userdata-XXXXXX)
+    cp "$source_user_data" "$tmp_user_data" || { rm -f "$tmp_user_data"; return 1; }
+    if ! set_cloud_init_bool_key "$tmp_user_data" "enable_ssh" "$ssh_enabled"; then
+      rm -f "$tmp_user_data"
+      return 1
+    fi
+    if [[ "$ssh_enabled" == "true" ]]; then
+      set_cloud_init_bool_key "$tmp_user_data" "ssh_pwauth" "true" || { rm -f "$tmp_user_data"; return 1; }
+    else
+      set_cloud_init_bool_key "$tmp_user_data" "ssh_pwauth" "false" || { rm -f "$tmp_user_data"; return 1; }
+    fi
+    cp "$tmp_user_data" "$boot_mount_point/user-data" || { rm -f "$tmp_user_data"; return 1; }
+    rm -f "$tmp_user_data"
+  else
+    cat > "$boot_mount_point/user-data" <<EOF
+#cloud-config
+enable_ssh: ${ssh_enabled}
+ssh_pwauth: ${ssh_enabled}
+EOF
+  fi
+
+  if [[ "$ssh_enabled" == "true" ]]; then
+    touch "$boot_mount_point/ssh" 2>/dev/null || true
+    rm -f "$boot_mount_point/ssh.txt" 2>/dev/null || true
+  else
+    rm -f "$boot_mount_point/ssh" "$boot_mount_point/ssh.txt" 2>/dev/null || true
+  fi
+
+  chmod 644 "$boot_mount_point/network-config" "$boot_mount_point/user-data" 2>/dev/null || true
+  sync
+  log_success "Updated target boot connectivity files on ${mounted_boot_device}"
+  return 0
+}
+
+# Option 2 helper: prompt and apply pre-boot connectivity to next validated boot target.
+offer_preboot_connectivity_update_to_next_target() {
+  local next_boot="${BOOT_ORDER_NEXT_TARGET_BOOT:-}"
+  local next_root="${BOOT_ORDER_NEXT_TARGET_ROOT:-}"
+
+  if [[ -z "$next_boot" || -z "$next_root" ]]; then
+    log_info "No next non-current boot target available for pre-boot connectivity update"
+    return 0
+  fi
+
+  echo
+  log_info "Next boot target candidate: ${next_boot} -> ${next_root}"
+
+  if ! prompt_yn "Configure pre-boot SSH/WiFi files on this boot target now?"; then
+    log_info "Skipped pre-boot target connectivity update"
+    return 0
+  fi
+
+  # These files are consumed at first boot; warn if target already appears to have completed cloud-init.
+  if ! is_target_ssh_continuity_pending_first_boot "$next_boot" "$next_root"; then
+    log_warning "Target does not appear to be in first-boot cloud-init state"
+    log_warning "Editing boot seed files may not change an already-initialized root filesystem"
+    if ! prompt_yn "Continue updating boot seed files anyway?"; then
+      log_info "Skipped pre-boot target connectivity update"
+      return 0
+    fi
+  fi
+
+  prompt_option2_target_connectivity_settings
+
+  if ! with_mount "$next_boot" apply_option2_target_connectivity_settings --verify-boot \
+      "$OPTION2_SSH_ENABLED" "$OPTION2_WIFI_SSID" "$OPTION2_WIFI_PASSWORD"; then
+    log_warning "Failed to update pre-boot connectivity files on ${next_boot}"
+    OPTION2_WIFI_PASSWORD=""
+    return 1
+  fi
+
+  OPTION2_WIFI_PASSWORD=""
+  log_success "Pre-boot connectivity update complete for ${next_boot}"
   return 0
 }
 
@@ -3063,6 +4633,149 @@ normalize_boot_order() {
   fi
 }
 
+eeprom_numeric_to_decimal() {
+  local raw="${1:-}"
+  raw="${raw,,}"
+  raw="${raw//[[:space:]]/}"
+
+  if [[ -z "$raw" ]]; then
+    return 1
+  fi
+
+  if [[ "$raw" =~ ^0x[0-9a-f]+$ ]]; then
+    echo "$((16#${raw#0x}))"
+    return 0
+  fi
+
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    echo "$raw"
+    return 0
+  fi
+
+  return 1
+}
+
+boot_order_includes_usb_msd() {
+  local order="${1#0x}"
+  order="${order,,}"
+  local i
+
+  for (( i=${#order}-1; i>=0; i-- )); do
+    local digit="${order:$i:1}"
+    case "$digit" in
+      e|f)
+        break
+        ;;
+      4|5)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+eeprom_upsert_setting() {
+  local conf_file="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -q "^${key}=" "$conf_file"; then
+    sed -i -E "s#^${key}=.*#${key}=${value}#" "$conf_file"
+  else
+    echo "${key}=${value}" >> "$conf_file"
+  fi
+}
+
+get_eeprom_config_value() {
+  local key="$1"
+  if ! eeprom_tool_available; then
+    echo ""
+    return 1
+  fi
+
+  rpi-eeprom-config 2>/dev/null | awk -F= -v k="$key" '$1==k {print $2; exit}' | sed 's/#.*//; s/[[:space:]]*$//'
+}
+
+validate_usb_boot_eeprom_profile() {
+  local order="$1"
+  local context_label="${2:-EEPROM USB boot profile}"
+
+  if ! boot_order_includes_usb_msd "$order"; then
+    return 0
+  fi
+
+  local discover_raw=""
+  local pwr_raw=""
+  local discover_dec=""
+  local pwr_dec=""
+  local failed=0
+
+  discover_raw="$(get_eeprom_config_value "USB_MSD_DISCOVER_TIMEOUT" || true)"
+  pwr_raw="$(get_eeprom_config_value "USB_MSD_PWR_OFF_TIME" || true)"
+
+  if ! discover_dec="$(eeprom_numeric_to_decimal "$discover_raw" 2>/dev/null || true)" || [[ -z "$discover_dec" ]]; then
+    log_error "${context_label}: USB_MSD_DISCOVER_TIMEOUT is missing or invalid"
+    failed=1
+  elif (( discover_dec < EEPROM_USB_DISCOVER_TIMEOUT_TARGET )); then
+    log_error "${context_label}: USB_MSD_DISCOVER_TIMEOUT=${discover_raw} is below required ${EEPROM_USB_DISCOVER_TIMEOUT_TARGET}"
+    failed=1
+  else
+    log_success "${context_label}: USB_MSD_DISCOVER_TIMEOUT=${discover_raw}"
+  fi
+
+  if ! pwr_dec="$(eeprom_numeric_to_decimal "$pwr_raw" 2>/dev/null || true)" || [[ -z "$pwr_dec" ]]; then
+    log_error "${context_label}: USB_MSD_PWR_OFF_TIME is missing or invalid"
+    failed=1
+  elif (( pwr_dec < EEPROM_USB_PWR_OFF_TIME_TARGET )); then
+    log_error "${context_label}: USB_MSD_PWR_OFF_TIME=${pwr_raw} is below required ${EEPROM_USB_PWR_OFF_TIME_TARGET}"
+    failed=1
+  else
+    log_success "${context_label}: USB_MSD_PWR_OFF_TIME=${pwr_raw}"
+  fi
+
+  if (( failed > 0 )); then
+    log_error "${context_label} failed USB boot hardening checks"
+    return 1
+  fi
+
+  return 0
+}
+
+# Validate EEPROM BOOT_ORDER syntax and return normalized value on success.
+# Usage: validate_eeprom_boot_order "0xf14" [context_label]
+validate_eeprom_boot_order() {
+  local order="$1"
+  local context_label="${2:-EEPROM BOOT_ORDER}"
+  local normalized
+
+  normalized=$(normalize_boot_order "$order")
+  local body="${normalized#0x}"
+
+  if [[ -z "$body" ]]; then
+    log_error "${context_label} is empty"
+    return 1
+  fi
+
+  if [[ ! "$body" =~ ^[0-7ef]+$ ]]; then
+    log_error "${context_label} contains invalid digits: ${normalized}"
+    log_error "Allowed BOOT_ORDER digits are 0-7, e, and f"
+    return 1
+  fi
+
+  if [[ ! "$body" =~ [ef] ]]; then
+    log_error "${context_label} must include a terminal nibble (e or f): ${normalized}"
+    return 1
+  fi
+
+  if (( ${#body} > 8 )); then
+    log_error "${context_label} is too long (${#body} nibbles): ${normalized}"
+    return 1
+  fi
+
+  echo "$normalized"
+}
+
 get_eeprom_boot_order() {
   if ! eeprom_tool_available; then
     echo ""
@@ -3070,7 +4783,11 @@ get_eeprom_boot_order() {
   fi
   local order
   order=$(rpi-eeprom-config 2>/dev/null | awk -F= '/^BOOT_ORDER=/{print $2; exit}' | sed 's/#.*//')
-  normalize_boot_order "$order"
+  local normalized
+  if ! normalized=$(validate_eeprom_boot_order "$order" "EEPROM BOOT_ORDER readback"); then
+    return 1
+  fi
+  echo "$normalized"
 }
 
 boot_order_digit_label() {
@@ -3116,6 +4833,10 @@ describe_boot_order() {
 
 apply_eeprom_boot_order() {
   local desired="$1"
+  if ! desired=$(validate_eeprom_boot_order "$desired" "Requested EEPROM BOOT_ORDER"); then
+    return 1
+  fi
+
   local tmp_conf
   tmp_conf=$(mktemp /tmp/eeprom-bootconf-XXXXXX)
 
@@ -3130,12 +4851,58 @@ apply_eeprom_boot_order() {
     echo "BOOT_ORDER=${desired}" >> "$tmp_conf"
   fi
 
+  if boot_order_includes_usb_msd "$desired"; then
+    log_info "Enforcing EEPROM USB boot profile for BOOT_ORDER=${desired}"
+    eeprom_upsert_setting "$tmp_conf" "USB_MSD_DISCOVER_TIMEOUT" "$EEPROM_USB_DISCOVER_TIMEOUT_TARGET"
+    eeprom_upsert_setting "$tmp_conf" "USB_MSD_PWR_OFF_TIME" "$EEPROM_USB_PWR_OFF_TIME_TARGET"
+  fi
+
   log_info "Applying EEPROM BOOT_ORDER=${desired}"
   if rpi-eeprom-config --apply "$tmp_conf"; then
     rm -f "$tmp_conf"
-    log_success "EEPROM boot order staged successfully"
-    log_info "Reboot required for EEPROM changes to take effect"
-    return 0
+    local readback=""
+    local verify_attempt=1
+
+    while (( verify_attempt <= 5 )); do
+      readback=$(get_eeprom_boot_order 2>/dev/null || true)
+      if [[ "$readback" == "$desired" ]]; then
+        log_success "EEPROM BOOT_ORDER validated: ${readback}"
+        log_info "Boot order: $(describe_boot_order "$readback")"
+        if ! validate_usb_boot_eeprom_profile "$readback" "EEPROM readback"; then
+          log_error "EEPROM BOOT_ORDER applied, but USB boot profile validation failed"
+          return 1
+        fi
+        log_info "Reboot required for EEPROM changes to take effect"
+        return 0
+      fi
+      sleep 1
+      verify_attempt=$((verify_attempt + 1))
+    done
+
+    # On many Pi models, EEPROM values do not reflect the staged update until reboot.
+    # Treat a pending EEPROM update as a successful staging operation.
+    local update_status=""
+    update_status=$(rpi-eeprom-update 2>/dev/null || true)
+    if [[ "$update_status" =~ [Uu]pdates?[[:space:]]+pending ]] || [[ -f "/boot/firmware/pieeprom.upd" ]]; then
+      log_success "EEPROM update staged successfully (pending reboot)"
+      if [[ -n "$readback" ]]; then
+        log_info "Current readback before reboot: ${readback}"
+      fi
+      if boot_order_includes_usb_msd "$desired"; then
+        log_warning "USB boot profile will be validated after reboot when staged EEPROM settings are active"
+      fi
+      log_info "Reboot to apply staged EEPROM update, then re-run option 1 or 8 to confirm BOOT_ORDER=${desired}"
+      return 0
+    fi
+
+    if [[ -n "$readback" ]]; then
+      log_error "EEPROM BOOT_ORDER verification mismatch"
+      log_error "Expected: ${desired}"
+      log_error "Readback: ${readback}"
+    else
+      log_error "Could not read back EEPROM BOOT_ORDER after apply"
+    fi
+    return 1
   fi
 
   rm -f "$tmp_conf"
@@ -3145,6 +4912,11 @@ apply_eeprom_boot_order() {
 verify_or_prompt_eeprom_boot_order() {
   local desired="$1"
   local mode_label="$2"
+
+  if ! desired=$(validate_eeprom_boot_order "$desired" "Desired EEPROM BOOT_ORDER (${mode_label})"); then
+    log_warning "Skipping EEPROM update due to invalid desired BOOT_ORDER"
+    return 1
+  fi
 
   if ! eeprom_tool_available; then
     log_warning "EEPROM tools not available on this system"
@@ -3162,6 +4934,14 @@ verify_or_prompt_eeprom_boot_order() {
   if [[ "$current" == "$desired" ]]; then
     log_success "EEPROM BOOT_ORDER already matches ${mode_label} (${current})"
     log_info "Boot order: $(describe_boot_order "$current")"
+    if ! validate_usb_boot_eeprom_profile "$current" "Current EEPROM"; then
+      log_warning "Current EEPROM BOOT_ORDER matches, but USB boot profile is not hardened"
+      if prompt_yn "Repair EEPROM USB boot profile now?" true; then
+        if ! apply_eeprom_boot_order "$desired"; then
+          log_warning "EEPROM USB boot profile repair failed - manual fix may be required"
+        fi
+      fi
+    fi
     return 0
   fi
 
@@ -3215,29 +4995,18 @@ get_boot_device_preference() {
   boot_disk=$(lsblk -no PKNAME "$boot_dev" 2>/dev/null | head -n1)
   [[ -n "$boot_disk" ]] || { echo "unknown"; return; }
 
-  local transport
-  transport=$(lsblk -no TRAN "/dev/$boot_disk" 2>/dev/null | head -n1)
-
-  case "$transport" in
-    mmc) echo "sd" ;;
-    usb|sata|ata|pci|pcie) echo "usb" ;;
-    *) echo "unknown" ;;
-  esac
+  if disk_matches_transport_class "$boot_disk" "sd"; then
+    echo "sd"
+  elif disk_matches_transport_class "$boot_disk" "usb" || disk_matches_transport_class "$boot_disk" "pcie"; then
+    echo "usb"
+  else
+    echo "unknown"
+  fi
 }
 
 ################################################################################
 # DEVICE INFO HELPERS (SHOW CURRENT)
 ################################################################################
-
-transport_label() {
-  case "$1" in
-    usb) echo "USB" ;;
-    mmc) echo "SD/eMMC" ;;
-    sata|ata) echo "SATA" ;;
-    pci|pcie) echo "PCIe storage" ;;
-    *) echo "Unknown" ;;
-  esac
-}
 
 print_storage_overview() {
   local root_dev="$CURRENT_ROOT"
@@ -3281,27 +5050,14 @@ print_device_details() {
 
 resolve_cmdline_root_device() {
   local root_value="$1"
-  local resolved=""
 
-  case "$root_value" in
-    PARTUUID=*)
-      local partuuid
-      partuuid="${root_value#PARTUUID=}"
-      handle_partuuid_uniqueness "$partuuid" "cmdline root" "warn" || true
-      resolved=$(blkid -t "PARTUUID=${partuuid}" -o device 2>/dev/null | head -n1)
-      ;;
-    UUID=*)
-      resolved=$(blkid -t "UUID=${root_value#UUID=}" -o device 2>/dev/null | head -n1)
-      ;;
-    /dev/*)
-      resolved="$root_value"
-      ;;
-    *)
-      resolved=""
-      ;;
-  esac
+  if [[ "$root_value" == PARTUUID=* ]]; then
+    local partuuid
+    partuuid="${root_value#PARTUUID=}"
+    handle_partuuid_uniqueness "$partuuid" "cmdline root" "warn" || true
+  fi
 
-  echo "$resolved"
+  resolve_device_identifier "$root_value"
 }
 
 show_current() {
@@ -3367,6 +5123,9 @@ show_current() {
       echo
       log_info "EEPROM BOOT_ORDER: ${current_boot_order}"
       log_info "Boot order: $(describe_boot_order "$current_boot_order")"
+      if ! validate_usb_boot_eeprom_profile "$current_boot_order" "Current EEPROM"; then
+        log_warning "EEPROM USB boot profile is not hardened for USB boot"
+      fi
     else
       log_warning "EEPROM BOOT_ORDER not found"
     fi
@@ -3401,6 +5160,7 @@ configure_eeprom_boot_order() {
   echo "  4) USB Only (0xf4)"
   echo "  q) Cancel"
   read -rp "Enter choice: " sel
+  sel="${sel,,}"
 
   local desired_label=""
   case "$sel" in
@@ -3408,13 +5168,14 @@ configure_eeprom_boot_order() {
     2) desired_label="USB+SD" ;;
     3) desired_label="SD Only" ;;
     4) desired_label="USB Only" ;;
-    q|Q) log_info "Cancelled"; return 0 ;;
+    q) log_info "Cancelled"; return 0 ;;
     *) err "Invalid selection" ;;
   esac
 
   local desired
   desired=$(choose_eeprom_boot_order "$desired_label")
   [[ -n "$desired" ]] || err "Invalid BOOT_ORDER selection"
+  desired=$(validate_eeprom_boot_order "$desired" "Selected EEPROM BOOT_ORDER") || err "Invalid BOOT_ORDER value"
 
   if [[ -n "$current" && "$current" == "$desired" ]]; then
     log_success "EEPROM BOOT_ORDER already set to ${desired} (${desired_label})"
@@ -3448,11 +5209,11 @@ switch_current_only() {
   ensure_cmdline_backup
   
   # Set cmdline.txt to boot and run from current device (SD, USB, etc.)
-  CURRENT_PARTUUID_FRESH="$(get_partuuid_safe "$CURRENT_ROOT" || true)"
+  CURRENT_PARTUUID_FRESH="$(read_required_partuuid_checked "$CURRENT_ROOT" "current root" "$PARTUUID_DUP_MODE" || true)"
   [[ -n "$CURRENT_PARTUUID_FRESH" ]] || err "Could not determine PARTUUID of current root"
 
   BOOT_DEV="$(findmnt -no SOURCE "$BOOT_DIR")"
-  BOOT_PARTUUID="$(get_partuuid_safe "$BOOT_DEV" || true)"
+  BOOT_PARTUUID="$(read_required_partuuid_checked "$BOOT_DEV" "boot device" "$PARTUUID_DUP_MODE" || true)"
   [[ -n "$BOOT_PARTUUID" ]] || err "Could not determine PARTUUID of boot device $BOOT_DEV"
 
   print_change_plan "current-device-only" "$CMDLINE" "$CURRENT_PARTUUID_FRESH" "$BOOT_PARTUUID" "/etc/fstab"
@@ -3482,16 +5243,8 @@ switch_current_only() {
     log_info "These devices will be used for updated fstab entries."
 
     if prompt_yn "Update /etc/fstab to match current boot configuration?"; then
-      BOOT_PARTUUID="$(get_partuuid_safe "$BOOT_DEV" || true)"
-      CURRENT_PARTUUID_FRESH="$(get_partuuid_safe "$CURRENT_ROOT" || true)"
-
-      # Verify PARTUUIDs are unique
-      if [[ -n "$BOOT_PARTUUID" ]]; then
-        handle_partuuid_uniqueness "$BOOT_PARTUUID" "$BOOT_DEV" "fail"
-      fi
-      if [[ -n "$CURRENT_PARTUUID_FRESH" ]]; then
-        handle_partuuid_uniqueness "$CURRENT_PARTUUID_FRESH" "$CURRENT_ROOT" "fail"
-      fi
+      BOOT_PARTUUID="$(read_required_partuuid_checked "$BOOT_DEV" "boot device" "$PARTUUID_DUP_MODE" "fail" || true)"
+      CURRENT_PARTUUID_FRESH="$(read_required_partuuid_checked "$CURRENT_ROOT" "current root" "$PARTUUID_DUP_MODE" "fail" || true)"
 
       if [[ -n "$BOOT_PARTUUID" && -n "$CURRENT_PARTUUID_FRESH" ]]; then
         if update_fstab "/" "$BOOT_PARTUUID" "$CURRENT_PARTUUID_FRESH"; then
@@ -3548,7 +5301,7 @@ switch_hybrid() {
     [[ -z "$PARTUUID" ]] && PARTUUID="-"
 
     echo "  $i) /dev/$NAME  size=$SIZE  mount=$MOUNTPOINT  fstype=$FSTYPE  PARTUUID=$PARTUUID"
-    ((i++))
+    i=$((i + 1))
   done
 
   read -rp "Enter number: " sel
@@ -3568,18 +5321,12 @@ switch_hybrid() {
   ensure_cmdline_backup
   
   # Get PARTUUIDs early to avoid race conditions
-  PARTUUID="$(get_partuuid_safe "$ROOT_DEV" || true)"
+  PARTUUID="$(read_required_partuuid_checked "$ROOT_DEV" "$ROOT_DEV" "$PARTUUID_DUP_MODE" "fail" || true)"
   [[ -n "$PARTUUID" ]] || err "Could not determine PARTUUID of $ROOT_DEV"
   
-  # Verify PARTUUID is unique (MUST be called AFTER PARTUUID assignment)
-  handle_partuuid_uniqueness "$PARTUUID" "$ROOT_DEV" "fail"
-  
   BOOT_DEV="$(findmnt -no SOURCE "$BOOT_DIR")"
-  BOOT_PARTUUID="$(get_partuuid_safe "$BOOT_DEV" || true)"
+  BOOT_PARTUUID="$(read_required_partuuid_checked "$BOOT_DEV" "boot device" "$PARTUUID_DUP_MODE" "fail" || true)"
   [[ -n "$BOOT_PARTUUID" ]] || err "Could not determine PARTUUID of boot device $BOOT_DEV"
-  
-  # Verify boot PARTUUID is unique
-  handle_partuuid_uniqueness "$BOOT_PARTUUID" "$BOOT_DEV" "fail"
 
   print_change_plan "hybrid boot" "$CMDLINE" "$PARTUUID" "$BOOT_PARTUUID" "${ROOT_DEV}:/etc/fstab"
   
@@ -3705,8 +5452,8 @@ clone_os_to_usb_target() {
     "Transport: USB" \
     ""
   
-  read -rp "Type YES to continue: " CONFIRM
-  if [[ "$CONFIRM" != "YES" ]]; then
+  read -rp "Type 'yes' to continue: " CONFIRM
+  if [[ "${CONFIRM,,}" != "yes" ]]; then
     log_info "Aborted"
     return 0
   fi
@@ -3763,15 +5510,11 @@ clone_os_to_usb_target() {
 
   # Get PARTUUIDs after regeneration and formatting (must be done after regenerate_partuuids)
   log_success "Reading PARTUUIDs after regeneration..."
-  USB_BOOT_PARTUUID="$(get_partuuid_safe "$USB_BOOT" || true)"
+  USB_BOOT_PARTUUID="$(read_required_partuuid_checked "$USB_BOOT" "$USB_BOOT" "$PARTUUID_DUP_MODE" "fail" || true)"
   [[ -n "$USB_BOOT_PARTUUID" ]] || err "Could not determine PARTUUID of $USB_BOOT"
   
-  USB_ROOT_PARTUUID="$(get_partuuid_safe "$USB_ROOT" || true)"
+  USB_ROOT_PARTUUID="$(read_required_partuuid_checked "$USB_ROOT" "$USB_ROOT" "$PARTUUID_DUP_MODE" "fail" || true)"
   [[ -n "$USB_ROOT_PARTUUID" ]] || err "Could not determine PARTUUID of $USB_ROOT"
-  
-  # Verify PARTUUIDs are unique - fail if conflict detected
-  handle_partuuid_uniqueness "$USB_BOOT_PARTUUID" "$USB_BOOT" "fail"
-  handle_partuuid_uniqueness "$USB_ROOT_PARTUUID" "$USB_ROOT" "fail"
 
   print_change_plan "clone OS to USB" "${USB_BOOT}:/cmdline.txt" "$USB_ROOT_PARTUUID" "$USB_BOOT_PARTUUID" "${USB_ROOT}:/etc/fstab"
   
@@ -3874,7 +5617,8 @@ clone_os_to_usb_target() {
 
       # Create fstab
       log_success "Updating fstab on USB root partition"
-      local BOOT_PARTUUID="$(get_partuuid_safe "$USB_BOOT" || true)"
+      local BOOT_PARTUUID
+      BOOT_PARTUUID="$(read_required_partuuid_checked "$USB_BOOT" "$USB_BOOT" "$PARTUUID_DUP_MODE" "fail" || true)"
       [[ -n "$BOOT_PARTUUID" ]] || { log_error "Failed to get boot PARTUUID"; return 1; }
       if ! update_fstab "$root_mount" "$BOOT_PARTUUID" "$USB_ROOT_PARTUUID"; then
         log_error "Failed to update fstab"
@@ -3940,6 +5684,17 @@ configure_usb_boot_partitions() {
 
 # Flash fresh Raspberry Pi OS to USB using wget and dd
 flash_fresh_usb() {
+  local missing_tools=()
+  local required_tool
+  for required_tool in wget sha256sum xz dd lsblk blkid partprobe udevadm mount umount findmnt; do
+    if ! command -v "$required_tool" >/dev/null 2>&1; then
+      missing_tools+=("$required_tool")
+    fi
+  done
+  if (( ${#missing_tools[@]} > 0 )); then
+    err "Missing required tools for mode 7: ${missing_tools[*]}"
+  fi
+
   # Verify SSH and WiFi before flashing (user may want to copy these configs)
   if ! preflight_boot_change "flashing" --allow-failure; then
     echo
@@ -3949,6 +5704,8 @@ flash_fresh_usb() {
       err "Aborted - fix SSH/WiFi configuration first"
     fi
   fi
+
+  prompt_fresh_flash_identity
   
   log_step "Flash Fresh Raspberry Pi OS to USB"
   log_info "This will download and write a fresh Raspberry Pi OS image to USB storage."
@@ -3975,9 +5732,15 @@ flash_fresh_usb() {
     IMAGE_URL="https://downloads.raspberrypi.com/raspios_lite_arm64_latest"
     log_success "Using default: $IMAGE_URL"
   fi
+
+  if [[ "$IMAGE_URL" =~ \.img\.xz$ || "$IMAGE_URL" =~ _latest$ ]]; then
+    IMAGE_XZ_URL="$IMAGE_URL"
+  else
+    IMAGE_XZ_URL="${IMAGE_URL}.img.xz"
+    log_info "Normalized image URL to: $IMAGE_XZ_URL"
+  fi
   
   # Construct full URLs
-  IMAGE_XZ_URL="${IMAGE_URL}"
   SHA256_URL="${IMAGE_XZ_URL}.sha256"
   
   echo
@@ -3988,7 +5751,8 @@ flash_fresh_usb() {
     "  2. Verify SHA256 checksum" \
     "  3. COMPLETELY ERASE all data on $USB_DEV" \
     "  4. Write fresh OS image to device" \
-    "  5. Configure USB power settings and scripts" \
+    "  5. Apply Fresh_Install-style first-boot files" \
+    "     (cmdline/config/network-config/user-data/ssh)" \
     "" \
     "Current partitions on $USB_DEV will be PERMANENTLY DELETED" \
     "Make sure you have selected the CORRECT device!" \
@@ -3997,14 +5761,17 @@ flash_fresh_usb() {
     "Transport: USB" \
     ""
   
-  read -rp "Type YES to continue: " CONFIRM
-  [[ "$CONFIRM" == "YES" ]] || err "Aborted"
+  read -rp "Type 'yes' to continue: " CONFIRM
+  [[ "${CONFIRM,,}" == "yes" ]] || err "Aborted"
   
   # Unmount any existing partitions
   unmount_device_partitions "$USB_NAME"
   
-  # Create temporary directory for downloads
+  # Create temporary directory for transient files
   TEMP_DIR=$(mktemp -d -t flash-usb-XXXXXX)
+  local USE_PERSISTENT_CACHE=false
+  local CACHE_DIR=""
+  local CACHE_ENTRY_DIR=""
   
   # Safe cleanup function that checks for mounted filesystems
   cleanup_temp_dir() {
@@ -4022,14 +5789,57 @@ flash_fresh_usb() {
   local original_trap=$(trap -p EXIT)
   trap cleanup_temp_dir EXIT
   
-  IMAGE_FILE="$TEMP_DIR/raspios.img.xz"
-  SHA256_FILE="$TEMP_DIR/raspios.img.xz.sha256"
-  
-  # Check available disk space (need ~2GB for compressed image)
   local temp_dir_parent="$(dirname "$TEMP_DIR")"
-  local available_mb=$(df -m "$temp_dir_parent" | tail -1 | awk '{print $4}')
-  log_info "Available space in $temp_dir_parent: ${available_mb}MB"
-  
+  local temp_available_mb=$(df -m "$temp_dir_parent" | tail -1 | awk '{print $4}')
+  log_info "Available temporary space in $temp_dir_parent: ${temp_available_mb}MB"
+
+  if (( temp_available_mb < MIN_DISK_SPACE_FLASH_MB )); then
+    log_warning "Less than ${MIN_DISK_SPACE_FLASH_MB}MB free in temporary storage (${temp_available_mb}MB available)"
+    log_warning "This is common when /tmp is RAM-backed on smaller Raspberry Pi models"
+
+    if prompt_yn "Use a persistent image cache directory instead?" "true"; then
+      read -rp "Cache directory [${DEFAULT_FLASH_CACHE_DIR}]: " CACHE_DIR
+      CACHE_DIR="${CACHE_DIR:-$DEFAULT_FLASH_CACHE_DIR}"
+
+      mkdir -p "$CACHE_DIR" 2>/dev/null || err "Could not create cache directory: $CACHE_DIR"
+      if ! check_writable "$CACHE_DIR"; then
+        err "Cache directory is not writable: $CACHE_DIR"
+      fi
+
+      USE_PERSISTENT_CACHE=true
+      log_success "Using persistent cache directory: $CACHE_DIR"
+    else
+      if ! prompt_yn "Continue with temporary directory anyway?"; then
+        cleanup_temp_dir
+        err "Aborted - insufficient temporary disk space"
+      fi
+    fi
+  fi
+
+  if [[ "$USE_PERSISTENT_CACHE" == "true" ]]; then
+    local cache_key
+    cache_key=$(printf "%s" "$IMAGE_XZ_URL" | sha256sum | awk '{print substr($1,1,16)}')
+    CACHE_ENTRY_DIR="${CACHE_DIR}/${cache_key}"
+    mkdir -p "$CACHE_ENTRY_DIR" || err "Could not create cache entry directory: $CACHE_ENTRY_DIR"
+
+    IMAGE_FILE="$CACHE_ENTRY_DIR/raspios.img.xz"
+    SHA256_FILE="$CACHE_ENTRY_DIR/raspios.img.xz.sha256"
+    printf '%s\n' "$IMAGE_XZ_URL" > "$CACHE_ENTRY_DIR/source_url.txt" 2>/dev/null || true
+  else
+    IMAGE_FILE="$TEMP_DIR/raspios.img.xz"
+    SHA256_FILE="$TEMP_DIR/raspios.img.xz.sha256"
+  fi
+
+  local SHA256_LATEST_FILE="$SHA256_FILE"
+  if [[ "$USE_PERSISTENT_CACHE" == "true" ]]; then
+    SHA256_LATEST_FILE="$TEMP_DIR/latest.sha256"
+  fi
+
+  # Check available disk space for the chosen image destination
+  local image_dir="$(dirname "$IMAGE_FILE")"
+  local available_mb=$(df -m "$image_dir" | tail -1 | awk '{print $4}')
+  log_info "Available space in $image_dir: ${available_mb}MB"
+
   if (( available_mb < MIN_DISK_SPACE_FLASH_MB )); then
     log_warning "Less than ${MIN_DISK_SPACE_FLASH_MB}MB free space (${available_mb}MB available)"
     log_warning "Image download may fail if disk runs out of space"
@@ -4040,108 +5850,160 @@ flash_fresh_usb() {
   else
     log_success "Sufficient disk space available"
   fi
-  
-  # Download image with two-stage retry
-  log_success "Downloading image from: $IMAGE_XZ_URL"
-  log_success "This may take 5-60 minutes depending on image size and connection speed..."
-  echo
-  
-  local download_attempts=0
-  local max_download_attempts=3
-  
-  while (( download_attempts < max_download_attempts )); do
-    ((download_attempts++))
-    
-    if (( download_attempts > 1 )); then
-      echo
-      log_success "Download retry ${download_attempts}/${max_download_attempts}..."
-    fi
-    
-    # Stage 1: Test connection with HEAD request
-    log_success "[Stage 1] Testing connection to download server..."
-    if ! retry_until_connected --attempts ${WGET_RETRY_ATTEMPTS} --delay ${WGET_RETRY_DELAY} \
-        wget --spider --server-response "$IMAGE_XZ_URL"; then
-      
-      log_error "Could not establish connection after ${WGET_RETRY_ATTEMPTS} attempts"
-      
-      if (( download_attempts < max_download_attempts )); then
-        if prompt_yn "Try again with DNS flush?"; then
-          # Attempt DNS flush (may require systemd-resolved)
-          systemctl restart systemd-resolved 2>/dev/null || true
-          sleep 2
-          continue
-        else
-          cleanup_temp_dir
-          err "Failed to establish connection to $IMAGE_XZ_URL"
-        fi
-      else
-        cleanup_temp_dir
-        err "Failed to establish connection after ${max_download_attempts} attempts"
-      fi
-    fi
-    
-    echo
-    log_success "[Stage 2] Connection established, starting download with progress monitoring..."
-    
-    # Stage 2: Download with interactive progress monitoring
-    local download_result=0
-    monitor_download_progress "Raspberry Pi OS image" \
-        wget --progress=bar:force -O "$IMAGE_FILE" "$IMAGE_XZ_URL" || download_result=$?
-    
-    # Check for special retry signal from interactive menu
-    if (( download_result == 2 )); then
-      log_success "User requested retry, attempting again..."
-      rm -f "$IMAGE_FILE" 2>/dev/null
-      sleep 2
-      continue
-    elif (( download_result != 0 )); then
-      log_error "Download failed or was aborted"
-      
-      if (( download_attempts < max_download_attempts )); then
-        echo
-        log_success "Cleaning up partial download..."
-        rm -f "$IMAGE_FILE" 2>/dev/null
-        
-        if prompt_yn "Retry download?"; then
-          sleep 2
-          continue
-        else
-          cleanup_temp_dir
-          err "Download aborted by user"
-        fi
-      else
-        cleanup_temp_dir
-        err "Failed to download image after ${max_download_attempts} attempts"
-      fi
-    fi
-    
-    # Success - exit retry loop
-    break
-  done
-  
-  echo
-  
-  # Download SHA256 checksum with retry
+
+  # Download checksum first so cached images can be reused if still current
+  local expected_hash=""
+  local checksum_downloaded=false
+  local should_download_image=true
+
   log_success "Downloading SHA256 checksum..."
   if retry_until_connected --attempts ${WGET_RETRY_ATTEMPTS} --delay ${WGET_RETRY_DELAY} \
-      wget -O "$SHA256_FILE" "$SHA256_URL"; then
+      wget -O "$SHA256_LATEST_FILE" "$SHA256_URL"; then
+    expected_hash=$(awk '{print $1}' "$SHA256_LATEST_FILE" | head -1)
+    if [[ -n "$expected_hash" ]]; then
+      checksum_downloaded=true
+      if [[ "$USE_PERSISTENT_CACHE" == "true" ]]; then
+        cp "$SHA256_LATEST_FILE" "$SHA256_FILE" 2>/dev/null || true
+      fi
+      log_success "SHA256 checksum downloaded"
+    else
+      log_warning "Downloaded checksum file did not contain a valid hash"
+    fi
+  else
+    log_warning "Could not download SHA256 checksum"
+  fi
+
+  # Reuse cached image if checksum still matches the latest release
+  if [[ "$USE_PERSISTENT_CACHE" == "true" && -f "$IMAGE_FILE" ]]; then
+    log_info "Cached image found: $IMAGE_FILE"
+    local cached_actual_hash
+    cached_actual_hash=$(sha256sum "$IMAGE_FILE" | awk '{print $1}')
+
+    if [[ "$checksum_downloaded" == "true" && -n "$expected_hash" ]]; then
+      if [[ "$cached_actual_hash" == "$expected_hash" ]]; then
+        should_download_image=false
+        log_success "Cached image matches latest Raspberry Pi OS checksum - reusing cache"
+      else
+        log_info "Cached image does not match latest checksum - downloading updated image"
+      fi
+    elif [[ -f "$SHA256_FILE" ]]; then
+      local cached_expected_hash
+      cached_expected_hash=$(awk '{print $1}' "$SHA256_FILE" | head -1)
+      if [[ -n "$cached_expected_hash" && "$cached_actual_hash" == "$cached_expected_hash" ]]; then
+        if prompt_yn "Could not verify newest version online. Use existing cached image anyway?" "true"; then
+          expected_hash="$cached_expected_hash"
+          should_download_image=false
+          log_warning "Using cached image without online update verification"
+        fi
+      fi
+    fi
+  fi
+
+  if [[ "$should_download_image" == "true" ]]; then
+    # Download image with two-stage retry
+    log_success "Downloading image from: $IMAGE_XZ_URL"
+    log_success "This may take 5-60 minutes depending on image size and connection speed..."
+    echo
+
+    local download_attempts=0
+    local max_download_attempts=3
+
+    while (( download_attempts < max_download_attempts )); do
+      download_attempts=$((download_attempts + 1))
+
+      if (( download_attempts > 1 )); then
+        echo
+        log_success "Download retry ${download_attempts}/${max_download_attempts}..."
+      fi
+
+      # Stage 1: Test connection with HEAD request
+      log_success "[Stage 1] Testing connection to download server..."
+      if ! retry_until_connected --attempts ${WGET_RETRY_ATTEMPTS} --delay ${WGET_RETRY_DELAY} \
+          wget --spider --server-response "$IMAGE_XZ_URL"; then
+
+        log_error "Could not establish connection after ${WGET_RETRY_ATTEMPTS} attempts"
+
+        if (( download_attempts < max_download_attempts )); then
+          if prompt_yn "Try again with DNS flush?"; then
+            # Attempt DNS flush (may require systemd-resolved)
+            systemctl restart systemd-resolved 2>/dev/null || true
+            sleep 2
+            continue
+          else
+            cleanup_temp_dir
+            err "Failed to establish connection to $IMAGE_XZ_URL"
+          fi
+        else
+          cleanup_temp_dir
+          err "Failed to establish connection after ${max_download_attempts} attempts"
+        fi
+      fi
+
+      echo
+      log_success "[Stage 2] Connection established, starting download with progress monitoring..."
+
+      # Stage 2: Download with interactive progress monitoring
+      local download_result=0
+      monitor_download_progress "Raspberry Pi OS image" \
+          wget --progress=bar:force -O "$IMAGE_FILE" "$IMAGE_XZ_URL" || download_result=$?
+
+      # Check for special retry signal from interactive menu
+      if (( download_result == 2 )); then
+        log_success "User requested retry, attempting again..."
+        rm -f "$IMAGE_FILE" 2>/dev/null
+        sleep 2
+        continue
+      elif (( download_result != 0 )); then
+        log_error "Download failed or was aborted"
+
+        if (( download_attempts < max_download_attempts )); then
+          echo
+          log_success "Cleaning up partial download..."
+          rm -f "$IMAGE_FILE" 2>/dev/null
+
+          if prompt_yn "Retry download?"; then
+            sleep 2
+            continue
+          else
+            cleanup_temp_dir
+            err "Download aborted by user"
+          fi
+        else
+          cleanup_temp_dir
+          err "Failed to download image after ${max_download_attempts} attempts"
+        fi
+      fi
+
+      # Success - exit retry loop
+      break
+    done
+
+    if [[ "$USE_PERSISTENT_CACHE" == "true" ]]; then
+      log_success "Downloaded image saved to cache for future flashes"
+    fi
+  else
+    log_success "Skipping image download and using cached file"
+  fi
+
+  echo
+
+  # Verify checksum when available
+  if [[ -n "$expected_hash" ]]; then
     log_success "Verifying SHA256 checksum..."
-    
-    # Compare expected hash to downloaded file (independent of filename)
-    local expected_hash=$(awk '{print $1}' "$SHA256_FILE" | head -1)
-    local actual_hash=$(sha256sum "$IMAGE_FILE" | awk '{print $1}')
-    if [[ -n "$expected_hash" && "$expected_hash" == "$actual_hash" ]]; then
+    local actual_hash
+    actual_hash=$(sha256sum "$IMAGE_FILE" | awk '{print $1}')
+    if [[ "$expected_hash" == "$actual_hash" ]]; then
       log_success "SHA256 checksum verified successfully"
     else
       err "SHA256 checksum mismatch - image may be corrupted or tampered"
     fi
   else
-    log_warning "Could not download SHA256 checksum, skipping verification"
+    log_warning "Could not verify SHA256 checksum with a valid hash"
     if ! prompt_yn "  Continue without checksum verification?"; then
       err "Aborted - checksum verification required"
     fi
   fi
-  
+
   # Validate downloaded image
   log_success "Validating XZ compression integrity..."
   if ! xz -t "$IMAGE_FILE" 2>/dev/null; then
@@ -4156,7 +6018,7 @@ flash_fresh_usb() {
   log_success "Progress will be shown below..."
   echo
   
-  if ! xz -dc "$IMAGE_FILE" | dd of="$USB_DEV" bs=16M status=progress oflag=direct conv=fsync; then
+  if ! xz -dc "$IMAGE_FILE" | dd of="$USB_DEV" bs=16M iflag=fullblock status=progress oflag=direct conv=fsync; then
     err "Failed to write image to $USB_DEV"
   fi
   
@@ -4181,46 +6043,60 @@ flash_fresh_usb() {
   USB_BOOT="$(get_partition_name "$USB_DEV" 1)"
   USB_ROOT="$(get_partition_name "$USB_DEV" 2)"
   
-  # Wait for boot partition specifically
+  # Wait for expected partition nodes specifically
   if ! wait_for_device "$USB_BOOT" 10; then
     err --debug "Boot partition not detected: $USB_BOOT"
   fi
+  if ! wait_for_device "$USB_ROOT" 10; then
+    err --debug "Root partition not detected: $USB_ROOT"
+  fi
   log_success "Boot partition detected: $USB_BOOT"
+  log_success "Root partition detected: $USB_ROOT"
+
+  local boot_fstype
+  local root_fstype
+  boot_fstype="$(blkid -s TYPE -o value "$USB_BOOT" 2>/dev/null || true)"
+  root_fstype="$(blkid -s TYPE -o value "$USB_ROOT" 2>/dev/null || true)"
+
+  if [[ ! "$boot_fstype" =~ ^(vfat|fat|msdos)$ ]]; then
+    err "Unexpected boot partition filesystem on $USB_BOOT: ${boot_fstype:-unknown} (expected vfat/fat)"
+  fi
+  if [[ "$root_fstype" != "ext4" ]]; then
+    err "Unexpected root partition filesystem on $USB_ROOT: ${root_fstype:-unknown} (expected ext4)"
+  fi
+  log_success "Post-flash filesystem signatures look valid (boot=$boot_fstype, root=$root_fstype)"
   
   local previous_dup_mode="$PARTUUID_DUP_MODE"
   PARTUUID_DUP_MODE="fix"
 
+  # Re-settle partition state after PARTUUID regeneration.
+  if ! wait_for_partitions "$USB_DEV" 2 20; then
+    err --debug "Partitions became unavailable after PARTUUID regeneration"
+  fi
+
   # Re-read PARTUUIDs after regeneration (they were just changed by sgdisk)
   log_info "Reading new PARTUUIDs after regeneration..."
-  USB_BOOT_PARTUUID="$(get_partuuid_safe "$USB_BOOT" || true)"
-  USB_ROOT_PARTUUID="$(get_partuuid_safe "$USB_ROOT" || true)"
+  USB_BOOT_PARTUUID="$(read_required_partuuid_checked "$USB_BOOT" "$USB_BOOT" "$PARTUUID_DUP_MODE" "fail" || true)"
+  USB_ROOT_PARTUUID="$(read_required_partuuid_checked "$USB_ROOT" "$USB_ROOT" "$PARTUUID_DUP_MODE" "fail" || true)"
   [[ -n "$USB_BOOT_PARTUUID" ]] || log_warning "Could not read boot PARTUUID"
   [[ -n "$USB_ROOT_PARTUUID" ]] || err "Could not read root PARTUUID"
-  
-  # Verify PARTUUIDs are unique
-  if [[ -n "$USB_BOOT_PARTUUID" ]]; then
-    handle_partuuid_uniqueness "$USB_BOOT_PARTUUID" "$USB_BOOT" "fail"
-  fi
-  if [[ -n "$USB_ROOT_PARTUUID" ]]; then
-    handle_partuuid_uniqueness "$USB_ROOT_PARTUUID" "$USB_ROOT" "fail"
-  fi
 
   print_change_plan "flash fresh USB" "${USB_BOOT}:/cmdline.txt" "$USB_ROOT_PARTUUID" "$USB_BOOT_PARTUUID" "${USB_ROOT}:/etc/fstab"
-  
-  # Configure boot partition
-  log_success "Configuring boot partition..."
 
-  if ! configure_boot_partition_for_target "$USB_BOOT" "$USB_ROOT_PARTUUID" "newly flashed USB drive" "false"; then
-    err --debug "Failed to configure boot partition $USB_BOOT"
+  log_success "Applying Fresh_Install-style first-boot configuration..."
+  if ! with_mount "$USB_BOOT" apply_fresh_install_boot_files --verify-boot \
+      "$USB_ROOT_PARTUUID" "$FLASH_WIFI_SSID" "$FLASH_WIFI_PASSWORD" \
+      "$FLASH_USERNAME" "$FLASH_USER_PASSWORD" "$FLASH_HOSTNAME"; then
+    err --debug "Failed to apply Fresh_Install files on $USB_BOOT"
   fi
-  log_success "Boot partition configured"
-  
-  # Offer to configure user and SSH from current system
-  [[ -b "$USB_ROOT" ]] || err "Root partition not detected: $USB_ROOT"
-  
-  # Configure user and SSH on fresh installation
-  if ! with_mount "$USB_ROOT" ensure_ssh_continuity "nonfatal"; then
-    err "Failed to configure user/SSH on root partition"
+
+  # Keep script copy behavior for recovery convenience.
+  copy_scripts_on_fresh_boot() {
+    local boot_mount="$1"
+    copy_scripts_to_boot "$boot_mount" "newly flashed USB drive"
+  }
+  if ! with_mount "$USB_BOOT" copy_scripts_on_fresh_boot --verify-boot; then
+    log_warning "Could not copy scripts to newly flashed boot partition"
   fi
 
   # Ensure fstab is aligned with regenerated PARTUUIDs
@@ -4230,6 +6106,11 @@ flash_fresh_usb() {
   }
   if ! with_mount "$USB_ROOT" update_fstab_on_usb_root; then
     err "Failed to update fstab on root partition"
+  fi
+
+  log_step "Boot Readiness Diagnostics"
+  if ! diagnose_boot_pair_readiness "$USB_BOOT" "$USB_ROOT" "freshly flashed USB target"; then
+    err "Boot readiness diagnostics failed for freshly flashed USB target"
   fi
   
   # Cleanup handled by trap, but call explicitly for clarity
@@ -4251,6 +6132,10 @@ flash_fresh_usb() {
   log_info "     raspi-config -> Advanced Options -> Boot Order -> USB Boot"
   log_info "  5. Scripts are in /boot/firmware/ (e.g., /boot/firmware/homelab-setup.sh)"
   echo
+
+  # Clear sensitive prompted values before leaving mode 7.
+  FLASH_WIFI_PASSWORD=""
+  FLASH_USER_PASSWORD=""
 
   PARTUUID_DUP_MODE="$previous_dup_mode"
 }
@@ -4277,16 +6162,17 @@ echo "7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd)"
 echo "8) Configure EEPROM boot order (SD/USB priority)"
 echo "q) Quit"
 read -rp "Enter choice: " choice
+choice="${choice,,}"
 
 case "$choice" in
   1) show_current ;;
-  2) check_initial_config ;;
+  2) check_initial_config --include-boot-targets ;;
   3) configure_usb_boot_partitions ;;
   4) switch_current_only ;;
   5) switch_hybrid ;;
   6) clone_os_to_usb_target ;;
   7) flash_fresh_usb ;;
   8) configure_eeprom_boot_order ;;
-  q|Q) echo "Exiting." ;;
+  q) echo "Exiting." ;;
   *) err "Invalid choice" ;;
 esac
