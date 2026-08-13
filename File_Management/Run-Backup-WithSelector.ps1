@@ -33,7 +33,11 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter()]
-    [string]$BackupRoot = 'F:\BACKUP_AND_SETTINGS',
+    [string]$BackupRoot = $(
+        if ($PSScriptRoot -and ((Split-Path -Leaf $PSScriptRoot) -ieq 'BACKUP_AND_SETTINGS')) {
+            $PSScriptRoot
+        }
+    ),
 
     [Parameter()]
     [string]$BackupTarget = '',
@@ -1072,9 +1076,28 @@ function Complete-ProgressSafe {
 }
 
 # Core helpers
+function Test-PathDriveAvailable {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $root = [System.IO.Path]::GetPathRoot($Path)
+    if ([string]::IsNullOrWhiteSpace($root)) { return $true }
+    if ($root.StartsWith('\\')) { return $true }
+
+    $driveName = $root.TrimEnd('\\').TrimEnd(':')
+    if ([string]::IsNullOrWhiteSpace($driveName)) { return $true }
+
+    return ($null -ne (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue))
+}
+
 function New-DirectoryIfMissing {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-PathDriveAvailable -Path $Path)) {
+        $missingRoot = [System.IO.Path]::GetPathRoot($Path).TrimEnd('\\')
+        throw "Cannot create '$Path' because the drive root '$missingRoot' is not available. Connect the drive or set -BackupRoot to an available path."
+    }
+
     if (-not (Test-Path -LiteralPath $Path)) {
         if ($PSCmdlet.ShouldProcess($Path, 'Create missing directory')) {
             New-Item -ItemType Directory -Path $Path -Force | Out-Null
@@ -2414,6 +2437,9 @@ if ([string]::IsNullOrWhiteSpace($selectedTarget)) {
 $IsOneDrive = ($selectedTarget -eq $script:BackupTargets.OneDrive)
 $script:IsOneDriveMode = $IsOneDrive
 $ActiveBackupRoot = [string]$script:BackupTargetConfig[$selectedTarget].RootPath
+if (-not $IsOneDrive -and [string]::IsNullOrWhiteSpace($ActiveBackupRoot)) {
+    throw "Backup root is not configured for SSD target. Run the script from a BACKUP_AND_SETTINGS folder or pass -BackupRoot with an available path."
+}
 if ($IsOneDrive) {
     $script:MirrorDeletionStructure = $true
     $script:DeletionMirrorBasePath = $ActiveBackupRoot
