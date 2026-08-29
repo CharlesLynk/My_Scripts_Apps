@@ -1,0 +1,138 @@
+views:
+  - title: Home
+    path: home
+    type: sections
+    max_columns: 2
+    header:
+      card:
+        type: markdown
+        content: "# Hello {{ user }}"
+        text_only: true
+    badges: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading_style: title
+            heading: Home Overview
+          - show_state: false
+            show_name: false
+            camera_view: auto
+            fit_mode: cover
+            type: picture-entity
+            entity: camera.outside_reolink_fluent
+            camera_image: camera.outside_reolink_fluent
+            grid_options:
+              columns: 12
+              rows: auto
+      - type: grid
+        cards:
+          - type: heading
+            heading: Room Controls
+            heading_style: title
+            icon: mdi:home
+          - type: custom:simple-swipe-card
+            show_pagination: true
+            card_spacing: 12
+            cards:
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Living Room
+                    heading_style: subtitle
+                    icon: mdi:sofa
+                  - type: tile
+                    entity: light.living_room_lights
+                    name: Living Room Lights
+                    icon: mdi:lightbulb-group
+                    tap_action:
+                      action: more-info
+                    hold_action:
+                      action: toggle
+                    features_position: bottom
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                  - type: tile
+                    entity: switch.living_room_socket_socket_1
+                    name: Living Room Outlet
+                    icon: mdi:power-socket-us
+                    tap_action:
+                      action: toggle
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Our Room
+                    heading_style: subtitle
+                    icon: mdi:bed-king
+                  - type: tile
+                    entity: light.our_room_our_room
+                    name: Room Lights
+                    icon: mdi:lightbulb-group
+                    tap_action:
+                      action: more-info
+                    hold_action:
+                      action: toggle
+                    features_position: bottom
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                  - type: tile
+                    entity: switch.our_room_box_fan_socket_1
+                    name: Box Fan
+                    icon: mdi:fan
+                    tap_action:
+                      action: toggle
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Guest Room
+                    heading_style: subtitle
+                    icon: mdi:bed
+                  - type: tile
+                    entity: light.guest_room_guest_room
+                    name: Room Lights
+                    icon: mdi:lightbulb-group
+                    tap_action:
+                      action: more-info
+                    hold_action:
+                      action: toggle
+                    features_position: bottom
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                  - type: tile
+                    entity: switch.guest_room_fan_socket_1
+                    name: Fan
+                    icon: mdi:fan
+                    tap_action:
+                      action: toggle
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Kitchen
+                    heading_style: subtitle
+                    icon: mdi:countertop
+                  - type: tile
+                    entity: switch.kitchen_wax_melter_socket_1
+                    name: Wax Melter
+                    icon: mdi:candle
+                    tap_action:
+                      action: toggle
+              - type: vertical-stack
+                cards:
+                  - type: heading
+                    heading: Garage
+                    heading_style: subtitle
+                    icon: mdi:garage
+                  - type: tile
+                    entity: light.garage_garage
+                    name: Garage Light
+                    icon: mdi:garage
+                    tap_action:
+                      action: more-info
+                    hold_action:
+                      action: toggle
+            grid_options:
+              columns: 12
+              rows: auto

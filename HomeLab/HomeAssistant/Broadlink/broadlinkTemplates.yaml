@@ -1,0 +1,65 @@
+- switch:
+    - name: "Plant Light"
+      unique_id: plant_light
+      icon: mdi:sprout
+      state: >
+        {{ is_state('input_boolean.plant_light_state', 'on') }}
+      turn_on:
+        - action: script.plant_light_on
+      turn_off:
+        - action: script.plant_light_off
+
+    - name: "Lynk Sign"
+      unique_id: lynk_sign
+      icon: mdi:led-strip-variant
+      state: >
+        {{ is_state('input_boolean.lynk_sign_state', 'on') }}
+      turn_on:
+        - action: script.lynk_led_on
+      turn_off:
+        - action: script.lynk_led_off
+
+    - name: "Living Room TV"
+      unique_id: living_room_tv
+      icon: mdi:television
+      state: >
+        {{ is_state('input_boolean.livingroom_tv_state', 'on') }}
+      turn_on:
+        - action: script.livingroom_tv_power
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.livingroom_tv_state
+      turn_off:
+        - action: script.livingroom_tv_power
+        - action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.livingroom_tv_state
+
+    - name: "Living Room Soundbar"
+      unique_id: living_room_soundbar
+      icon: mdi:soundbar
+      state: >
+        {{ is_state('input_boolean.livingroom_soundbar_state', 'on') }}
+      turn_on:
+        - action: script.livingroom_soundbar_power
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.livingroom_soundbar_state
+      turn_off:
+        - action: script.livingroom_soundbar_power
+        - action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.livingroom_soundbar_state
+
+    - name: "Entertainment System"
+      unique_id: entertainment_system
+
+      state: >
+        {{ is_state('input_boolean.livingroom_tv_state', 'on')
+           and is_state('input_boolean.livingroom_soundbar_state', 'on') }}
+
+      turn_on:
+        - service: script.entertainment_system_on
+
+      turn_off:
+        - service: script.entertainment_system_off

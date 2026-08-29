@@ -1,0 +1,430 @@
+plant_light_on:
+  alias: Plant Light On
+  sequence:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.plant_light_state
+
+    - delay:
+        milliseconds: 100
+
+    - repeat:
+        count: 5
+        sequence:
+          - service: remote.send_command
+            target:
+              entity_id: remote.broadlink
+            data:
+              device: Plant Light
+              command: plant_light_on
+
+          - delay:
+              milliseconds: 200
+
+  mode: single
+
+plant_light_off:
+  alias: Plant Light Off
+  sequence:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.plant_light_state
+
+    - delay:
+        milliseconds: 100
+
+    - repeat:
+        count: 5
+        sequence:
+          - service: remote.send_command
+            target:
+              entity_id: remote.broadlink
+            data:
+              device: Plant Light
+              command: plant_light_off
+
+          - delay:
+              milliseconds: 200
+
+  mode: single
+
+lynk_led_on:
+  alias: Lynk Sign On
+  sequence:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.lynk_sign_state
+
+    - delay:
+        milliseconds: 100
+
+    - repeat:
+        count: 5
+        sequence:
+          - service: remote.send_command
+            target:
+              entity_id: remote.broadlink
+            data:
+              device: Lynk Sign
+              command: lynk_led_on
+
+          - delay:
+              milliseconds: 200
+
+lynk_led_off:
+  alias: Lynk Sign Off
+  sequence:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.lynk_sign_state
+
+    - delay:
+        milliseconds: 100
+
+    - repeat:
+        count: 5
+        sequence:
+          - service: remote.send_command
+            target:
+              entity_id: remote.broadlink
+            data:
+              device: Lynk Sign
+              command: lynk_led_off
+
+          - delay:
+              milliseconds: 200
+
+  mode: single
+
+lynk_led_brighter:
+  alias: Lynk Sign Brighter
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Lynk Sign
+        command: lynk_led_brighter
+  mode: single
+
+lynk_led_dimmer:
+  alias: Lynk Sign Dimmer
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Lynk Sign
+        command: lynk_led_dimmer
+  mode: single
+
+lynk_led_100:
+  alias: Lynk Sign 100 Percent
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Lynk Sign
+        command: lynk_led_100
+  mode: single
+
+lynk_led_50:
+  alias: Lynk Sign 50 Percent
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Lynk Sign
+        command: lynk_led_50
+  mode: single
+
+livingroom_soundbar_power:
+  alias: Living Room Soundbar Power
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room Soundbar
+        command: livingroom_soundbar_power
+  mode: single
+
+livingroom_soundbar_volume_up:
+  alias: Living Room Soundbar Volume Up
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room Soundbar
+        command: livingroom_soundbar_volume_up
+  mode: single
+
+livingroom_soundbar_volume_down:
+  alias: Living Room Soundbar Volume Down
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room Soundbar
+        command: livingroom_soundbar_volume_down
+  mode: single
+
+livingroom_soundbar_mute:
+  alias: Living Room Soundbar Mute
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room Soundbar
+        command: livingroom_soundbar_mute
+  mode: single
+
+livingroom_tv_power:
+  alias: Living Room TV Power
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_power
+  mode: single
+
+livingroom_tv_channel_up:
+  alias: Living Room TV Channel Up
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_channel_up
+  mode: single
+
+livingroom_tv_channel_down:
+  alias: Living Room TV Channel Down
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_channel_down
+  mode: single
+
+livingroom_tv_volume_up:
+  alias: Living Room TV Volume Up
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_volume_up
+  mode: single
+
+livingroom_tv_volume_down:
+  alias: Living Room TV Volume Down
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_volume_down
+  mode: single
+
+livingroom_tv_mute:
+  alias: Living Room TV Mute
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_mute
+  mode: single
+
+livingroom_tv_input:
+  alias: Living Room TV Input
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_input
+  mode: single
+
+livingroom_tv_up:
+  alias: Living Room TV Up
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_up
+  mode: single
+
+livingroom_tv_down:
+  alias: Living Room TV Down
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_down
+  mode: single
+
+livingroom_tv_left:
+  alias: Living Room TV Left
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_left
+  mode: single
+
+livingroom_tv_right:
+  alias: Living Room TV Right
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_right
+  mode: single
+
+livingroom_tv_enter:
+  alias: Living Room TV Enter
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_enter
+  mode: single
+
+livingroom_tv_exit:
+  alias: Living Room TV Exit
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_exit
+  mode: single
+
+livingroom_tv_return:
+  alias: Living Room TV Return
+  sequence:
+    - service: remote.send_command
+      target:
+        entity_id: remote.broadlink
+      data:
+        device: Living Room TV
+        command: livingroom_tv_return
+  mode: single
+
+entertainment_system_on:
+  alias: Entertainment System On
+  icon: mdi:television-play
+  mode: single
+
+  sequence:
+    - variables:
+        tv_was_off: >
+          {{ is_state('input_boolean.livingroom_tv_state', 'off') }}
+        soundbar_was_off: >
+          {{ is_state('input_boolean.livingroom_soundbar_state', 'off') }}
+
+    # Turn TV on if helper says it is off.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ tv_was_off }}"
+          sequence:
+            - service: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.livingroom_tv_state
+
+            - delay:
+                milliseconds: 500
+
+            - service: script.livingroom_tv_power
+
+    # Turn soundbar on if helper says it is off.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ soundbar_was_off }}"
+          sequence:
+            - service: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.livingroom_soundbar_state
+
+            - delay:
+                milliseconds: 500
+
+            - service: script.livingroom_soundbar_power
+
+    # Only wait for TV boot if we actually powered the TV on.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ tv_was_off }}"
+          sequence:
+            - delay:
+                seconds: 1
+
+    # Optional: select input after TV has had time to wake up.
+    # Uncomment/adjust if you want this automatic.
+    # - service: script.livingroom_tv_input
+
+entertainment_system_off:
+  alias: Entertainment System Off
+  icon: mdi:television-off
+  mode: single
+
+  sequence:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_soundbar_state
+              state: "on"
+          sequence:
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_soundbar_state
+
+            - delay:
+                milliseconds: 500
+
+            - service: script.livingroom_soundbar_power
+
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_tv_state
+              state: "on"
+          sequence:
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_tv_state
+
+            - delay:
+                milliseconds: 500
+
+            - service: script.livingroom_tv_power

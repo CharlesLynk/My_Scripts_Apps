@@ -1,0 +1,15 @@
+plant_light_state:
+  name: Plant Light State
+  icon: mdi:sprout
+
+lynk_sign_state:
+  name: Lynk Sign State
+  icon: mdi:led-strip-variant
+
+livingroom_tv_state:
+  name: Living Room TV State
+  icon: mdi:television
+
+livingroom_soundbar_state:
+  name: Living Room Soundbar State
+  icon: mdi:soundbar
