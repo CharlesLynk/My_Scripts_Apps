@@ -59,6 +59,354 @@ views:
                     icon: mdi:power-socket-us
                     tap_action:
                       action: toggle
+                  - type: grid
+                    columns: 3
+                    square: true
+                    cards:
+                      - type: button
+                        name: Soundbar Remote
+                        icon: mdi:soundbar
+                        tap_action:
+                          action: fire-dom-event
+                          browser_mod:
+                            service: browser_mod.popup
+                            data:
+                              title: Living Room Soundbar Remote
+                              content:
+                                type: grid
+                                columns: 2
+                                square: true
+                                cards:
+                                  - type: button
+                                    name: Power
+                                    icon: mdi:power
+                                    tap_action:
+                                      action: perform-action
+                                      perform_action: script.livingroom_soundbar_power
+                                  - type: button
+                                    name: Mute
+                                    icon: mdi:volume-mute
+                                    tap_action:
+                                      action: perform-action
+                                      perform_action: script.livingroom_soundbar_mute
+                                  - type: button
+                                    name: Vol Down
+                                    icon: mdi:volume-minus
+                                    tap_action:
+                                      action: perform-action
+                                      perform_action: script.livingroom_soundbar_volume_down
+                                  - type: button
+                                    name: Vol Up
+                                    icon: mdi:volume-plus
+                                    tap_action:
+                                      action: perform-action
+                                      perform_action: script.livingroom_soundbar_volume_up
+                      - type: button
+                        name: TV Remote
+                        icon: mdi:remote-tv
+                        tap_action:
+                          action: fire-dom-event
+                          browser_mod:
+                            service: browser_mod.popup
+                            data:
+                              title: Living Room TV Remote
+                              content:
+                                type: vertical-stack
+                                cards:
+                                  - type: grid
+                                    columns: 4
+                                    square: true
+                                    cards:
+                                      - type: button
+                                        name: Power
+                                        icon: mdi:power
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_power
+                                      - type: button
+                                        name: HDMI1
+                                        icon: mdi:video-input-hdmi
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_hdmi_1
+                                      - type: button
+                                        name: HDMI2
+                                        icon: mdi:video-input-hdmi
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_hdmi_2
+                                      - type: button
+                                        name: Input
+                                        icon: mdi:video-input-component
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_input
+                                  - type: grid
+                                    columns: 3
+                                    square: false
+                                    cards:
+                                      - type: button
+                                        name: Return
+                                        icon: mdi:keyboard-return
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_return
+                                      - type: button
+                                        name: Up
+                                        icon: mdi:chevron-up
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_up
+                                      - type: button
+                                        name: Exit
+                                        icon: mdi:exit-to-app
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_exit
+                                      - type: button
+                                        name: Left
+                                        icon: mdi:chevron-left
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_left
+                                      - type: button
+                                        name: Enter
+                                        icon: mdi:check-circle-outline
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_enter
+                                      - type: button
+                                        name: Right
+                                        icon: mdi:chevron-right
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_right
+                                      - type: button
+                                        name: ""
+                                        show_name: false
+                                        show_icon: false
+                                        tap_action:
+                                          action: none
+                                      - type: button
+                                        name: Down
+                                        icon: mdi:chevron-down
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_down
+                                      - type: button
+                                        name: ""
+                                        show_name: false
+                                        show_icon: false
+                                        tap_action:
+                                          action: none
+                                      - type: button
+                                        name: Mute
+                                        icon: mdi:volume-mute
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_mute
+                                      - type: button
+                                        name: Vol Down
+                                        icon: mdi:volume-minus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_volume_down
+                                      - type: button
+                                        name: Vol Up
+                                        icon: mdi:volume-plus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_tv_volume_up
+                      - type: button
+                        name: Fire TV Remote
+                        icon: mdi:fire
+                        tap_action:
+                          action: fire-dom-event
+                          browser_mod:
+                            service: browser_mod.popup
+                            data:
+                              title: Living Room Fire TV Remote
+                              content:
+                                type: vertical-stack
+                                cards:
+                                  - type: grid
+                                    columns: 4
+                                    square: true
+                                    cards:
+                                      - type: button
+                                        name: Power
+                                        icon: mdi:power
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: POWER
+                                      - type: button
+                                        name: Home
+                                        icon: mdi:home
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: HOME
+                                      - type: button
+                                        name: Menu
+                                        icon: mdi:menu
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: MENU
+                                      - type: button
+                                        name: Settings
+                                        icon: mdi:cog
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: SETTINGS
+                                  - type: grid
+                                    columns: 3
+                                    square: false
+                                    cards:
+                                      - type: button
+                                        name: Return
+                                        icon: mdi:keyboard-return
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: BACK
+                                      - type: button
+                                        name: Up
+                                        icon: mdi:chevron-up
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: UP
+                                      - type: button
+                                        name: ""
+                                        show_name: false
+                                        show_icon: false
+                                        tap_action:
+                                          action: none
+                                      - type: button
+                                        name: Left
+                                        icon: mdi:chevron-left
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: LEFT
+                                      - type: button
+                                        name: Enter
+                                        icon: mdi:check-circle-outline
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: CENTER
+                                      - type: button
+                                        name: Right
+                                        icon: mdi:chevron-right
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: RIGHT
+                                      - type: button
+                                        name: ""
+                                        show_name: false
+                                        show_icon: false
+                                        tap_action:
+                                          action: none
+                                      - type: button
+                                        name: Down
+                                        icon: mdi:chevron-down
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: DOWN
+                                      - type: button
+                                        name: ""
+                                        show_name: false
+                                        show_icon: false
+                                        tap_action:
+                                          action: none
+                                  - type: grid
+                                    columns: 3
+                                    square: false
+                                    cards:
+                                      - type: button
+                                        name: Reverse
+                                        icon: mdi:rewind
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: REWIND
+                                      - type: button
+                                        name: Play/Pause
+                                        icon: mdi:play-pause
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: input keyevent KEYCODE_MEDIA_PLAY_PAUSE
+                                      - type: button
+                                        name: Forward
+                                        icon: mdi:fast-forward
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: remote.send_command
+                                          target:
+                                            entity_id: remote.living_room_fireTV
+                                          data:
+                                            command: FAST_FORWARD
+                                      - type: button
+                                        name: Mute
+                                        icon: mdi:volume-mute
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_mute
+                                      - type: button
+                                        name: Vol Down
+                                        icon: mdi:volume-minus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_volume_down_burst
+                                      - type: button
+                                        name: Vol Up
+                                        icon: mdi:volume-plus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_volume_up_burst
               - type: vertical-stack
                 cards:
                   - type: heading

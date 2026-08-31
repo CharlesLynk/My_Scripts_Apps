@@ -1,13 +1,6 @@
 plant_light_on:
   alias: Plant Light On
   sequence:
-    - service: input_boolean.turn_on
-      target:
-        entity_id: input_boolean.plant_light_state
-
-    - delay:
-        milliseconds: 100
-
     - repeat:
         count: 5
         sequence:
@@ -21,18 +14,15 @@ plant_light_on:
           - delay:
               milliseconds: 200
 
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.plant_light_state
+
   mode: single
 
 plant_light_off:
   alias: Plant Light Off
   sequence:
-    - service: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.plant_light_state
-
-    - delay:
-        milliseconds: 100
-
     - repeat:
         count: 5
         sequence:
@@ -46,18 +36,15 @@ plant_light_off:
           - delay:
               milliseconds: 200
 
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.plant_light_state
+
   mode: single
 
 lynk_led_on:
   alias: Lynk Sign On
   sequence:
-    - service: input_boolean.turn_on
-      target:
-        entity_id: input_boolean.lynk_sign_state
-
-    - delay:
-        milliseconds: 100
-
     - repeat:
         count: 5
         sequence:
@@ -71,16 +58,15 @@ lynk_led_on:
           - delay:
               milliseconds: 200
 
-lynk_led_off:
-  alias: Lynk Sign Off
-  sequence:
-    - service: input_boolean.turn_off
+    - service: input_boolean.turn_on
       target:
         entity_id: input_boolean.lynk_sign_state
 
-    - delay:
-        milliseconds: 100
+  mode: single
 
+lynk_led_off:
+  alias: Lynk Sign Off
+  sequence:
     - repeat:
         count: 5
         sequence:
@@ -93,6 +79,10 @@ lynk_led_off:
 
           - delay:
               milliseconds: 200
+
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.lynk_sign_state
 
   mode: single
 
@@ -162,6 +152,17 @@ livingroom_soundbar_volume_up:
         command: livingroom_soundbar_volume_up
   mode: single
 
+livingroom_soundbar_volume_up_burst:
+  alias: Living Room Soundbar Volume Up Burst
+  sequence:
+    - repeat:
+        count: 5
+        sequence:
+          - service: script.livingroom_soundbar_volume_up
+          - delay:
+              milliseconds: 300
+  mode: single
+
 livingroom_soundbar_volume_down:
   alias: Living Room Soundbar Volume Down
   sequence:
@@ -171,6 +172,17 @@ livingroom_soundbar_volume_down:
       data:
         device: Living Room Soundbar
         command: livingroom_soundbar_volume_down
+  mode: single
+
+livingroom_soundbar_volume_down_burst:
+  alias: Living Room Soundbar Volume Down Burst
+  sequence:
+    - repeat:
+        count: 5
+        sequence:
+          - service: script.livingroom_soundbar_volume_down
+          - delay:
+              milliseconds: 300
   mode: single
 
 livingroom_soundbar_mute:
@@ -193,6 +205,66 @@ livingroom_tv_power:
       data:
         device: Living Room TV
         command: livingroom_tv_power
+  mode: single
+
+livingroom_tv_set_on:
+  alias: Living Room TV Set On
+  sequence:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_tv_state
+              state: "off"
+          sequence:
+            - service: script.livingroom_tv_power
+            - service: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.livingroom_tv_state
+  mode: single
+
+livingroom_tv_set_off:
+  alias: Living Room TV Set Off
+  sequence:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_tv_state
+              state: "on"
+          sequence:
+            - service: script.livingroom_tv_power
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_tv_state
+  mode: single
+
+livingroom_soundbar_set_on:
+  alias: Living Room Soundbar Set On
+  sequence:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_soundbar_state
+              state: "off"
+          sequence:
+            - service: script.livingroom_soundbar_power
+            - service: input_boolean.turn_on
+              target:
+                entity_id: input_boolean.livingroom_soundbar_state
+  mode: single
+
+livingroom_soundbar_set_off:
+  alias: Living Room Soundbar Set Off
+  sequence:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_soundbar_state
+              state: "on"
+          sequence:
+            - service: script.livingroom_soundbar_power
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_soundbar_state
   mode: single
 
 livingroom_tv_channel_up:
@@ -228,6 +300,17 @@ livingroom_tv_volume_up:
         command: livingroom_tv_volume_up
   mode: single
 
+livingroom_tv_volume_up_burst:
+  alias: Living Room TV Volume Up Burst
+  sequence:
+    - repeat:
+        count: 5
+        sequence:
+          - service: script.livingroom_tv_volume_up
+          - delay:
+              milliseconds: 300
+  mode: single
+
 livingroom_tv_volume_down:
   alias: Living Room TV Volume Down
   sequence:
@@ -237,6 +320,17 @@ livingroom_tv_volume_down:
       data:
         device: Living Room TV
         command: livingroom_tv_volume_down
+  mode: single
+
+livingroom_tv_volume_down_burst:
+  alias: Living Room TV Volume Down Burst
+  sequence:
+    - repeat:
+        count: 5
+        sequence:
+          - service: script.livingroom_tv_volume_down
+          - delay:
+              milliseconds: 300
   mode: single
 
 livingroom_tv_mute:
@@ -338,56 +432,62 @@ livingroom_tv_return:
         command: livingroom_tv_return
   mode: single
 
+livingroom_tv_select_input:
+  alias: Living Room TV Select Input
+  mode: single
+  sequence:
+    - variables:
+        down_presses: "{{ down_presses | default(1) | int }}"
+
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_boolean.livingroom_tv_state
+              state: "off"
+          sequence:
+            - service: script.entertainment_system_on
+            - delay:
+                milliseconds: 5000
+
+    - service: script.livingroom_tv_input
+
+    - repeat:
+        count: "{{ down_presses }}"
+        sequence:
+          - delay:
+              milliseconds: 500
+          - service: script.livingroom_tv_down
+
+    - delay:
+        milliseconds: 500
+    - service: script.livingroom_tv_enter
+
+livingroom_tv_hdmi_1:
+  alias: Living Room TV HDMI 1
+  mode: single
+  sequence:
+    - service: script.livingroom_tv_select_input
+      data:
+        down_presses: 1
+
+livingroom_tv_hdmi_2:
+  alias: Living Room TV HDMI 2
+  mode: single
+  sequence:
+    - service: script.livingroom_tv_select_input
+      data:
+        down_presses: 2
+
 entertainment_system_on:
   alias: Entertainment System On
   icon: mdi:television-play
   mode: single
 
   sequence:
-    - variables:
-        tv_was_off: >
-          {{ is_state('input_boolean.livingroom_tv_state', 'off') }}
-        soundbar_was_off: >
-          {{ is_state('input_boolean.livingroom_soundbar_state', 'off') }}
-
-    # Turn TV on if helper says it is off.
-    - choose:
-        - conditions:
-            - condition: template
-              value_template: "{{ tv_was_off }}"
-          sequence:
-            - service: input_boolean.turn_on
-              target:
-                entity_id: input_boolean.livingroom_tv_state
-
-            - delay:
-                milliseconds: 500
-
-            - service: script.livingroom_tv_power
-
-    # Turn soundbar on if helper says it is off.
-    - choose:
-        - conditions:
-            - condition: template
-              value_template: "{{ soundbar_was_off }}"
-          sequence:
-            - service: input_boolean.turn_on
-              target:
-                entity_id: input_boolean.livingroom_soundbar_state
-
-            - delay:
-                milliseconds: 500
-
-            - service: script.livingroom_soundbar_power
-
-    # Only wait for TV boot if we actually powered the TV on.
-    - choose:
-        - conditions:
-            - condition: template
-              value_template: "{{ tv_was_off }}"
-          sequence:
-            - delay:
-                seconds: 1
+    - service: script.livingroom_tv_set_on
+    - delay:
+        milliseconds: 400
+    - service: script.livingroom_soundbar_set_on
 
     # Optional: select input after TV has had time to wake up.
     # Uncomment/adjust if you want this automatic.
@@ -399,32 +499,7 @@ entertainment_system_off:
   mode: single
 
   sequence:
-    - choose:
-        - conditions:
-            - condition: state
-              entity_id: input_boolean.livingroom_soundbar_state
-              state: "on"
-          sequence:
-            - service: input_boolean.turn_off
-              target:
-                entity_id: input_boolean.livingroom_soundbar_state
-
-            - delay:
-                milliseconds: 500
-
-            - service: script.livingroom_soundbar_power
-
-    - choose:
-        - conditions:
-            - condition: state
-              entity_id: input_boolean.livingroom_tv_state
-              state: "on"
-          sequence:
-            - service: input_boolean.turn_off
-              target:
-                entity_id: input_boolean.livingroom_tv_state
-
-            - delay:
-                milliseconds: 500
-
-            - service: script.livingroom_tv_power
+    - service: script.livingroom_soundbar_set_off
+    - delay:
+        milliseconds: 400
+    - service: script.livingroom_tv_set_off

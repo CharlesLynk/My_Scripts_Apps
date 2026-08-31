@@ -25,15 +25,9 @@
       state: >
         {{ is_state('input_boolean.livingroom_tv_state', 'on') }}
       turn_on:
-        - action: script.livingroom_tv_power
-        - action: input_boolean.turn_on
-          target:
-            entity_id: input_boolean.livingroom_tv_state
+        - action: script.livingroom_tv_set_on
       turn_off:
-        - action: script.livingroom_tv_power
-        - action: input_boolean.turn_off
-          target:
-            entity_id: input_boolean.livingroom_tv_state
+        - action: script.livingroom_tv_set_off
 
     - name: "Living Room Soundbar"
       unique_id: living_room_soundbar
@@ -41,15 +35,9 @@
       state: >
         {{ is_state('input_boolean.livingroom_soundbar_state', 'on') }}
       turn_on:
-        - action: script.livingroom_soundbar_power
-        - action: input_boolean.turn_on
-          target:
-            entity_id: input_boolean.livingroom_soundbar_state
+        - action: script.livingroom_soundbar_set_on
       turn_off:
-        - action: script.livingroom_soundbar_power
-        - action: input_boolean.turn_off
-          target:
-            entity_id: input_boolean.livingroom_soundbar_state
+        - action: script.livingroom_soundbar_set_off
 
     - name: "Entertainment System"
       unique_id: entertainment_system

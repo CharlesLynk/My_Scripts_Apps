@@ -1,0 +1,60 @@
+views:
+  - title: Broadlink Helpers
+    path: broadlink-helpers
+    type: sections
+    max_columns: 2
+    header:
+      card:
+        type: markdown
+        content: "# Broadlink Helper States"
+        text_only: true
+    badges: []
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading_style: title
+            heading: Sync Dashboard
+            icon: mdi:remote-tv
+          - type: markdown
+            content: >-
+              Toggle these helper states to match the real world when RF/IR commands miss.
+              Tap a tile to toggle, hold for details.
+      - type: grid
+        cards:
+          - type: heading
+            heading_style: title
+            heading: Device Helpers
+            icon: mdi:tune-variant
+          - type: tile
+            entity: input_boolean.plant_light_state
+            name: Plant Light
+            icon: mdi:sprout
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+          - type: tile
+            entity: input_boolean.lynk_sign_state
+            name: Lynk Sign
+            icon: mdi:led-strip-variant
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+          - type: tile
+            entity: input_boolean.livingroom_tv_state
+            name: Living Room TV
+            icon: mdi:television
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+          - type: tile
+            entity: input_boolean.livingroom_soundbar_state
+            name: Living Room Soundbar
+            icon: mdi:soundbar
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
