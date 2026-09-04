@@ -44,7 +44,7 @@ views:
                       action: more-info
                     hold_action:
                       action: navigate
-                      navigation_path: /lovelace/living-room
+                      navigation_path: /home/areas-living_room
                     features_position: bottom
                     features:
                       - type: light-brightness
@@ -411,12 +411,6 @@ views:
                                       input_number.livingroom_soundbar_mute_timer_seconds
                                     name: Mute Timer (seconds)
                                     icon: mdi:timer-sand
-                  - type: tile
-                    entity: switch.living_room_socket_socket_1
-                    name: Living Room Outlet
-                    icon: mdi:power-socket-us
-                    tap_action:
-                      action: toggle
               - type: vertical-stack
                 cards:
                   - type: heading
@@ -431,7 +425,7 @@ views:
                       action: more-info
                     hold_action:
                       action: navigate
-                      navigation_path: /lovelace/our-room
+                      navigation_path: /home/areas-chases_room
                     features_position: bottom
                     features:
                       - type: light-brightness
@@ -456,7 +450,7 @@ views:
                       action: more-info
                     hold_action:
                       action: navigate
-                      navigation_path: /lovelace/guest-room
+                      navigation_path: /home/areas-taylors_room
                     features_position: bottom
                     features:
                       - type: light-brightness
@@ -479,6 +473,18 @@ views:
                     icon: mdi:candle
                     tap_action:
                       action: toggle
+                  - type: tile
+                    entity: switch.kitchen_wax_melter_socket_1
+                    name: Room Control
+                    icon: mdi:home-map-marker
+                    hide_state: true
+                    vertical: false
+                    tap_action:
+                      action: navigate
+                      navigation_path: /home/areas-kitchen
+                    hold_action:
+                      action: navigate
+                      navigation_path: /home/areas-kitchen
               - type: vertical-stack
                 cards:
                   - type: heading
@@ -492,112 +498,19 @@ views:
                     tap_action:
                       action: more-info
                     hold_action:
+                      action: toggle
+                  - type: tile
+                    entity: light.garage_garage
+                    name: Room Control
+                    icon: mdi:home-map-marker
+                    hide_state: true
+                    vertical: false
+                    tap_action:
                       action: navigate
-                      navigation_path: /lovelace/garage
+                      navigation_path: /home/areas-garage
+                    hold_action:
+                      action: navigate
+                      navigation_path: /home/areas-garage
             grid_options:
               columns: 12
               rows: auto
-  - title: Living Room
-    path: living-room
-    icon: mdi:sofa
-    type: sections
-    max_columns: 1
-    sections:
-      - type: grid
-        cards:
-          - type: heading
-            heading: Living Room
-            heading_style: title
-            icon: mdi:sofa
-          - type: entities
-            title: All Devices
-            show_header_toggle: false
-            entities:
-              - entity: light.living_room_lights
-                name: Living Room Lights
-              - entity: switch.living_room_socket_socket_1
-                name: Living Room Outlet
-              - entity: remote.living_room_fireTV
-                name: Fire TV Remote
-          - type: button
-            name: Back to Home
-            icon: mdi:arrow-left
-            tap_action:
-              action: navigate
-              navigation_path: /lovelace/home
-  - title: Our Room
-    path: our-room
-    icon: mdi:bed-king
-    type: sections
-    max_columns: 1
-    sections:
-      - type: grid
-        cards:
-          - type: heading
-            heading: Our Room
-            heading_style: title
-            icon: mdi:bed-king
-          - type: entities
-            title: All Devices
-            show_header_toggle: false
-            entities:
-              - entity: light.our_room_our_room
-                name: Room Lights
-              - entity: switch.our_room_box_fan_socket_1
-                name: Box Fan
-          - type: button
-            name: Back to Home
-            icon: mdi:arrow-left
-            tap_action:
-              action: navigate
-              navigation_path: /lovelace/home
-  - title: Guest Room
-    path: guest-room
-    icon: mdi:bed
-    type: sections
-    max_columns: 1
-    sections:
-      - type: grid
-        cards:
-          - type: heading
-            heading: Guest Room
-            heading_style: title
-            icon: mdi:bed
-          - type: entities
-            title: All Devices
-            show_header_toggle: false
-            entities:
-              - entity: light.guest_room_guest_room
-                name: Room Lights
-              - entity: switch.guest_room_fan_socket_1
-                name: Fan
-          - type: button
-            name: Back to Home
-            icon: mdi:arrow-left
-            tap_action:
-              action: navigate
-              navigation_path: /lovelace/home
-  - title: Garage
-    path: garage
-    icon: mdi:garage
-    type: sections
-    max_columns: 1
-    sections:
-      - type: grid
-        cards:
-          - type: heading
-            heading: Garage
-            heading_style: title
-            icon: mdi:garage
-          - type: entities
-            title: All Devices
-            show_header_toggle: false
-            entities:
-              - entity: light.garage_garage
-                name: Garage Light
-          - type: button
-            name: Back to Home
-            icon: mdi:arrow-left
-            tap_action:
-              action: navigate
-              navigation_path: /lovelace/home
