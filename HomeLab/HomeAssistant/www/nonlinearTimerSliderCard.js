@@ -124,10 +124,35 @@ class NonlinearTimerSliderCard extends HTMLElement {
     const styleEl = document.createElement("style");
     styleEl.classList.add("nonlinear-timer-slider-hide-indicator");
     styleEl.textContent = `
+      /* Hide transient value indicator bubbles */
       .value-indicator-container,
       .md3-slider__value-indicator-container,
       .mdc-slider__value-indicator-container,
       [part='value-indicator'] {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+      }
+
+      /* Hide min/max helper/index text such as "0-84" */
+      .range,
+      .range-label,
+      .min,
+      .max,
+      .helper,
+      .helper-text,
+      .md3-slider__range,
+      .md3-slider__range-label,
+      .md3-slider__helper,
+      .md3-slider__helper-text,
+      .mdc-slider__range,
+      .mdc-slider__range-label,
+      .mdc-slider__helper,
+      .mdc-slider__helper-text,
+      [part='range'],
+      [part='range-label'],
+      [part='helper'],
+      [part='helper-text'] {
         display: none !important;
         opacity: 0 !important;
         visibility: hidden !important;
@@ -223,9 +248,9 @@ class NonlinearTimerSliderCard extends HTMLElement {
           width: 100%;
         }
 
-        ha-slider {
+        .native-slider {
           width: 100%;
-          --paper-slider-secondary-color: transparent;
+          accent-color: var(--primary-color);
         }
       </style>
       <ha-card>
@@ -237,27 +262,24 @@ class NonlinearTimerSliderCard extends HTMLElement {
           <span class="value">${liveSeconds}s</span>
         </div>
         <div class="slider-wrap">
-          <ha-slider
+          <input
+            class="native-slider"
+            type="range"
             min="0"
             max="${this._values.length - 1}"
             step="1"
             value="${liveIndex}"
-            ignore-bar-touch
-          ></ha-slider>
+          />
         </div>
       </ha-card>
     `;
 
     this._valueEl = this.shadowRoot.querySelector(".value");
-    this._sliderEl = this.shadowRoot.querySelector("ha-slider");
+    this._sliderEl = this.shadowRoot.querySelector(".native-slider");
 
     if (!this._sliderEl) {
       return;
     }
-
-    // Keep feedback in the top-right seconds counter only.
-    this._hideSliderIndicator();
-    requestAnimationFrame(() => this._hideSliderIndicator());
 
     const wrapper = this.shadowRoot.querySelector(".slider-wrap");
     if (wrapper) {
