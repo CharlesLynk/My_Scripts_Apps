@@ -1,0 +1,24 @@
+﻿{
+    "exported_at_utc":  "2026-09-04T05:31:41.1121854Z",
+    "base_url":  "http://homeassistant.local:8123",
+    "counts":  {
+                   "entities_registry":  415,
+                   "devices_registry":  51,
+                   "areas_registry":  8,
+                   "states":  222,
+                   "helpers":  0,
+                   "service_domains":  69
+               },
+    "files":  [
+                  "entity_registry.json",
+                  "device_registry.json",
+                  "area_registry.json",
+                  "states.json",
+                  "helpers.json",
+                  "services.json",
+                  "config.json",
+                  "entities.csv",
+                  "devices.csv",
+                  "areas.csv"
+              ]
+}

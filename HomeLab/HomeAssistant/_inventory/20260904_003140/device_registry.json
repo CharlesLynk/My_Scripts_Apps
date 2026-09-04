@@ -1,0 +1,2038 @@
+﻿[
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWFA8EMGHXCFNTGY93SC5FD"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8EMGHXCFNTGY93SC5FD":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367016.917363,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "eb74d172a99409d515199f0d55df4332",
+        "identifiers":  [
+                            [
+                                "sun",
+                                "01KWWFA8EMGHXCFNTGY93SC5FD"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  null,
+        "model":  null,
+        "model_id":  null,
+        "modified_at":  1783367016.917385,
+        "name_by_user":  null,
+        "name":  "Sun",
+        "primary_config_entry":  "01KWWFA8EMGHXCFNTGY93SC5FD",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://config/backup",
+        "config_entries":  [
+                               "01KWWFA8GK1CQD9HST50T9NN3Z"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GK1CQD9HST50T9NN3Z":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367016.998733,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "7335953665473c6a9524db7af730dbc7",
+        "identifiers":  [
+                            [
+                                "backup",
+                                "backup_manager"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant",
+        "model":  "Home Assistant Backup",
+        "model_id":  null,
+        "modified_at":  1785007754.435663,
+        "name_by_user":  null,
+        "name":  "Backup",
+        "primary_config_entry":  "01KWWFA8GK1CQD9HST50T9NN3Z",
+        "serial_number":  null,
+        "sw_version":  "2026.7.4",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367017.019491,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "b3d1e9c30d4ec5062963b302954b0a69",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "core"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant",
+        "model":  "Home Assistant Core",
+        "model_id":  null,
+        "modified_at":  1785007753.70397,
+        "name_by_user":  null,
+        "name":  "Home Assistant Core",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "2026.7.4",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367017.019562,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "53065534514d2d9ad6ed238c6cc42696",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "supervisor"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant",
+        "model":  "Home Assistant Supervisor",
+        "model_id":  null,
+        "modified_at":  1788052376.374025,
+        "name_by_user":  null,
+        "name":  "Home Assistant Supervisor",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "2026.08.0",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367017.019599,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "db7f1158a0ec59cac9d494a72e02b34a",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "host"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant",
+        "model":  "Home Assistant Host",
+        "model_id":  null,
+        "modified_at":  1783367017.019608,
+        "name_by_user":  null,
+        "name":  "Home Assistant Host",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367017.019632,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "5417bee56ce8603a04101563403e5ca3",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "OS"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant",
+        "model":  "Home Assistant Operating System",
+        "model_id":  null,
+        "modified_at":  1783367017.01964,
+        "name_by_user":  null,
+        "name":  "Home Assistant Operating System",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "18.1",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG02M3H2EA60MV5AFW4BTP"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG02M3H2EA60MV5AFW4BTP":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367731.855436,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "00d22d2cf696e5ff9f82f57cd43aa071",
+        "identifiers":  [
+                            [
+                                "google_translate",
+                                "01KWWG02M3H2EA60MV5AFW4BTP"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Google",
+        "model":  "Google Translate TTS",
+        "model_id":  null,
+        "modified_at":  1783367731.855459,
+        "name_by_user":  null,
+        "name":  "Google Translate en com",
+        "primary_config_entry":  "01KWWG02M3H2EA60MV5AFW4BTP",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "https://www.met.no/en",
+        "config_entries":  [
+                               "01KWWG02HYHZ7ENQSP764NR4E2"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG02HYHZ7ENQSP764NR4E2":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367732.639364,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "34f51137e54efe8359d39e3512a78478",
+        "identifiers":  [
+                            [
+                                "met",
+                                "01KWWG02HYHZ7ENQSP764NR4E2"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Met.no",
+        "model":  "Forecast",
+        "model_id":  null,
+        "modified_at":  1783367732.639386,
+        "name_by_user":  null,
+        "name":  "Forecast",
+        "primary_config_entry":  "01KWWG02HYHZ7ENQSP764NR4E2",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG14NJS3AYWR6R1B7RYVZ3"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG14NJS3AYWR6R1B7RYVZ3":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367766.707056,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "34f0b2218cfe5f87254d5c891a9bafbf",
+        "identifiers":  [
+                            [
+                                "mobile_app",
+                                "3b011124408ec62f"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "samsung",
+        "model":  "SM-S926U1",
+        "model_id":  null,
+        "modified_at":  1783367766.707107,
+        "name_by_user":  null,
+        "name":  "SM-S926U1",
+        "primary_config_entry":  "01KWWG14NJS3AYWR6R1B7RYVZ3",
+        "serial_number":  null,
+        "sw_version":  "36",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "office",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "ec:b5:fa:ae:08:e5"
+                            ],
+                            [
+                                "mac",
+                                "00:17:88:01:05:6e:08:e5"
+                            ]
+                        ],
+        "created_at":  1783367809.829035,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "ed9efad880e9426aa5b49d4bec2a9db7",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "f25b42e5-0546-417a-9f9b-4ca709ecc08b"
+                            ],
+                            [
+                                "hue",
+                                "ecb5fafffeae08e5"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue Bridge",
+        "model_id":  "BSB002",
+        "modified_at":  1783627307.542773,
+        "name_by_user":  null,
+        "name":  "Lynk Bridge",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.78.1978074000",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:4b:eb"
+                            ]
+                        ],
+        "created_at":  1783367809.829249,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "9f69e0fd23970dc07ea5f72e80ef0a48",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "3f318d0c-26ac-4b4b-a595-5f12a9d16bb0"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784279240.001194,
+        "name_by_user":  null,
+        "name":  "Overhead 3",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:46:1c"
+                            ]
+                        ],
+        "created_at":  1783367809.82935,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "1c3d7dd8e956d663462df566c0ee157c",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "60af58e7-ca85-481b-aad3-1a9605a71775"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784258661.138369,
+        "name_by_user":  null,
+        "name":  "Overhead 2",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:45:ea"
+                            ]
+                        ],
+        "created_at":  1783367809.829431,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "5d7fabf2e7e2eacfb48de6dda5f1fad6",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "83789e0f-357f-476e-8654-3045f33442c9"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784258658.102865,
+        "name_by_user":  null,
+        "name":  "Lamp",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "chases_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:41:4d"
+                            ]
+                        ],
+        "created_at":  1783367809.82958,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "b684a913fe2780a119cf6513f0ede936",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "936153ef-c5ca-4d2c-a9de-c15de985a466"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784279232.179523,
+        "name_by_user":  null,
+        "name":  "Bathroom Side Lamp",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "taylors_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:a2:25:07"
+                            ]
+                        ],
+        "created_at":  1783367809.829687,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "18158fcbe0207e6e71c7d0335866335c",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "9ba7166f-6026-4be1-8a2f-1835c40e8849"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA005",
+        "modified_at":  1784258666.512913,
+        "name_by_user":  null,
+        "name":  "Bedside Lamp 2",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "taylors_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:a1:e5:fa"
+                            ]
+                        ],
+        "created_at":  1783367809.829755,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "df32c136e1a5bf5172e78a66ee783a5e",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "a1590ac6-8d22-48ce-a55a-0f549b07f4e8"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA005",
+        "modified_at":  1784279245.972915,
+        "name_by_user":  null,
+        "name":  "Bedside Lamp 1",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:47:48"
+                            ]
+                        ],
+        "created_at":  1783367809.829812,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "10172a22f413fed72aef2c510a8204ca",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "e6a67589-970a-4d18-bf2e-192740f604fe"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784279248.162868,
+        "name_by_user":  null,
+        "name":  "Overhead 1",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "chases_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "00:17:88:01:0d:93:4c:ad"
+                            ]
+                        ],
+        "created_at":  1783367809.829868,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "deb3bf02b3e4a77119938a5365fd925a",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "fbe4a8e9-61c3-444b-9867-7ea0b3d73288"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Hue color lamp",
+        "model_id":  "LCA009",
+        "modified_at":  1784279235.225982,
+        "name_by_user":  null,
+        "name":  "Window Side Lamp",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  "1.163.1",
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "kitchen",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367809.829929,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "414138fbca2e234735b186e8b7529d7d",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "1025e8d5-7fd5-468c-aa2f-1cef06fe92b7"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Room",
+        "model_id":  null,
+        "modified_at":  1783367809.829942,
+        "name_by_user":  null,
+        "name":  "Kitchen",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367809.829987,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "6e486bd3e2226103517cfe527df65a57",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "45e7c942-71c1-4851-a1bb-be25f03e417b"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Room",
+        "model_id":  null,
+        "modified_at":  1783367809.829998,
+        "name_by_user":  null,
+        "name":  "Living room",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "taylors_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367809.830042,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "8b3d25f9ca5cdcabca4a7422bf943f6f",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "4bca533f-6251-4451-96a7-dc7cf68e283b"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Room",
+        "model_id":  null,
+        "modified_at":  1784258491.281904,
+        "name_by_user":  null,
+        "name":  "Guest Room",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "chases_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KWWG2EEVRVE51CGW99CTRD9F"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG2EEVRVE51CGW99CTRD9F":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367809.830093,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "8a26c1fd08a0be346d3cd4b11e08635b",
+        "identifiers":  [
+                            [
+                                "hue",
+                                "a719b0d1-fda4-4c14-a42a-2dc1eb8c3119"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Signify Netherlands B.V.",
+        "model":  "Room",
+        "model_id":  null,
+        "modified_at":  1784258530.151067,
+        "name_by_user":  null,
+        "name":  "Our Room",
+        "primary_config_entry":  "01KWWG2EEVRVE51CGW99CTRD9F",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  "ed9efad880e9426aa5b49d4bec2a9db7"
+    },
+    {
+        "area_id":  "office",
+        "configuration_url":  "http://192.168.1.4/net/net/airprint.html",
+        "config_entries":  [
+                               "01KWWG4G3X0Y9GBCB05Q32PKAP"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG4G3X0Y9GBCB05Q32PKAP":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367877.165687,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "4bf3f460451e986d91f2cf3b88c22f24",
+        "identifiers":  [
+                            [
+                                "ipp",
+                                "e3248000-80ce-11db-8000-3c2af4e4aee7"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Brother",
+        "model":  "DCP-L2550DW series",
+        "model_id":  null,
+        "modified_at":  1788398500.655381,
+        "name_by_user":  null,
+        "name":  "Brother DCP-L2550DW series",
+        "primary_config_entry":  "01KWWG4G3X0Y9GBCB05Q32PKAP",
+        "serial_number":  null,
+        "sw_version":  "[\u0027Q1911142035:6A1E\u0027, \u00271.08\u0027, \u00272.04\u0027]",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "office",
+        "configuration_url":  "http://192.168.1.4/",
+        "config_entries":  [
+                               "01KWWG5DNGY7ZF9ERSTQ4CQ4NV"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWG5DNGY7ZF9ERSTQ4CQ4NV":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "40:5b:d8:e9:ab:ee"
+                            ]
+                        ],
+        "created_at":  1783367907.367554,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "f90016f8a71db4830755054a923c2730",
+        "identifiers":  [
+                            [
+                                "brother",
+                                "U64966C0N936942"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Brother",
+        "model":  null,
+        "model_id":  "DCP-L2550DW",
+        "modified_at":  1788493758.287083,
+        "name_by_user":  null,
+        "name":  "DCP-L2550DW",
+        "primary_config_entry":  "01KWWG5DNGY7ZF9ERSTQ4CQ4NV",
+        "serial_number":  "U64966C0N936942",
+        "sw_version":  "Q1911142035",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "taylors_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.615857,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "eea0598a8961d95332f8b0c66bae0354",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb3a28fd0b71b7417akaog"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Socket",
+        "model_id":  "octeoqhuayzof69q",
+        "modified_at":  1788497305.262399,
+        "name_by_user":  null,
+        "name":  "Fan",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "kitchen",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.61645,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "530be374e54429c32073e0904a5be1af",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb88c3c86515ca6d82eitq"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Socket",
+        "model_id":  "octeoqhuayzof69q",
+        "modified_at":  1788497305.262579,
+        "name_by_user":  null,
+        "name":  "Wax Melter",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "chases_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.6168,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "b3c531abb401224d9d237a947744c377",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "ebe346ef661efba8f70scd"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Socket",
+        "model_id":  "octeoqhuayzof69q",
+        "modified_at":  1788497305.262716,
+        "name_by_user":  null,
+        "name":  "Box Fan",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.61704,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "bc94fd0be79f37461dbf35ee39c72c35",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "04460364cc50e3f57d12"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Bulb",
+        "model_id":  "hdnoe1sqimwad9f4",
+        "modified_at":  1788497305.260735,
+        "name_by_user":  null,
+        "name":  "Orange Lamp",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "kitchen",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.61722,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "f318b8ef41ff60228534f9923d02ee5c",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "0446036468c63aeca1a8"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Bulb",
+        "model_id":  "hdnoe1sqimwad9f4",
+        "modified_at":  1788497305.260989,
+        "name_by_user":  null,
+        "name":  "Glass Tree",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "garage",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.617459,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "3e18225da17676f3e2069afc7eb023c5",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "33871022f4cfa25720aa"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Bulb",
+        "model_id":  "hdnoe1sqimwad9f4",
+        "modified_at":  1788497305.261183,
+        "name_by_user":  null,
+        "name":  "Garage",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "unused",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.61763,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "66fe6b423d2f87c7c10c08eb65ca645d",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb69dbae15f36b3065wgym"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "",
+        "model_id":  "gcaoqvrpcqu1bqol",
+        "modified_at":  1788497305.261336,
+        "name_by_user":  null,
+        "name":  "Track Light 1",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "unused",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.617794,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "c48fc091b2cc9447cad3425160bd308d",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb9e43e17141e13996kvcw"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "",
+        "model_id":  "gcaoqvrpcqu1bqol",
+        "modified_at":  1788497305.26167,
+        "name_by_user":  null,
+        "name":  "Track Light 2",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "unused",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.617928,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "92033335485912ad005a20f36101b36a",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb79c44c708686a1f3bxb3"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "",
+        "model_id":  "gcaoqvrpcqu1bqol",
+        "modified_at":  1788497305.261814,
+        "name_by_user":  null,
+        "name":  "Track Light 3",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXQ03WQETF6EYRB9PAZNQBQ7"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXQ03WQETF6EYRB9PAZNQBQ7":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784257052.618064,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "834e335a66ea43478e609606b62d95b3",
+        "identifiers":  [
+                            [
+                                "tuya",
+                                "eb6af7d6351aa911e9gzc4"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Tuya",
+        "model":  "Smart Socket",
+        "model_id":  "octeoqhuayzof69q",
+        "modified_at":  1788497305.262843,
+        "name_by_user":  "Socket",
+        "name":  "Outlet",
+        "primary_config_entry":  "01KXQ03WQETF6EYRB9PAZNQBQ7",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "outside",
+        "configuration_url":  "http://192.168.1.102:80",
+        "config_entries":  [
+                               "01KXVYHFB56WXXWPTQK974Z40M"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXVYHFB56WXXWPTQK974Z40M":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "ec:71:db:35:3d:3e"
+                            ]
+                        ],
+        "created_at":  1784174385.177923,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  "DB_566128M5MP_P",
+        "id":  "ec2b9b60bdb5a2f35124bb8de7714a42",
+        "identifiers":  [
+                            [
+                                "reolink",
+                                "952700096CQC1LHA"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Reolink",
+        "model":  "Reolink Video Doorbell PoE",
+        "model_id":  "D340P",
+        "modified_at":  1788402679.375046,
+        "name_by_user":  null,
+        "name":  "Reolink",
+        "primary_config_entry":  "01KXVYHFB56WXXWPTQK974Z40M",
+        "serial_number":  "952700096CQC1LHA",
+        "sw_version":  "v3.0.0.6460_2605211898",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "kitchen",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXW48V4W044FQP3YBVZW8SE1"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW48V4W044FQP3YBVZW8SE1":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367018.207836,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "5d540f6bd783b424dcd6858d7308e064",
+        "identifiers":  [
+                            [
+                                "cast",
+                                "6ed4eb0980300452f68031e464e53bb0"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Google Inc.",
+        "model":  "Google Nest Hub",
+        "model_id":  null,
+        "modified_at":  1784429917.793714,
+        "name_by_user":  null,
+        "name":  "Kitchen Display",
+        "primary_config_entry":  "01KXW48V4W044FQP3YBVZW8SE1",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hassio/addon/core_ssh",
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784430259.179346,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "2deee15262d5da75ed709ad646268c02",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "core_ssh"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Official apps",
+        "model":  "Home Assistant App",
+        "model_id":  null,
+        "modified_at":  1788493705.867313,
+        "name_by_user":  null,
+        "name":  "Terminal \u0026 SSH",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "10.4.0",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "taylors_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXW48V4W044FQP3YBVZW8SE1"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW48V4W044FQP3YBVZW8SE1":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367018.249347,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "0bc4ed685af975c8b8cd2fc7de9d2756",
+        "identifiers":  [
+                            [
+                                "cast",
+                                "2086ea7188e6138078f91a03371eb371"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Google Inc.",
+        "model":  "Google Home Mini",
+        "model_id":  null,
+        "modified_at":  1784430260.371144,
+        "name_by_user":  null,
+        "name":  "Guest Room speaker",
+        "primary_config_entry":  "01KXW48V4W044FQP3YBVZW8SE1",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "chases_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXW48V4W044FQP3YBVZW8SE1"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW48V4W044FQP3YBVZW8SE1":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783367018.222009,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "8e58d6ea3132938c91aa531887d2f57e",
+        "identifiers":  [
+                            [
+                                "cast",
+                                "b33d8e4b618216047e1561eb77db8bbf"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Google Inc.",
+        "model":  "Google Nest Mini",
+        "model_id":  null,
+        "modified_at":  1784430260.384474,
+        "name_by_user":  null,
+        "name":  "Our Room speaker",
+        "primary_config_entry":  "01KXW48V4W044FQP3YBVZW8SE1",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "office",
+        "configuration_url":  "homeassistant://hacs",
+        "config_entries":  [
+                               "01KXW5KEE5RMJPEPFEXE1Q8S3C"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW5KEE5RMJPEPFEXE1Q8S3C":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784430576.304443,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "f9ac798e0d663f2381354f39b4786278",
+        "identifiers":  [
+                            [
+                                "hacs",
+                                "0717a0cd-745c-48fd-9b16-c8534c9704f9-bc944b0f-fd42-4a58-a072-ade38d1444cd"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "hacs.xyz",
+        "model":  "",
+        "model_id":  null,
+        "modified_at":  1784430583.061205,
+        "name_by_user":  null,
+        "name":  "HACS",
+        "primary_config_entry":  "01KXW5KEE5RMJPEPFEXE1Q8S3C",
+        "serial_number":  null,
+        "sw_version":  "2.0.5",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hacs/repository/970744650",
+        "config_entries":  [
+                               "01KXW5KEE5RMJPEPFEXE1Q8S3C"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW5KEE5RMJPEPFEXE1Q8S3C":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1784430889.010944,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "5d5cd4253dbadabb212b5e32c9bc3b61",
+        "identifiers":  [
+                            [
+                                "hacs",
+                                "970744650"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "nutteloost",
+        "model":  "plugin",
+        "model_id":  null,
+        "modified_at":  1784430889.011003,
+        "name_by_user":  null,
+        "name":  "Simple Swipe Card",
+        "primary_config_entry":  "01KXW5KEE5RMJPEPFEXE1Q8S3C",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hassio/addon/core_configurator",
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1785009908.664324,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "e09858f9a517cc70af72f430007e2a1b",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "core_configurator"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Official apps",
+        "model":  "Home Assistant App",
+        "model_id":  null,
+        "modified_at":  1788493705.867417,
+        "name_by_user":  null,
+        "name":  "File editor",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "6.1.0",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KYH4KJFPTWGNHM7PE0X5G28D"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KYH4KJFPTWGNHM7PE0X5G28D":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "34:8e:89:b1:64:d1"
+                            ]
+                        ],
+        "created_at":  1785004115.591629,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "6bee62327f9ec94524f02c1d873424b4",
+        "identifiers":  [
+                            [
+                                "broadlink",
+                                "348e89b164d1"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Broadlink",
+        "model":  "RM4 pro",
+        "model_id":  null,
+        "modified_at":  1785134172.704973,
+        "name_by_user":  null,
+        "name":  "Broadlink",
+        "primary_config_entry":  "01KYH4KJFPTWGNHM7PE0X5G28D",
+        "serial_number":  null,
+        "sw_version":  "62093",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01KXW48V4W044FQP3YBVZW8SE1"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW48V4W044FQP3YBVZW8SE1":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1783368457.512561,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "d62f625ac5a60d7b1fec4fed958a03ec",
+        "identifiers":  [
+                            [
+                                "cast",
+                                "77fba76939e1c5d6f7fce809a639a5e3"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Hisense",
+        "model":  "HiSmartTV A4",
+        "model_id":  null,
+        "modified_at":  1786327499.816091,
+        "name_by_user":  null,
+        "name":  "Android TV",
+        "primary_config_entry":  "01KXW48V4W044FQP3YBVZW8SE1",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01M188ZNGR61Y57M7XT06H9BJ6"
+                           ],
+        "config_entries_subentries":  {
+                                          "01M188ZNGR61Y57M7XT06H9BJ6":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788049515.027831,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "8a1b1e60d3c0ec2a20e44ff6e6341640",
+        "identifiers":  [
+                            [
+                                "mobile_app",
+                                "62ED6C1E-AED8-40BC-A099-DA4EFB866B46"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Apple",
+        "model":  "iPhone18,1",
+        "model_id":  null,
+        "modified_at":  1788133142.074796,
+        "name_by_user":  null,
+        "name":  "Taylor’s iPhone",
+        "primary_config_entry":  "01M188ZNGR61Y57M7XT06H9BJ6",
+        "serial_number":  null,
+        "sw_version":  "26.6.1",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hassio/addon/a0d7b954_tailscale",
+        "config_entries":  [
+                               "01KWWFA8GDAA4XBDDM54ACPG9K"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KWWFA8GDAA4XBDDM54ACPG9K":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788052376.377034,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "260a28b4259c98cec0fbd882f38d1aca",
+        "identifiers":  [
+                            [
+                                "hassio",
+                                "a0d7b954_tailscale"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Home Assistant Community Apps",
+        "model":  "Home Assistant App",
+        "model_id":  null,
+        "modified_at":  1788052376.377051,
+        "name_by_user":  null,
+        "name":  "Tailscale",
+        "primary_config_entry":  "01KWWFA8GDAA4XBDDM54ACPG9K",
+        "serial_number":  null,
+        "sw_version":  "0.29.0",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hacs/repository/194140521",
+        "config_entries":  [
+                               "01KXW5KEE5RMJPEPFEXE1Q8S3C"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW5KEE5RMJPEPFEXE1Q8S3C":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788066864.634443,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "403daeb1a6bc23989c0a2ea76a6473f8",
+        "identifiers":  [
+                            [
+                                "hacs",
+                                "194140521"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "thomasloven",
+        "model":  "integration",
+        "model_id":  null,
+        "modified_at":  1788066864.63448,
+        "name_by_user":  null,
+        "name":  "browser_mod",
+        "primary_config_entry":  "01KXW5KEE5RMJPEPFEXE1Q8S3C",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01M1A4AP4MPXPJE63ZD0HR5B8A"
+                           ],
+        "config_entries_subentries":  {
+                                          "01M1A4AP4MPXPJE63ZD0HR5B8A":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788120576.932749,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "ca0c26795071430cf0e6f4578734958a",
+        "identifiers":  [
+                            [
+                                "browser_mod",
+                                "browser_mod_chaseAndroid"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Browser Mod",
+        "model":  null,
+        "model_id":  null,
+        "modified_at":  1788120576.932768,
+        "name_by_user":  null,
+        "name":  "browser_mod_chaseAndroid",
+        "primary_config_entry":  "01M1A4AP4MPXPJE63ZD0HR5B8A",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01M1A4AP4MPXPJE63ZD0HR5B8A"
+                           ],
+        "config_entries_subentries":  {
+                                          "01M1A4AP4MPXPJE63ZD0HR5B8A":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788120806.620034,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "1e518a1f07b098e23eef7cdd42f7d3bf",
+        "identifiers":  [
+                            [
+                                "browser_mod",
+                                "browser_mod_HA_OS"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Browser Mod",
+        "model":  null,
+        "model_id":  null,
+        "modified_at":  1788120806.620074,
+        "name_by_user":  null,
+        "name":  "browser_mod_HA_OS",
+        "primary_config_entry":  "01M1A4AP4MPXPJE63ZD0HR5B8A",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    },
+    {
+        "area_id":  "living_room",
+        "configuration_url":  null,
+        "config_entries":  [
+                               "01M1A70PH7SZWYXJR4KVTEYMEF"
+                           ],
+        "config_entries_subentries":  {
+                                          "01M1A70PH7SZWYXJR4KVTEYMEF":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+                            [
+                                "mac",
+                                "28:73:f6:e3:10:a3"
+                            ]
+                        ],
+        "created_at":  1788123044.69183,
+        "disabled_by":  null,
+        "entry_type":  null,
+        "hw_version":  null,
+        "id":  "1b729a68e9bf6cfdd3065700bf83eefe",
+        "identifiers":  [
+                            [
+                                "androidtv",
+                                "28:73:f6:e3:10:a3"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "Amazon",
+        "model":  "AFTKA (Fire TV)",
+        "model_id":  null,
+        "modified_at":  1788123061.02032,
+        "name_by_user":  "FireTV",
+        "name":  "Fire TV 192.168.1.101",
+        "primary_config_entry":  "01M1A70PH7SZWYXJR4KVTEYMEF",
+        "serial_number":  null,
+        "sw_version":  "9",
+        "via_device_id":  null
+    },
+    {
+        "area_id":  null,
+        "configuration_url":  "homeassistant://hacs/repository/144899700",
+        "config_entries":  [
+                               "01KXW5KEE5RMJPEPFEXE1Q8S3C"
+                           ],
+        "config_entries_subentries":  {
+                                          "01KXW5KEE5RMJPEPFEXE1Q8S3C":  [
+                                                                             null
+                                                                         ]
+                                      },
+        "connections":  [
+
+                        ],
+        "created_at":  1788494148.386755,
+        "disabled_by":  null,
+        "entry_type":  "service",
+        "hw_version":  null,
+        "id":  "f31b3505ee2bf333c85d3a08156b9bbf",
+        "identifiers":  [
+                            [
+                                "hacs",
+                                "144899700"
+                            ]
+                        ],
+        "labels":  [
+
+                   ],
+        "manufacturer":  "thomasloven",
+        "model":  "plugin",
+        "model_id":  null,
+        "modified_at":  1788494148.386817,
+        "name_by_user":  null,
+        "name":  "slider-entity-row",
+        "primary_config_entry":  "01KXW5KEE5RMJPEPFEXE1Q8S3C",
+        "serial_number":  null,
+        "sw_version":  null,
+        "via_device_id":  null
+    }
+]

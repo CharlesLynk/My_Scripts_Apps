@@ -1,0 +1,8 @@
+livingroom_soundbar_mute_timer_seconds:
+  name: Living Room Soundbar Mute Timer Seconds
+  icon: mdi:timer-outline
+  min: 0
+  max: 240
+  step: 1
+  mode: slider
+  unit_of_measurement: s

@@ -3,18 +3,13 @@ views:
     path: home
     type: sections
     max_columns: 2
-    header:
-      card:
-        type: markdown
-        content: "# Hello {{ user }}"
-        text_only: true
-    badges: []
+    dense_section_placement: true
     sections:
       - type: grid
         cards:
-          - type: heading
-            heading_style: title
-            heading: Home Overview
+          - type: markdown
+            content: "## Hello {{ user }}"
+            text_only: true
           - show_state: false
             show_name: false
             camera_view: auto
@@ -24,7 +19,7 @@ views:
             camera_image: camera.outside_reolink_fluent
             grid_options:
               columns: 12
-              rows: auto
+              rows: 4
       - type: grid
         cards:
           - type: heading
@@ -48,17 +43,12 @@ views:
                     tap_action:
                       action: more-info
                     hold_action:
-                      action: toggle
+                      action: navigate
+                      navigation_path: /lovelace/living-room
                     features_position: bottom
                     features:
                       - type: light-brightness
                       - type: light-color-temp
-                  - type: tile
-                    entity: switch.living_room_socket_socket_1
-                    name: Living Room Outlet
-                    icon: mdi:power-socket-us
-                    tap_action:
-                      action: toggle
                   - type: grid
                     columns: 3
                     square: true
@@ -73,34 +63,41 @@ views:
                             data:
                               title: Living Room Soundbar Remote
                               content:
-                                type: grid
-                                columns: 2
-                                square: true
+                                type: vertical-stack
                                 cards:
-                                  - type: button
-                                    name: Power
-                                    icon: mdi:power
-                                    tap_action:
-                                      action: perform-action
-                                      perform_action: script.livingroom_soundbar_power
-                                  - type: button
-                                    name: Mute
-                                    icon: mdi:volume-mute
-                                    tap_action:
-                                      action: perform-action
-                                      perform_action: script.livingroom_soundbar_mute
-                                  - type: button
-                                    name: Vol Down
-                                    icon: mdi:volume-minus
-                                    tap_action:
-                                      action: perform-action
-                                      perform_action: script.livingroom_soundbar_volume_down
-                                  - type: button
-                                    name: Vol Up
-                                    icon: mdi:volume-plus
-                                    tap_action:
-                                      action: perform-action
-                                      perform_action: script.livingroom_soundbar_volume_up
+                                  - type: grid
+                                    columns: 2
+                                    square: true
+                                    cards:
+                                      - type: button
+                                        name: Power
+                                        icon: mdi:power
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_power
+                                      - type: button
+                                        name: Mute
+                                        icon: mdi:volume-mute
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_mute
+                                      - type: button
+                                        name: Vol Down
+                                        icon: mdi:volume-minus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_volume_down
+                                      - type: button
+                                        name: Vol Up
+                                        icon: mdi:volume-plus
+                                        tap_action:
+                                          action: perform-action
+                                          perform_action: script.livingroom_soundbar_volume_up
+                                  - type: custom:nonlinear-timer-slider-card
+                                    entity: >-
+                                      input_number.livingroom_soundbar_mute_timer_seconds
+                                    name: Mute Timer (seconds)
+                                    icon: mdi:timer-sand
                       - type: button
                         name: TV Remote
                         icon: mdi:remote-tv
@@ -400,13 +397,26 @@ views:
                                         icon: mdi:volume-minus
                                         tap_action:
                                           action: perform-action
-                                          perform_action: script.livingroom_soundbar_volume_down_burst
+                                          perform_action: >-
+                                            script.livingroom_soundbar_volume_down_burst
                                       - type: button
                                         name: Vol Up
                                         icon: mdi:volume-plus
                                         tap_action:
                                           action: perform-action
-                                          perform_action: script.livingroom_soundbar_volume_up_burst
+                                          perform_action: >-
+                                            script.livingroom_soundbar_volume_up_burst
+                                  - type: custom:nonlinear-timer-slider-card
+                                    entity: >-
+                                      input_number.livingroom_soundbar_mute_timer_seconds
+                                    name: Mute Timer (seconds)
+                                    icon: mdi:timer-sand
+                  - type: tile
+                    entity: switch.living_room_socket_socket_1
+                    name: Living Room Outlet
+                    icon: mdi:power-socket-us
+                    tap_action:
+                      action: toggle
               - type: vertical-stack
                 cards:
                   - type: heading
@@ -420,7 +430,8 @@ views:
                     tap_action:
                       action: more-info
                     hold_action:
-                      action: toggle
+                      action: navigate
+                      navigation_path: /lovelace/our-room
                     features_position: bottom
                     features:
                       - type: light-brightness
@@ -444,7 +455,8 @@ views:
                     tap_action:
                       action: more-info
                     hold_action:
-                      action: toggle
+                      action: navigate
+                      navigation_path: /lovelace/guest-room
                     features_position: bottom
                     features:
                       - type: light-brightness
@@ -480,7 +492,112 @@ views:
                     tap_action:
                       action: more-info
                     hold_action:
-                      action: toggle
+                      action: navigate
+                      navigation_path: /lovelace/garage
             grid_options:
               columns: 12
               rows: auto
+  - title: Living Room
+    path: living-room
+    icon: mdi:sofa
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Living Room
+            heading_style: title
+            icon: mdi:sofa
+          - type: entities
+            title: All Devices
+            show_header_toggle: false
+            entities:
+              - entity: light.living_room_lights
+                name: Living Room Lights
+              - entity: switch.living_room_socket_socket_1
+                name: Living Room Outlet
+              - entity: remote.living_room_fireTV
+                name: Fire TV Remote
+          - type: button
+            name: Back to Home
+            icon: mdi:arrow-left
+            tap_action:
+              action: navigate
+              navigation_path: /lovelace/home
+  - title: Our Room
+    path: our-room
+    icon: mdi:bed-king
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Our Room
+            heading_style: title
+            icon: mdi:bed-king
+          - type: entities
+            title: All Devices
+            show_header_toggle: false
+            entities:
+              - entity: light.our_room_our_room
+                name: Room Lights
+              - entity: switch.our_room_box_fan_socket_1
+                name: Box Fan
+          - type: button
+            name: Back to Home
+            icon: mdi:arrow-left
+            tap_action:
+              action: navigate
+              navigation_path: /lovelace/home
+  - title: Guest Room
+    path: guest-room
+    icon: mdi:bed
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Guest Room
+            heading_style: title
+            icon: mdi:bed
+          - type: entities
+            title: All Devices
+            show_header_toggle: false
+            entities:
+              - entity: light.guest_room_guest_room
+                name: Room Lights
+              - entity: switch.guest_room_fan_socket_1
+                name: Fan
+          - type: button
+            name: Back to Home
+            icon: mdi:arrow-left
+            tap_action:
+              action: navigate
+              navigation_path: /lovelace/home
+  - title: Garage
+    path: garage
+    icon: mdi:garage
+    type: sections
+    max_columns: 1
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Garage
+            heading_style: title
+            icon: mdi:garage
+          - type: entities
+            title: All Devices
+            show_header_toggle: false
+            entities:
+              - entity: light.garage_garage
+                name: Garage Light
+          - type: button
+            name: Back to Home
+            icon: mdi:arrow-left
+            tap_action:
+              action: navigate
+              navigation_path: /lovelace/home

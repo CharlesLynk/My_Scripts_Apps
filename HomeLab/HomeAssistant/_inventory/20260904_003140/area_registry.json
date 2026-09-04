@@ -1,0 +1,138 @@
+﻿[
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "living_room",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:sofa",
+        "labels":  [
+
+                   ],
+        "name":  "Living Room",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1783367675.087575,
+        "modified_at":  1783367675.08758
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "kitchen",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:noodles",
+        "labels":  [
+
+                   ],
+        "name":  "Kitchen",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1783367675.087621,
+        "modified_at":  1784257752.972409
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "chases_room",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:home-heart",
+        "labels":  [
+
+                   ],
+        "name":  "Our Room",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1783367809.829532,
+        "modified_at":  1784257762.89702
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "taylors_room",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:account-multiple-plus-outline",
+        "labels":  [
+
+                   ],
+        "name":  "Guest Room",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1783367809.829666,
+        "modified_at":  1784257404.402952
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "office",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:desktop-tower-monitor",
+        "labels":  [
+
+                   ],
+        "name":  "Office",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1783367836.62003,
+        "modified_at":  1784257428.571876
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "outside",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:cactus",
+        "labels":  [
+
+                   ],
+        "name":  "Outside",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1784174431.105093,
+        "modified_at":  1784257446.385034
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "garage",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:car-electric-outline",
+        "labels":  [
+
+                   ],
+        "name":  "Garage",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1784257086.369412,
+        "modified_at":  1784257507.170127
+    },
+    {
+        "aliases":  [
+
+                    ],
+        "area_id":  "unused",
+        "floor_id":  null,
+        "humidity_entity_id":  null,
+        "icon":  "mdi:sleep",
+        "labels":  [
+
+                   ],
+        "name":  "Unused",
+        "picture":  null,
+        "temperature_entity_id":  null,
+        "created_at":  1784257110.607928,
+        "modified_at":  1784257549.058179
+    }
+]

@@ -13,3 +13,7 @@ livingroom_tv_state:
 livingroom_soundbar_state:
   name: Living Room Soundbar State
   icon: mdi:soundbar
+
+livingroom_soundbar_mute_timer_active:
+  name: Living Room Soundbar Mute Timer Active
+  icon: mdi:timer-sand

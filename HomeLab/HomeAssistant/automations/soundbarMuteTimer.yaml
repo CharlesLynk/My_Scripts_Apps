@@ -1,0 +1,97 @@
+- alias: Living Room Soundbar Mute Timer Setpoint Changed
+  id: livingroom_soundbar_mute_timer_setpoint_changed
+  mode: restart
+  trigger:
+    - platform: state
+      entity_id: input_number.livingroom_soundbar_mute_timer_seconds
+  variables:
+    new_seconds: "{{ states('input_number.livingroom_soundbar_mute_timer_seconds') | int(0) }}"
+    timer_is_active: "{{ is_state('input_boolean.livingroom_soundbar_mute_timer_active', 'on') }}"
+    user_changed: "{{ trigger.to_state.context.user_id is not none }}"
+    snapped_seconds: >-
+      {% if new_seconds <= 60 %}
+        {{ new_seconds }}
+      {% elif new_seconds <= 120 %}
+        {{ 60 + (((new_seconds - 60) // 5) * 5) }}
+      {% else %}
+        {{ [120 + (((new_seconds - 120) // 10) * 10), 240] | min }}
+      {% endif %}
+    applied_seconds: "{{ snapped_seconds | int if user_changed else new_seconds }}"
+  action:
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ user_changed and (new_seconds != (snapped_seconds | int)) }}"
+          sequence:
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.livingroom_soundbar_mute_timer_seconds
+              data:
+                value: "{{ snapped_seconds }}"
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ applied_seconds | int > 0 }}"
+          sequence:
+            - service: input_datetime.set_datetime
+              target:
+                entity_id: input_datetime.livingroom_soundbar_mute_timer_end
+              data:
+                datetime: "{{ (now() + timedelta(seconds=(applied_seconds | int))).strftime('%Y-%m-%d %H:%M:%S') }}"
+            - choose:
+                - conditions:
+                    - condition: state
+                      entity_id: input_boolean.livingroom_soundbar_mute_timer_active
+                      state: "off"
+                  sequence:
+                    - service: input_boolean.turn_on
+                      target:
+                        entity_id: input_boolean.livingroom_soundbar_mute_timer_active
+                    - service: script.livingroom_soundbar_mute
+        - conditions:
+            - condition: template
+              value_template: "{{ (applied_seconds | int) == 0 and timer_is_active }}"
+          sequence:
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_soundbar_mute_timer_active
+            - service: script.livingroom_soundbar_mute
+
+- alias: Living Room Soundbar Mute Timer Tick
+  id: livingroom_soundbar_mute_timer_tick
+  mode: single
+  trigger:
+    - platform: time_pattern
+      seconds: "/1"
+  condition:
+    - condition: state
+      entity_id: input_boolean.livingroom_soundbar_mute_timer_active
+      state: "on"
+  variables:
+    end_ts: "{{ as_timestamp(states('input_datetime.livingroom_soundbar_mute_timer_end')) | int(0) }}"
+    now_ts: "{{ as_timestamp(now()) | int(0) }}"
+    remaining_seconds: "{{ [end_ts - now_ts, 0] | max }}"
+  action:
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ remaining_seconds > 0 }}"
+          sequence:
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.livingroom_soundbar_mute_timer_seconds
+              data:
+                value: "{{ remaining_seconds }}"
+        - conditions:
+            - condition: template
+              value_template: "{{ remaining_seconds == 0 }}"
+          sequence:
+            - service: input_boolean.turn_off
+              target:
+                entity_id: input_boolean.livingroom_soundbar_mute_timer_active
+            - service: input_number.set_value
+              target:
+                entity_id: input_number.livingroom_soundbar_mute_timer_seconds
+              data:
+                value: 0
+            - service: script.livingroom_soundbar_mute

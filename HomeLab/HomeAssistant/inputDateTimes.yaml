@@ -1,0 +1,4 @@
+livingroom_soundbar_mute_timer_end:
+  name: Living Room Soundbar Mute Timer End
+  has_date: true
+  has_time: true

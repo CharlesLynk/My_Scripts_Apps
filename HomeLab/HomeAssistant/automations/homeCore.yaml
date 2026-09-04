@@ -1,0 +1,44 @@
+- id: "1784437629467"
+  alias: Doorbell
+  description: ""
+  trigger:
+    - platform: state
+      entity_id:
+        - binary_sensor.outside_reolink_visitor
+      from: "off"
+      to: "on"
+  condition: []
+  action:
+    - service: tts.speak
+      target:
+        entity_id: tts.google_translate_en_com
+      data:
+        media_player_entity_id: media_player.google_speakers
+        message: Someone is at the front door.
+  mode: single
+
+- id: "1785244340460"
+  alias: Plant Light On
+  description: ""
+  trigger:
+    - platform: time
+      at: "08:00:00"
+  condition: []
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.plant_light
+  mode: single
+
+- id: "1785244420698"
+  alias: Plant Light Off
+  description: ""
+  trigger:
+    - platform: time
+      at: "19:00:00"
+  condition: []
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.plant_light
+  mode: single
