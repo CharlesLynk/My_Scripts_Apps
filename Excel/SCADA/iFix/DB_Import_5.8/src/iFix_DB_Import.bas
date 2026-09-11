@@ -1,7 +1,7 @@
 Attribute VB_Name = "iFix_DB_Import"
 
 '============== EXCEL SOURCE TABLE INFO ==============
-' Table Name: "MasterV3_DB"
+' Table Name: "MasterV4_DB"
 ' Table Columns: ["iFIX BLOCK TYPE","DATA TYPE","ADDRESS","OLD TAGNAME (IF APPLICABLE)","TAGNAME","OLD DESCRIPTION (IF APPLICABLE)","DESCRIPTION","Sensor Lo Limit (Eng Units)","Sensor HI Limit (Eng Units)","UNITS","On Code","Off Code"]
 ' Notes:
 '   - For any field in a row that contains a literal "-", the field should be treated as blank/empty and should be exported as "" in the final output file.
@@ -177,11 +177,16 @@ Option Explicit
 
 '================== MODULE CONFIG ==================
 
-Private Const CFG_SOURCE_TABLE_NAME As String = "MasterV3_DB"
+Private Const CFG_SOURCE_TABLE_NAME As String = "MasterV4_DB"
 Private Const CFG_DESTINATION_SHEET_NAME As String = "iFix v5.8 Export"
 Private Const CFG_DEFAULT_FILE_STEM As String = "ChaseLynk_ExcelCompiled"
 Private Const CFG_PULL_JCC1_ATTRIBUTES As Boolean = True
 Private Const CFG_DEBUG_WRITE_OUTPUT_TO_COLUMNS As Boolean = True
+
+' Pipe-delimited A_* field keys used to force precedence behavior.
+' Example: "A_AREA1|A_DBAND|A_TS1"
+Private Const CFG_FORCE_TEMPLATE_FIELDS As String = ""
+Private Const CFG_FORCE_JCC1_FIELDS As String = ""
 
 Private Const BLOCK_DA As String = "DA"
 Private Const BLOCK_DR As String = "DR"
@@ -198,18 +203,46 @@ Private Const FIELD_SOURCE_OLD_TAGNAME_ALT2 As String = "OLD TAGNAME"
 Private Const FIELD_SOURCE_TAGNAME As String = "TAGNAME"
 
 Private Const FIELD_A_TAG As String = "A_TAG"
+Private Const FIELD_A_DESC As String = "A_DESC"
+Private Const FIELD_A_IODV As String = "A_IODV"
+Private Const FIELD_A_IOHT As String = "A_IOHT"
+Private Const FIELD_A_NUMS As String = "A_NUMS"
+Private Const FIELD_A_IOAD As String = "A_IOAD"
 Private Const FIELD_A_IENAB As String = "A_IENAB"
 Private Const FIELD_A_ELO As String = "A_ELO"
 Private Const FIELD_A_EHI As String = "A_EHI"
+Private Const FIELD_A_DBAND As String = "A_DBAND"
+Private Const FIELD_A_EGUDESC As String = "A_EGUDESC"
+Private Const FIELD_A_ASUSP As String = "A_ASUSP"
+Private Const FIELD_A_TRTAG As String = "A_TRTAG"
 Private Const FIELD_A_LOLO As String = "A_LOLO"
 Private Const FIELD_A_LO As String = "A_LO"
 Private Const FIELD_A_HI As String = "A_HI"
 Private Const FIELD_A_HIHI As String = "A_HIHI"
+Private Const FIELD_A_TS1 As String = "A_TS1"
+Private Const FIELD_A_TS2 As String = "A_TS2"
+Private Const FIELD_A_OPENDESC As String = "A_OPENDESC"
+Private Const FIELD_A_CLOSEDESC As String = "A_CLOSEDESC"
+Private Const FIELD_A_AREA1 As String = "A_AREA1"
+Private Const FIELD_A_PDR_DEADBAND As String = "A_PDR_DEADBAND"
+Private Const FIELD_A_PDR_ARRAYLENGTH As String = "A_PDR_ARRAYLENGTH"
+Private Const FIELD_A_HIST_DEADBAND As String = "A_HIST_DEADBAND"
+Private Const FIELD_A_HIST_COMPTIME As String = "A_HIST_COMPTIME"
+Private Const FIELD_A_SCALE_RAWLOW As String = "A_SCALE_RAWLOW"
+Private Const FIELD_A_SCALE_RAWHIGH As String = "A_SCALE_RAWHIGH"
+Private Const FIELD_A_SCALE_LOW As String = "A_SCALE_LOW"
+Private Const FIELD_A_SCALE_HIGH As String = "A_SCALE_HIGH"
+
+Private Const FIELD_LABEL1 As String = "LABEL1"
+Private Const FIELD_LABEL2 As String = "LABEL2"
 
 Private Const VALUE_ENABLE As String = "ENABLE"
 Private Const VALUE_HEADER_TAG As String = "TAG"
 
-Private Const JCC1_PULL_BLOCK As String = BLOCK_AA
+Private Const FIELD_POLICY_TEMPLATE As String = "TEMPLATE"
+Private Const FIELD_POLICY_LOCAL_FIRST As String = "LOCAL_FIRST"
+Private Const FIELD_POLICY_JCC1 As String = "JCC1"
+
 Private Const JCC1_SOURCE_SHEET_NAME As String = "JCC1DB OG"
 Private Const JCC1_RANGE_NAME_PREFIX As String = "JCC1DB_OG_"
 Private Const JCC1_SOURCE_TAG_PREFIX As String = "LP1"
@@ -447,13 +480,19 @@ End Function
 
 Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowValues As Object, ByVal seedDefaults As Object) As String
 	Dim templateFields As Variant
+	Dim header1Fields As Variant
 	Dim header2Fields As Variant
 	Dim fields As Variant
 	Dim resolvedValue As String
+	Dim sourceFieldValue As String
+	Dim headerDisplayName As String
 	Dim headerFieldName As String
 	Dim aaCalculatedThresholds As Object
+	Dim aaEligibleSeedThresholds As Object
 	Dim normalizedBlockType As String
 	Dim isAaBlock As Boolean
+	Dim hasV4PriorityValue As Boolean
+	Dim valueFromTemplateToken As Boolean
 	Dim i As Long
 
 	templateFields = GetBlockDataTemplateArray(blockType)
@@ -465,29 +504,59 @@ Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowVa
 	normalizedBlockType = NormalizeKey(blockType)
 	isAaBlock = (normalizedBlockType = "AA")
 
+	header1Fields = GetBlockHeaderFieldArray(blockType, 1)
 	header2Fields = GetBlockHeaderFieldArray(blockType, 2)
 	If isAaBlock Then
 		Set aaCalculatedThresholds = BuildAaCalculatedAlarmThresholds(rowValues)
+		Set aaEligibleSeedThresholds = BuildAaEligibleSeedThresholds(seedDefaults, rowValues)
 	End If
 
 	ReDim fields(LBound(templateFields) To UBound(templateFields))
 	For i = LBound(templateFields) To UBound(templateFields)
+		hasV4PriorityValue = False
+		valueFromTemplateToken = False
+
 		If InStr(1, CStr(templateFields(i)), "<", vbBinaryCompare) > 0 Then
 			resolvedValue = ResolveTemplateTokens(CStr(templateFields(i)), rowValues)
+			If Len(Trim$(resolvedValue)) > 0 Then
+				valueFromTemplateToken = True
+			End If
 		Else
 			resolvedValue = CStr(templateFields(i))
 		End If
 
 		headerFieldName = vbNullString
+		headerDisplayName = vbNullString
+		If IsArray(header1Fields) Then
+			headerDisplayName = CStr(header1Fields(i))
+		End If
 		If IsArray(header2Fields) Then
 			headerFieldName = CStr(header2Fields(i))
 		End If
 
 		If Len(headerFieldName) > 0 Then
-			If isAaBlock Then
-				resolvedValue = GetDictValueOrDefault(aaCalculatedThresholds, headerFieldName, resolvedValue)
+			sourceFieldValue = GetV4ValueForOutputField(headerFieldName, headerDisplayName, rowValues)
+			If Len(sourceFieldValue) > 0 Then
+				resolvedValue = sourceFieldValue
+				hasV4PriorityValue = True
+			ElseIf valueFromTemplateToken Then
+				hasV4PriorityValue = True
 			End If
-			resolvedValue = GetSeedDefaultByField(headerFieldName, seedDefaults, resolvedValue)
+
+			If isAaBlock Then
+				sourceFieldValue = GetDictValueOrDefault(aaCalculatedThresholds, headerFieldName, vbNullString)
+				If Len(sourceFieldValue) > 0 Then
+					resolvedValue = sourceFieldValue
+					hasV4PriorityValue = True
+				End If
+			End If
+
+			resolvedValue = GetSeedDefaultByField(headerFieldName, headerDisplayName, seedDefaults, resolvedValue, hasV4PriorityValue)
+			If isAaBlock Then
+				If GetFieldSeedPolicy(headerFieldName, headerDisplayName) <> FIELD_POLICY_TEMPLATE Then
+					resolvedValue = GetDictValueOrDefault(aaEligibleSeedThresholds, headerFieldName, resolvedValue)
+				End If
+			End If
 		End If
 
 		fields(i) = QuoteCsvField(resolvedValue)
@@ -496,8 +565,29 @@ Private Function BuildDataRowFromTemplate(ByVal blockType As String, ByVal rowVa
 	BuildDataRowFromTemplate = Join(fields, ",")
 End Function
 
-Private Function GetSeedDefaultByField(ByVal fieldName As String, ByVal seedDefaults As Object, ByVal fallbackValue As String) As String
+Private Function BuildAaEligibleSeedThresholds(ByVal seedDefaults As Object, ByVal rowValues As Object) As Object
+	Dim selectedSeed As Object
+
+	Set selectedSeed = CreateObject("Scripting.Dictionary")
+	selectedSeed.CompareMode = vbTextCompare
+
+	If seedDefaults Is Nothing Then
+		Set BuildAaEligibleSeedThresholds = selectedSeed
+		Exit Function
+	End If
+
+	If IsAaHistoricalSeedEligible(rowValues, seedDefaults) Then
+		Set selectedSeed = ExtractAaHistoricalAlarmSeed(seedDefaults, rowValues)
+	End If
+
+	Set BuildAaEligibleSeedThresholds = selectedSeed
+End Function
+
+Private Function GetSeedDefaultByField(ByVal fieldName As String, ByVal headerDisplayName As String, ByVal seedDefaults As Object, ByVal fallbackValue As String, ByVal hasV4PriorityValue As Boolean) As String
 	Dim fieldKey As String
+	Dim displayKey As String
+	Dim seedValue As String
+	Dim fieldPolicy As String
 
 	GetSeedDefaultByField = fallbackValue
 	If seedDefaults Is Nothing Then
@@ -505,13 +595,132 @@ Private Function GetSeedDefaultByField(ByVal fieldName As String, ByVal seedDefa
 	End If
 
 	fieldKey = NormalizeKey(fieldName)
+	displayKey = NormalizeKey(headerDisplayName)
 	If Len(fieldKey) = 0 Then
 		Exit Function
 	End If
 
-	If seedDefaults.Exists(fieldKey) Then
-		GetSeedDefaultByField = CStr(seedDefaults(fieldKey))
+	fieldPolicy = GetFieldSeedPolicy(fieldKey, displayKey)
+	If fieldPolicy = FIELD_POLICY_TEMPLATE Then
+		Exit Function
 	End If
+
+	If hasV4PriorityValue Then
+		Exit Function
+	End If
+
+	If seedDefaults.Exists(fieldKey) Then
+		seedValue = NormalizeImportedTemplateValue(CStr(seedDefaults(fieldKey)))
+		If Len(seedValue) = 0 Then
+			Exit Function
+		End If
+
+		If Not IsJcc1SeedValueAllowed(fieldKey, seedValue) Then
+			Exit Function
+		End If
+
+		If fieldPolicy = FIELD_POLICY_LOCAL_FIRST And Len(Trim$(fallbackValue)) > 0 Then
+			Exit Function
+		End If
+
+		GetSeedDefaultByField = seedValue
+	End If
+End Function
+
+Private Function GetV4ValueForOutputField(ByVal fieldName As String, ByVal headerDisplayName As String, ByVal rowValues As Object) As String
+	GetV4ValueForOutputField = GetMapValue(rowValues, fieldName)
+	If Len(GetV4ValueForOutputField) > 0 Then Exit Function
+
+	GetV4ValueForOutputField = GetMapValue(rowValues, headerDisplayName)
+	If Len(GetV4ValueForOutputField) > 0 Then Exit Function
+
+	Select Case NormalizeKey(fieldName)
+		Case FIELD_A_TAG
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_SOURCE_TAGNAME)
+		Case FIELD_A_DESC
+			GetV4ValueForOutputField = GetMapValue(rowValues, "DESCRIPTION")
+		Case FIELD_A_IOAD
+			GetV4ValueForOutputField = GetMapValue(rowValues, "ADDRESS")
+		Case FIELD_A_IOHT
+			GetV4ValueForOutputField = GetMapValue(rowValues, "DATA TYPE")
+		Case FIELD_A_EGUDESC
+			GetV4ValueForOutputField = GetMapValue(rowValues, "UNITS")
+		Case FIELD_A_ELO
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_ELO)
+		Case FIELD_A_EHI
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_EHI)
+		Case FIELD_A_SCALE_LOW
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_ELO)
+		Case FIELD_A_SCALE_HIGH
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_SOURCE_SENSOR_EHI)
+		Case FIELD_A_OPENDESC
+			GetV4ValueForOutputField = GetMapValue(rowValues, "OFF CODE")
+		Case FIELD_A_CLOSEDESC
+			GetV4ValueForOutputField = GetMapValue(rowValues, "ON CODE")
+		Case FIELD_A_TS1
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_LABEL1)
+		Case FIELD_A_TS2
+			GetV4ValueForOutputField = GetMapValue(rowValues, FIELD_LABEL2)
+		Case Else
+			GetV4ValueForOutputField = vbNullString
+	End Select
+End Function
+
+Private Function IsJcc1SeedValueAllowed(ByVal normalizedFieldKey As String, ByVal seedValue As String) As Boolean
+	Dim numericValue As Double
+
+	IsJcc1SeedValueAllowed = True
+
+	Select Case NormalizeKey(normalizedFieldKey)
+		Case FIELD_A_SCALE_RAWLOW, FIELD_A_SCALE_RAWHIGH
+			If Not TryParseDouble(seedValue, numericValue) Then
+				IsJcc1SeedValueAllowed = False
+			End If
+	End Select
+End Function
+
+Private Function GetFieldSeedPolicy(ByVal normalizedFieldKey As String, ByVal normalizedDisplayKey As String) As String
+	If IsFieldConfiguredInPipeList(normalizedFieldKey, CFG_FORCE_TEMPLATE_FIELDS) Then
+		GetFieldSeedPolicy = FIELD_POLICY_TEMPLATE
+		Exit Function
+	End If
+
+	If IsFieldConfiguredInPipeList(normalizedFieldKey, CFG_FORCE_JCC1_FIELDS) Then
+		GetFieldSeedPolicy = FIELD_POLICY_JCC1
+		Exit Function
+	End If
+
+	Select Case NormalizeKey(normalizedFieldKey)
+		Case FIELD_A_ASUSP, FIELD_A_TRTAG, FIELD_A_PDR_DEADBAND, FIELD_A_PDR_ARRAYLENGTH, FIELD_A_HIST_DEADBAND, FIELD_A_HIST_COMPTIME
+			GetFieldSeedPolicy = FIELD_POLICY_TEMPLATE
+			Exit Function
+	End Select
+
+	If ShouldPreferLocalValue(normalizedFieldKey) Then
+		GetFieldSeedPolicy = FIELD_POLICY_LOCAL_FIRST
+	Else
+		GetFieldSeedPolicy = FIELD_POLICY_JCC1
+	End If
+End Function
+
+Private Function IsFieldConfiguredInPipeList(ByVal normalizedFieldKey As String, ByVal configPipeList As String) As Boolean
+	Dim wrappedList As String
+
+	If Len(normalizedFieldKey) = 0 Or Len(configPipeList) = 0 Then
+		Exit Function
+	End If
+
+	wrappedList = "|" & NormalizeKey(configPipeList) & "|"
+	IsFieldConfiguredInPipeList = (InStr(1, wrappedList, "|" & NormalizeKey(normalizedFieldKey) & "|", vbTextCompare) > 0)
+End Function
+
+Private Function ShouldPreferLocalValue(ByVal normalizedFieldKey As String) As Boolean
+	Select Case normalizedFieldKey
+		Case FIELD_A_TAG, FIELD_A_DESC, FIELD_A_IODV, FIELD_A_IOHT, FIELD_A_NUMS, FIELD_A_IOAD, _
+			 FIELD_A_ELO, FIELD_A_EHI, FIELD_A_DBAND, FIELD_A_EGUDESC, FIELD_A_HIHI, FIELD_A_HI, _
+			 FIELD_A_LO, FIELD_A_LOLO, FIELD_A_TS1, FIELD_A_TS2, FIELD_A_OPENDESC, FIELD_A_CLOSEDESC, FIELD_A_AREA1
+			ShouldPreferLocalValue = True
+	End Select
 End Function
 
 Private Function GetDictValueOrDefault(ByVal valueDict As Object, ByVal fieldName As String, ByVal fallbackValue As String) As String
@@ -665,7 +874,8 @@ Private Function BuildJcc1LookupByType(ByVal wb As Workbook, ByVal pullEnabled A
 	Dim lookupByType As Object
 	Dim ogSheet As Worksheet
 	Dim blockTagMap As Object
-	Dim allowedFieldMap As Object
+	Dim blockOrder As Variant
+	Dim blockType As Variant
 
 	Set lookupByType = CreateObject("Scripting.Dictionary")
 	lookupByType.CompareMode = vbTextCompare
@@ -683,16 +893,18 @@ Private Function BuildJcc1LookupByType(ByVal wb As Workbook, ByVal pullEnabled A
 		Exit Function
 	End If
 
-	Set allowedFieldMap = GetJcc1AllowedFieldMap()
-	Set blockTagMap = BuildTagToFieldMapFromNamedRange(wb, ogSheet, JCC1_RANGE_NAME_PREFIX & JCC1_PULL_BLOCK, allowedFieldMap)
-	If blockTagMap.Count > 0 Then
-		PutObjectInDictionary lookupByType, JCC1_PULL_BLOCK, blockTagMap
-	End If
+	blockOrder = GetBlockOrder()
+	For Each blockType In blockOrder
+		Set blockTagMap = BuildTagToFieldMapFromNamedRange(wb, ogSheet, JCC1_RANGE_NAME_PREFIX & CStr(blockType))
+		If blockTagMap.Count > 0 Then
+			PutObjectInDictionary lookupByType, CStr(blockType), blockTagMap
+		End If
+	Next blockType
 
 	Set BuildJcc1LookupByType = lookupByType
 End Function
 
-Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal ogSheet As Worksheet, ByVal rangeName As String, ByVal allowedFieldMap As Object) As Object
+Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal ogSheet As Worksheet, ByVal rangeName As String) As Object
 	Dim tagMap As Object
 	Dim sourceRange As Range
 	Dim rangeValues As Variant
@@ -728,9 +940,7 @@ Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal og
 	For colIx = 1 To UBound(rangeValues, 2)
 		thisFieldKey = ParseJcc1HeaderKey(rangeValues(2, colIx))
 		If Len(thisFieldKey) > 0 Then
-			If allowedFieldMap Is Nothing Or allowedFieldMap.Exists(thisFieldKey) Then
-				colFieldKeys(colIx) = thisFieldKey
-			End If
+			colFieldKeys(colIx) = thisFieldKey
 		End If
 	Next colIx
 
@@ -758,21 +968,12 @@ Private Function BuildTagToFieldMapFromNamedRange(ByVal wb As Workbook, ByVal og
 End Function
 
 Private Function SupportsJcc1Pull(ByVal blockType As String) As Boolean
-	SupportsJcc1Pull = (NormalizeKey(blockType) = JCC1_PULL_BLOCK)
-End Function
-
-Private Function GetJcc1AllowedFieldMap() As Object
-	Dim fieldMap As Object
-	Dim fieldName As Variant
-
-	Set fieldMap = CreateObject("Scripting.Dictionary")
-	fieldMap.CompareMode = vbTextCompare
-
-	For Each fieldName In GetAaHistoricalLookupFieldNames()
-		fieldMap(CStr(fieldName)) = True
-	Next fieldName
-
-	Set GetJcc1AllowedFieldMap = fieldMap
+	Select Case NormalizeKey(blockType)
+		Case BLOCK_DA, BLOCK_DR, BLOCK_MDI, BLOCK_AA, BLOCK_AR
+			SupportsJcc1Pull = True
+		Case Else
+			SupportsJcc1Pull = False
+	End Select
 End Function
 
 Private Function ReadRangeCellRawText(ByVal sourceRange As Range, ByVal rowIx As Long, ByVal colIx As Long) As String
@@ -875,7 +1076,6 @@ End Function
 Private Function GetJcc1SeedRow(ByVal blockType As String, ByVal rowValues As Object, ByVal jcc1LookupByType As Object, ByVal pullEnabled As Boolean, ByRef foundMatch As Boolean, Optional ByRef lookupAttempted As Boolean = False) As Object
 	Dim normalizedTag As String
 	Dim blockTagMap As Object
-	Dim historicalSeed As Object
 
 	Set GetJcc1SeedRow = Nothing
 	foundMatch = False
@@ -886,15 +1086,12 @@ Private Function GetJcc1SeedRow(ByVal blockType As String, ByVal rowValues As Ob
 
 	lookupAttempted = True
 	If blockTagMap.Exists(normalizedTag) Then
-		Set historicalSeed = blockTagMap.Item(normalizedTag)
-		If IsAaHistoricalSeedEligible(rowValues, historicalSeed) Then
-			Set GetJcc1SeedRow = ExtractAaHistoricalAlarmSeed(historicalSeed, rowValues)
-			If Not GetJcc1SeedRow Is Nothing Then
-				If GetJcc1SeedRow.Count > 0 Then
-					foundMatch = True
-				Else
-					Set GetJcc1SeedRow = Nothing
-				End If
+		Set GetJcc1SeedRow = blockTagMap.Item(normalizedTag)
+		If Not GetJcc1SeedRow Is Nothing Then
+			If GetJcc1SeedRow.Count > 0 Then
+				foundMatch = True
+			Else
+				Set GetJcc1SeedRow = Nothing
 			End If
 		End If
 	End If
@@ -938,6 +1135,7 @@ Private Function ExtractAaHistoricalAlarmSeed(ByVal historicalSeed As Object, By
 	Dim seedNumericValue As Double
 	Dim sourceElo As Double
 	Dim sourceEhi As Double
+	Dim thresholdFields As Variant
 
 	Set selectedSeed = CreateObject("Scripting.Dictionary")
 	selectedSeed.CompareMode = vbTextCompare
@@ -957,15 +1155,27 @@ Private Function ExtractAaHistoricalAlarmSeed(ByVal historicalSeed As Object, By
 		Exit Function
 	End If
 
-	For Each fieldName In GetAaAlarmThresholdFieldNames()
+	thresholdFields = GetAaAlarmThresholdFieldNames()
+
+	' All-or-nothing check: if any threshold is missing/non-numeric/out of range, keep calculated values.
+	For Each fieldName In thresholdFields
 		seedValue = GetDictValueOrDefault(historicalSeed, CStr(fieldName), vbNullString)
-		If Len(seedValue) > 0 Then
-			If TryParseDouble(seedValue, seedNumericValue) Then
-				If seedNumericValue >= sourceElo And seedNumericValue <= sourceEhi Then
-					selectedSeed(CStr(fieldName)) = seedValue
-				End If
-			End If
+		If Len(seedValue) = 0 Then
+			Set ExtractAaHistoricalAlarmSeed = selectedSeed
+			Exit Function
 		End If
+		If Not TryParseDouble(seedValue, seedNumericValue) Then
+			Set ExtractAaHistoricalAlarmSeed = selectedSeed
+			Exit Function
+		End If
+		If seedNumericValue < sourceElo Or seedNumericValue > sourceEhi Then
+			Set ExtractAaHistoricalAlarmSeed = selectedSeed
+			Exit Function
+		End If
+	Next fieldName
+
+	For Each fieldName In thresholdFields
+		selectedSeed(CStr(fieldName)) = GetDictValueOrDefault(historicalSeed, CStr(fieldName), vbNullString)
 	Next fieldName
 
 	Set ExtractAaHistoricalAlarmSeed = selectedSeed
@@ -1021,10 +1231,6 @@ End Function
 
 Private Function GetAaAlarmThresholdFieldNames() As Variant
 	GetAaAlarmThresholdFieldNames = Array(FIELD_A_LOLO, FIELD_A_LO, FIELD_A_HI, FIELD_A_HIHI)
-End Function
-
-Private Function GetAaHistoricalLookupFieldNames() As Variant
-	GetAaHistoricalLookupFieldNames = Array(FIELD_A_TAG, FIELD_A_IENAB, FIELD_A_ELO, FIELD_A_EHI, FIELD_A_LOLO, FIELD_A_LO, FIELD_A_HI, FIELD_A_HIHI)
 End Function
 
 Private Function NormalizeTagKey(ByVal value As String) As String
@@ -1202,11 +1408,21 @@ Private Function NormalizeSourceValue(ByVal value As Variant) As String
 	End If
 
 	textValue = Trim$(CStr(value))
-	If textValue = "-" Then
+	If IsRecognizedBlankString(textValue) Then
 		NormalizeSourceValue = vbNullString
 	Else
 		NormalizeSourceValue = textValue
 	End If
+End Function
+
+Private Function IsRecognizedBlankString(ByVal value As String) As Boolean
+	Dim normalized As String
+
+	normalized = NormalizeKey(value)
+	Select Case normalized
+		Case vbNullString, "-", "NA", "N/A", "NULL", "BLANK", "(BLANK)", "<BLANK>"
+			IsRecognizedBlankString = True
+	End Select
 End Function
 
 Private Function GetMapValue(ByVal valueMap As Object, ByVal key As String) As String
