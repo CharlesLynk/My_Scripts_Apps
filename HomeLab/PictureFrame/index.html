@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Display</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #media {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
+
+    #status {
+      position: fixed;
+      inset: auto 0 0;
+      padding: 0.5rem;
+      color: #fff;
+      background: rgb(0 0 0 / 70%);
+      font: 14px sans-serif;
+      text-align: center;
+    }
+
+    #status:empty {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="status" role="status"></div>
+
+  <script>
+    const stage = document.getElementById('stage');
+    const status = document.getElementById('status');
+    let activeName = '';
+    let activeMedia;
+
+    const imageTypes = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp']);
+    const videoTypes = new Set(['mp4', 'webm', 'ogv']);
+
+    function showMedia(name) {
+      const extension = name.split('.').pop().toLowerCase();
+      const isImage = imageTypes.has(extension);
+      const isVideo = videoTypes.has(extension);
+
+      if (!isImage && !isVideo) {
+        status.textContent = `Unsupported media type: ${extension || 'unknown'}`;
+        return;
+      }
+
+      const media = document.createElement(isImage ? 'img' : 'video');
+      media.id = 'media';
+      media.src = `${encodeURIComponent(name)}?t=${Date.now()}`;
+
+      if (isVideo) {
+        media.autoplay = true;
+        media.controls = true;
+        media.loop = true;
+        media.muted = true;
+        media.playsInline = true;
+      }
+
+      media.addEventListener('error', () => {
+        status.textContent = `Unable to display ${name}. Check that the file exists and is supported.`;
+      });
+      media.addEventListener('load', () => {
+        status.textContent = '';
+      });
+      media.addEventListener('loadeddata', () => {
+        status.textContent = '';
+      });
+
+      stage.replaceChildren(media);
+      activeMedia = media;
+      activeName = name;
+      status.textContent = '';
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch(`current.txt?t=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) {
+          if (response.status === 404 && !activeName) {
+            showMedia('current.jpg');
+            return;
+          }
+          throw new Error(`Manifest request failed (${response.status})`);
+        }
+
+        const name = (await response.text()).trim();
+        if (!name || /[\\/]/.test(name) || name === '.' || name === '..') {
+          throw new Error('current.txt must contain a media filename in this folder');
+        }
+
+        if (name !== activeName) {
+          showMedia(name);
+        }
+      } catch (error) {
+        status.textContent = error.message || 'Unable to check for new media.';
+        if (!activeMedia && !activeName) {
+          showMedia('current.jpg');
+        }
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>
