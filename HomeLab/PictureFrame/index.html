@@ -14,12 +14,34 @@
       background: #000;
     }
 
+    #stage {
+      position: fixed;
+      inset: 0;
+      overflow: auto;
+    }
+
     #media {
       display: block;
       width: 100%;
       height: 100%;
       object-fit: contain;
       object-position: center;
+    }
+
+    #stage.zoomed #media {
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      object-fit: initial;
+    }
+
+    #zoom {
+      position: fixed;
+      z-index: 1;
+      top: 0.75rem;
+      right: 0.75rem;
+      padding: 0.5rem 0.75rem;
     }
 
     #status {
@@ -39,16 +61,36 @@
 </head>
 <body>
   <div id="stage"></div>
+  <button id="zoom" type="button" aria-pressed="false" hidden>Zoom to actual size</button>
   <div id="status" role="status"></div>
 
   <script>
     const stage = document.getElementById('stage');
     const status = document.getElementById('status');
+    const zoom = document.getElementById('zoom');
     let activeName = '';
     let activeMedia;
 
     const imageTypes = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp']);
     const videoTypes = new Set(['mp4', 'webm', 'ogv']);
+
+    function setZoom(enabled) {
+      stage.classList.toggle('zoomed', enabled);
+      zoom.setAttribute('aria-pressed', String(enabled));
+      zoom.textContent = enabled ? 'Fit to screen' : 'Zoom to actual size';
+      if (!enabled) {
+        stage.scrollTo(0, 0);
+      }
+    }
+
+    zoom.addEventListener('click', () => {
+      setZoom(!stage.classList.contains('zoomed'));
+    });
+
+    function isSupported(name) {
+      const extension = name.split('.').pop().toLowerCase();
+      return imageTypes.has(extension) || videoTypes.has(extension);
+    }
 
     function showMedia(name) {
       const extension = name.split('.').pop().toLowerCase();
@@ -63,6 +105,8 @@
       const media = document.createElement(isImage ? 'img' : 'video');
       media.id = 'media';
       media.src = `${encodeURIComponent(name)}?t=${Date.now()}`;
+      setZoom(false);
+      zoom.hidden = true;
 
       if (isVideo) {
         media.autoplay = true;
@@ -77,6 +121,9 @@
       });
       media.addEventListener('load', () => {
         status.textContent = '';
+        if (isImage) {
+          zoom.hidden = false;
+        }
       });
       media.addEventListener('loadeddata', () => {
         status.textContent = '';
@@ -92,8 +139,11 @@
       try {
         const response = await fetch(`current.txt?t=${Date.now()}`, { cache: 'no-store' });
         if (!response.ok) {
-          if (response.status === 404 && !activeName) {
+          if (!activeName) {
             showMedia('current.jpg');
+            return;
+          }
+          if (activeName === 'current.jpg') {
             return;
           }
           throw new Error(`Manifest request failed (${response.status})`);
@@ -103,14 +153,20 @@
         if (!name || /[\\/]/.test(name) || name === '.' || name === '..') {
           throw new Error('current.txt must contain a media filename in this folder');
         }
+        if (!isSupported(name)) {
+          throw new Error('current.txt must name a supported image or video file');
+        }
 
         if (name !== activeName) {
           showMedia(name);
         }
       } catch (error) {
-        status.textContent = error.message || 'Unable to check for new media.';
         if (!activeMedia && !activeName) {
           showMedia('current.jpg');
+          return;
+        }
+        if (activeName !== 'current.jpg') {
+          status.textContent = error.message || 'Unable to check for new media.';
         }
       }
     }

@@ -6,7 +6,7 @@ The display page checks `current.txt` every three seconds. Put the selected medi
 current.png
 ```
 
-The page supports common image formats (`jpg`, `jpeg`, `png`, `gif`, `webp`, `avif`, and `bmp`) and browser-playable video (`mp4`, `webm`, and `ogv`). Videos autoplay muted, loop, and have controls. Media is centered and contained in the browser window, so the whole image is visible without cropping.
+The page supports common image formats (`jpg`, `jpeg`, `png`, `gif`, `webp`, `avif`, and `bmp`) and browser-playable video (`mp4`, `webm`, and `ogv`). Videos autoplay muted, loop, and have controls. Media is centered and contained in the browser window, so the whole image is visible without cropping. For images, use **Zoom to actual size** to inspect and scroll around a large image, then **Fit to screen** to return to the full image.
 
 ## MacroDroid outline
 
@@ -21,4 +21,4 @@ If MacroDroid cannot reliably read and write these files on the Android version 
 
 ## Existing setup
 
-If `current.txt` is not present, `index.html` falls back to `current.jpg` for compatibility with the existing single-image setup.
+If `current.txt` is missing or unavailable, `index.html` falls back to `current.jpg` for compatibility with the existing single-image setup. To select other media types, make sure the server can serve `current.txt` as plain text.
