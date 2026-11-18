@@ -1,0 +1,37 @@
+# Repo-wide ignore rules for My_Scripts_Apps.
+# Project-specific rules live in nested .gitignore files.
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Editor and IDE caches
+.vs/
+.vscode/
+*.swp
+*~
+
+# Office lock files
+~$*
+
+# AutoCAD backup and temp files
+*.bak
+*.dwl
+*.dwl2
+*.sv$
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Logs and secrets
+*.log
+.env
+.env.*
