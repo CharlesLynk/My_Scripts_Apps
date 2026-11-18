@@ -1,67 +1,83 @@
 
-	(defun c:CNL_InstrumentDivision (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments with their Division
-		(if (and (setq ssgr3 (ssget))
-				(setq i -1)
-			)
-			(repeat (sslength ssgr3)
-				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
-				(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
-				(setq x (car pt))
-				(setq y (cadr pt))
-				(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
-				(command-s "._PIDANNOTATE" ss3 "Instrument Division" crds)
-			)
-		)
-		(princ)
-	)
+;	(defun c:CNL_InstrumentDivision (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments with their Division
+;		(if (and (setq ssgr3 (ssget))
+;				(setq i -1)
+;			)
+;			(repeat (sslength ssgr3)
+;				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+;				(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
+;				(setq x (car pt))
+;				(setq y (cadr pt))
+;				(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
+;				(command-s "._PIDANNOTATE" ss3 "Instrument Division" crds)
+;			)
+;		)
+;		(princ)
+;	)
    
-	(defun c:CNL_HandSwitchTopRight (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments Top Right
-		(if (and (setq ssgr3 (ssget))
-				(setq i -1)
-			)
-			(repeat (sslength ssgr3)
-				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
-				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
-				;(setq x (car pt))
-				;(setq y (cadr pt))
-				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
-				(command-s "._PIDANNOTATE" ss3 "Device Function (Bubble Top Right)")
-			)
-		)
-		(princ)
-	)
+;	(defun c:CNL_InstrumentSetpoint (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments with their Setpoints
+;		(if (and (setq ssgr3 (ssget))
+;				(setq i -1)
+;			)
+;			(repeat (sslength ssgr3)
+;				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+;				(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
+;				(setq x (car pt))
+;				(setq y (cadr pt))
+;				(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
+;				(command-s "._PIDANNOTATE" ss3 "Setpoint" crds)
+;			)
+;		)
+;		(princ)
+;	)
+
+;	(defun c:CNL_HandSwitchTopRight (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments Top Right
+;		(if (and (setq ssgr3 (ssget))
+;				(setq i -1)
+;			)
+;			(repeat (sslength ssgr3)
+;				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+;				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
+;				;(setq x (car pt))
+;				;(setq y (cadr pt))
+;				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
+;				(command-s "._PIDANNOTATE" ss3 "Device Function (Bubble Top Right)")
+;			)
+;		)
+;		(princ)
+;	)
    
-	(defun c:CNL_HandSwitchTopCenter (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments Top Center
-		(if (and (setq ssgr3 (ssget))
-				(setq i -1)
-			)
-			(repeat (sslength ssgr3)
-				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
-				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
-				;(setq x (car pt))
-				;(setq y (cadr pt))
-				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
-				(command-s "._PIDANNOTATE" ss3 "Device Function (Bubble Top Center)")
-			)
-		)
-		(princ)
-	)
+;	(defun c:CNL_HandSwitchTopCenter (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Discrete Instruments Top Center
+;		(if (and (setq ssgr3 (ssget))
+;				(setq i -1)
+;			)
+;			(repeat (sslength ssgr3)
+;				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+;				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
+;				;(setq x (car pt))
+;				;(setq y (cadr pt))
+;				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
+;				(command-s "._PIDANNOTATE" ss3 "Device Function (Bubble Top Center)")
+;			)
+;		)
+;		(princ)
+;	)
    
-	(defun c:CNL_ValveTag (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Valves
-		(if (and (setq ssgr3 (ssget))
-				(setq i -1)
-			)
-			(repeat (sslength ssgr3)
-				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
-				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
-				;(setq x (car pt))
-				;(setq y (cadr pt))
-				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
-				(command-s "._PIDANNOTATE" ss3 "CDM Valve Tag")
-			)
-		)
-		(princ)
-	)
+;	(defun c:CNL_ValveTag (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Valves
+;		(if (and (setq ssgr3 (ssget))
+;				(setq i -1)
+;			)
+;			(repeat (sslength ssgr3)
+;				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+;				;(setq pt (cdr (assoc 10 (entget ss3)))) ; get the coordinates of the first selected object
+;				;(setq x (car pt))
+;				;(setq y (cadr pt))
+;				;(setq crds (strcat (rtos x 2 2) "," (rtos (+ y 0.25) 2 2)))
+;				(command-s "._PIDANNOTATE" ss3 "CDM Valve Tag")
+;			)
+;		)
+;		(princ)
+;	)
    
 	(defun c:CNL_ReducerAnnotate (/ pt x y crds ss3 i ssgr3) ; Annotates all selected Reducers
 		(if (and (setq ssgr3 (ssget))
@@ -120,7 +136,7 @@
 		(setq x (car pt))
 		(setq y (cadr pt))
 		(setq crds (strcat (rtos x 2 2) "," (rtos y 2 2)))
-		(command-s "._PIDANNOTATE" ss3 "CDM Tag [Size-Service-LineNumber]" crds)
+		(command-s "._PIDANNOTATE" ss3 "CDM Tag [Size-Service-Line Number]" crds)
 		;(command-s "._SELECT" "LAST")
 		(setq ss4 (ssname (ssget "L") 0))
 		(setq rotn (cdr (assoc 50  (entget ss4)))) ; get the rotation of the created annotation
@@ -180,11 +196,60 @@
 	)
 	
 	(defun c:asdf (/ entl ent ct code item curval) ; Reloads this file in AutoCAD to avoid manually using appload
-		 (load "Plant3DAnnotations.lsp")
+		 (load "CNL_Plant3DAnnotations.lsp")
 		 (princ)                             ; Exit quietly.
 		
 	)
 	
 	
 	
-	
+	(defun CNL_DeleteValveTag (pt / half ss i ent data ip del) ; Erases INSERT annotations whose base point lies in a square centered on a valve base point
+		(setq half 0.125) ; half of the 0.25 x 0.25 inch square
+		(setq ss (ssget "_C"
+					(list (- (car pt) half) (- (cadr pt) half))
+					(list (+ (car pt) half) (+ (cadr pt) half))
+				)
+		)
+		(setq del (ssadd)
+			  i -1
+		)
+		(if ss
+			(repeat (sslength ss)
+				(setq ent  (ssname ss (setq i (1+ i)))
+					  data (entget ent)
+				)
+				(if (and (= (cdr (assoc 0 data)) "INSERT") ; INSERT excludes the valve itself, which is an ACPPDYNAMICASSET
+						 (setq ip (cdr (assoc 10 data)))
+						 (<= (abs (- (car ip) (car pt))) half)
+						 (<= (abs (- (cadr ip) (cadr pt))) half)
+					)
+					(ssadd ent del)
+				)
+			)
+		)
+		(if (> (sslength del) 0)
+			(command-s "._ERASE" del "") ; ERASE rather than entdel so Plant 3D removes the annotation cleanly
+		)
+		(princ)
+	)
+
+	(defun CNL_COH_PlaceValveAnno (ent pt style / crds) ; Places a PIDANNOTATE annotation of the given style at a valve base point
+		(setq crds (strcat (rtos (car pt) 2 2) "," (rtos (cadr pt) 2 2)))
+		(command-s "._PIDANNOTATE" ent style crds)
+		(princ)
+	)
+
+	(defun c:CNL_COH_ValveTag (/ pt ss3 ssgr3 i) ; Replaces existing CDM Valve Tags on all selected Valves with CDM Valve Tag Only and CDM Valve Size Only
+		(if (and (setq ssgr3 (ssget))
+				(setq i -1)
+			)
+			(repeat (sslength ssgr3)
+				(setq ss3 (ssname ssgr3 (setq i (1+ i))))
+				(setq pt (cdr (assoc 10 (entget ss3)))) ; get the base coordinates of the valve
+				(CNL_DeleteValveTag pt)
+				(CNL_COH_PlaceValveAnno ss3 pt "CDM Valve Tag Only")
+				(CNL_COH_PlaceValveAnno ss3 pt "CDM Valve Size Only")
+			)
+		)
+		(princ)
+	)

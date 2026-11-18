@@ -40,33 +40,25 @@
   (princ)
 )
 
-(defun batch:validate-xrefs (/ record flags xref-name xref-path xref-count)
-  (setq record (tblnext "BLOCK" T)
-        xref-count 0
+(defun batch:validate-xrefs (/ record flags xref-name xref-path)
+  (setq *batch-unresolved-xrefs* nil
+        record (tblnext "BLOCK" T)
   )
   (while record
     (setq flags (cdr (assoc 70 record)))
     (if (/= 0 (logand 4 flags))
       (progn
-        (setq xref-count (1+ xref-count)
-              xref-name (cdr (assoc 2 record))
+        (setq xref-name (cdr (assoc 2 record))
               xref-path (cdr (assoc 1 record))
         )
         (if (= 0 (logand 32 flags))
-          (batch:fail
-            (strcat
-              "Template XREF is unresolved: "
-              xref-name
-              (if xref-path (strcat " -> " xref-path) "")
-            )
+          (setq *batch-unresolved-xrefs*
+            (cons (list xref-name xref-path) *batch-unresolved-xrefs*)
           )
         )
       )
     )
     (setq record (tblnext "BLOCK"))
-  )
-  (if (= xref-count 0)
-    (batch:fail "No attached XREFs were found in the template.")
   )
   (princ)
 )
@@ -221,12 +213,23 @@
   (princ)
 )
 
-(defun batch:write-success (/ result-file)
+(defun batch:write-success (/ result-file unresolved-xref)
   (setq result-file (open *batch-result-file* "w"))
   (if (null result-file)
     (batch:fail (strcat "Could not write job result file: " *batch-result-file*))
   )
   (write-line "SUCCESS" result-file)
+  (foreach unresolved-xref *batch-unresolved-xrefs*
+    (write-line
+      (strcat
+        "UNRESOLVED_XREF|"
+        (car unresolved-xref)
+        "|"
+        (if (cadr unresolved-xref) (cadr unresolved-xref) "")
+      )
+      result-file
+    )
+  )
   (close result-file)
   (princ)
 )
@@ -243,16 +246,19 @@
 )
 
 (defun c:BATCHPREFLIGHT ()
-  (batch:ensure-xref)
+  (if (and *batch-xref-path* (/= *batch-xref-path* ""))
+    (batch:ensure-xref)
+  )
   (batch:validate-xrefs)
   (batch:validate-mappings)
   (command "_.QSAVE")
   (batch:write-success)
-  (princ "\nTemplate and border XREF preflight succeeded.")
+  (princ "\nTemplate and XREF preflight succeeded.")
   (princ)
 )
 
 (defun c:CREATEFROMCSV ()
+  (setq *batch-unresolved-xrefs* nil)
   (batch:validate-mappings)
   (batch:set-attributes)
   (command "_.QSAVE")
@@ -262,6 +268,7 @@
 )
 
 (defun c:CREATEBATCH (/ job)
+  (setq *batch-unresolved-xrefs* nil)
   (if (null *batch-jobs*)
     (batch:fail "No drawing jobs were supplied.")
   )

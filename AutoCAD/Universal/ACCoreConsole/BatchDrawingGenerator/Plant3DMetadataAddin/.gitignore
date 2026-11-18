@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+*.suo
+P3DProjectProperties.log
+reference/decompiled/*.cs.txt
