@@ -1,6 +1,6 @@
 # AutoCAD batch drawing generator
 
-This Windows PowerShell/Core Console tool creates one DWG per CSV row. It uses the title-block inserts already present in the selected DWT. A border XREF can optionally be attached or refreshed during preflight; if no path is supplied, existing template XREFs are retained and validated, and generation can proceed with no XREFs. When a border XREF is selected, its name is taken from the DWG filename, without its extension; it is not a CSV field. Rows can route drawings into relative subfolders under the output directory. Preflight and generation are grouped by destination folder so relative XREFs are checked from the same directory as the resulting drawings. Existing output files are never overwritten.
+This Windows PowerShell/Core Console tool creates one DWG per CSV row. Pass `-UpdateExisting` to instead update block attributes on existing DWGs in place. It uses the title-block inserts already present in the selected DWT. A border XREF can optionally be attached or refreshed during preflight; if no path is supplied, existing template XREFs are retained and validated, and generation can proceed with no XREFs. When a border XREF is selected, its name is taken from the DWG filename, without its extension; it is not a CSV field. Rows can route drawings into relative subfolders under the output directory. Preflight and generation are grouped by destination folder so relative XREFs are checked from the same directory as the resulting drawings. Existing output files are never overwritten.
 
 ## Requirements
 
@@ -13,6 +13,13 @@ This Windows PowerShell/Core Console tool creates one DWG per CSV row. It uses t
 
 Attribute values and file paths are passed as text. The generator does not depend on a separately installed Python runtime.
 
+## Single GUI launcher
+
+`Start-BatchTool.ps1` puts all three functions behind one window. Pick a function from the dropdown, browse to the files, tick any modifiers, and click Run.
+
+- **Generate new drawings from CSV** and **Update block attributes in existing drawings** run `Generate-Drawings.ps1` in a new PowerShell window. Watch that window for progress.
+- **Validate CSV for Plant 3D property update** checks that the CSV has a `DrawingRelativePath` column and no blank paths, then shows the next steps. The update itself must run inside Plant 3D with `P3DUPDATEDRAWINGPROPERTIES`, so the launcher cannot run it.
+- Modifiers: `-WhatIf` preview only, `-KeepLogs`, and a max drawing count (0 means all).
 ## Run a small test batch
 
 Edit `sample_drawings.csv` so each qualified header matches an actual paper-space block insert and attribute tag. Run without path arguments to browse for the DWT, CSV, and output folder. For the optional border XREF prompt, enter a DWG path, type `B` to browse, or press Enter to leave it blank. If `accoreconsole.exe` is not found in common AutoCAD install locations, the script prompts you to locate it:
@@ -39,9 +46,28 @@ Preflight runs once for each distinct destination folder before output generatio
 
 The script processes CSV rows sequentially and stops on the first Core Console error or missing success marker. A normal run uses two Core Console launches per distinct destination folder: one for preflight and one for generation. It prints concise progress messages, a consolidated warning for unresolved relative XREFs, and a readable failure summary; detailed AutoCAD output remains in the saved logs. Console output is captured in memory and discarded for successful runs apart from the consolidated XREF warning; the output folder's `logs` subfolder is written only for preflight or generation failures by default. Pass `-KeepLogs` to also retain logs for successful preflight and generation runs. If AutoCAD logs `File load canceled` while loading `CreateFromTemplate.lsp`, add the generator directory to Trusted Locations and retry. Use `-WhatIf` to preview target drawing paths without creating the destination folder or launching Core Console. After checking a small batch, increase `-MaxDrawings` or omit it to process all rows.
 
+## Update existing drawings in place
+
+Pass `-UpdateExisting` to write CSV attribute values into DWGs that already exist, rather than generating new drawings. The CSV uses the same `DrawingRelativePath` and `BLOCKNAME.ATTRIBUTENAME` columns as above, but `DrawingRelativePath` is resolved from `-DrawingRoot` (default: the CSV's folder). Template and border XREF options do not apply in this mode.
+
+```powershell
+.\Generate-Drawings.ps1 -UpdateExisting `
+  -AccoreConsolePath "C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe" `
+  -CsvPath "C:\Drawings\run1.csv" `
+  -DrawingRoot "C:\Drawings\run1" `
+  -WhatIf
+```
+
+- Before any change, every drawing must exist and no `<name>.bak` may already sit beside it. Either failure stops the run.
+- Each original is copied to `<name>.bak`. Then `c:CREATEFROMCSV` validates every block and attribute mapping and writes the values in place. A failed drawing that is unchanged has its backup removed; a changed one keeps its backup.
+- Rows run sequentially, and the run stops at the first failure. Drawings already updated keep their new values and backups.
+- `-WhatIf` lists each planned backup and update without changing any file.
+- Each drawing costs one Core Console launch, so large batches take a long time. Failure logs go to `<DrawingRoot>\logs`; `-KeepLogs` also keeps logs for successful updates.
+- The AutoLISP helper must be in a trusted location, as described under Requirements.
+
 ## Import generated drawings into Plant 3D
 
-Plant 3D Project Manager properties are handled separately from the AutoLISP drawing generation. After generating DWGs, place the `sample_databaseFields.csv` metadata manifest in the output directory beside its drawing subfolders, update its `DrawingRelativePath` values and properties, then open the collaborative project in the full Plant 3D application. Use the same relative `DrawingRelativePath` paths in both CSVs so that the generated folder structure and Plant project folders match. Build and load the add-in in [Plant3DMetadataAddin](./Plant3DMetadataAddin/README.md), then run `P3DIMPORTDRAWINGPROPERTIES`. It validates the CSV and source files, prompts for a project part, previews the batch, and requires typing `ADD` before making project changes. Folder paths in the CSV locate source DWGs below the CSV directory and must correspond to folders already created through Plant 3D Project Manager under the selected PID DWG folder. The importer will list missing folders and stop before adding drawings; create those folders manually and rerun the import. Start with one drawing in a test project. Check in successfully added drawings through Project Manager to publish them to the collaborative project.
+Plant 3D Project Manager properties are handled separately from the AutoLISP drawing generation. After generating DWGs, keep the `sample_databaseFields.csv` metadata manifest anywhere convenient, update its `DrawingRelativePath` values and properties, then open the collaborative project in the full Plant 3D application. Use the same relative `DrawingRelativePath` paths in both CSVs so that the generated folder structure and Plant project folders match. Build and load the add-in in [Plant3DMetadataAddin](./Plant3DMetadataAddin/README.md), then run `P3DIMPORTDRAWINGPROPERTIES`. It validates the CSV and source files, prompts for a project part, previews the batch, and requires typing `ADD` before making project changes. Folder paths in the CSV locate source DWGs below the active Plant 3D project's local folder and must correspond to folders already created through Plant 3D Project Manager under the selected PID DWG folder. The importer will list missing folders and stop before adding drawings; create those folders manually and rerun the import. Start with one drawing in a test project. Check in successfully added drawings through Project Manager to publish them to the collaborative project.
 
 ## CSV behavior
 

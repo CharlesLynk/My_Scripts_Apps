@@ -13,6 +13,7 @@ Plant3DMetadataAddin/
 ├── .gitignore
 ├── Plant3DMetadataAddin.csproj
 ├── DrawingPropertyImportCommand.cs
+├── DrawingPropertyUpdateCommand.cs
 ├── ProjectApiInfoCommand.cs
 ├── reference/
 │   └── decompiled/   user-provided API references; plain-text, not source
@@ -30,6 +31,7 @@ Keep project-specific API probe output and build artifacts out of source control
 |---|---|---|
 | `P3DPROJECTAPIINFO` | Reports the active project, property metadata, project items, project-part directory mappings, folder-path resolution, and loaded Project Manager API signatures. | No |
 | `P3DIMPORTDRAWINGPROPERTIES` | Validates a metadata CSV, registers drawings, writes properties, and normalizes eligible XREF paths. | Yes |
+| `P3DUPDATEDRAWINGPROPERTIES` | Updates properties of drawings already registered in the active PnId part, from a metadata CSV. Unregistered rows are skipped and reported. | Yes (property values only; no drawings are copied, registered, or created) |
 
 Both commands require the full AutoCAD Plant 3D application with an active drawing. The import command uses the currently open, signed-in Plant 3D project and does not store or request Autodesk credentials.
 
@@ -51,9 +53,9 @@ Do not use an alternate build output path. `bin/` and `obj/` are generated and i
 
 ## Metadata CSV
 
-Store the CSV in the common/base PID DWG folder beside its source drawing folders. The required path header is `DrawingRelativePath`; the legacy `DrawingFileName` header remains accepted for existing files, but both headers may not appear in the same CSV.
+The CSV can be stored anywhere. The required path header is `DrawingRelativePath`; the legacy `DrawingFileName` header remains accepted for existing files, but both headers may not appear in the same CSV.
 
-- Source DWGs are resolved relative to the CSV directory, using the path in `DrawingRelativePath`.
+- Source DWGs are resolved relative to the active Plant 3D project's local folder, using the path in `DrawingRelativePath`. A source DWG must already exist under that folder; the import copies it only if its project-folder destination differs.
 - The importer always targets the active project's PnId part. Destination folders are relative to that part; a bare filename targets its root.
 - Before import, the command checks all rows for missing sources, registered drawings, and destination-file collisions, then reports all conflicts together. Missing destination folders are listed for creation; no files or folders are changed during preflight.
 - One `ADD` authorizes creating missing folders through the Project Manager workflow and importing the drawings. Root folders use a null parent identifier; nested folders use their parent GUID. For collaboration projects, each created folder is added through Plant's collaboration API and the folders-only refresh runs after a successful add.
@@ -72,6 +74,18 @@ The sample is [`../sample_databaseFields.csv`](../sample_databaseFields.csv).
 5. Review import and XREF warnings, then check in changed drawings through Project Manager.
 
 The folder workflow mirrors Plant's Project Manager dialog: local cache directories are provisioned, folder metadata is initialized with Plant's `FileHelper` (including the active project's DWT template paths), folders are registered with `Project.CreateFolder`, and the project write time is updated. Collaboration projects call `AddProjectItemWithCIP` followed by the folders-only `DownloadHeadRevisionWithCIP` refresh after a successful add; the importer does not run a collaboration refresh before folder creation. If `AddProjectItemWithCIP` fails, the importer follows the dialog's local cleanup sequence (remove the pending project row with tombstones disabled, then delete only a newly created local directory), updates the project write time, and reports cleanup failures. Because the collaboration service may have applied the remote folder operation before returning an error, this cleanup does not guarantee removal of the remote folder; verify and reconcile Project Manager and Forma before retrying. Folder and collaboration failures stop before drawing copy and registration. The sync-aware drawing API also stops on conflicts or out-of-sync results. A copied DWG may remain, and a drawing may already have been registered, if a later import-time failure occurs.
+
+## Update workflow
+
+`P3DUPDATEDRAWINGPROPERTIES` changes properties of drawings that are already registered in the active project. It reads the same CSV format and property-matching rules as the import, but it never copies, registers, or creates folders, and it does not process XREFs. Source DWGs are not needed.
+
+1. Open the project in Plant 3D and run `P3DUPDATEDRAWINGPROPERTIES`.
+2. Select the CSV. `DrawingRelativePath` locates each drawing's project folder and file name.
+3. Review the preview: drawings to update, rows that already match, and rows skipped because the drawing is not registered in the PnId part (or its DWG is missing on disk).
+4. Type `UPDATE` to apply the changes.
+5. Check in updated drawings through Project Manager.
+
+Each changed value is written with `SetDrawingPropertyValue`, and each drawing is then accepted with `AcceptDrawingProperties`. The command stops at the first Plant error and reports the drawing where it stopped; drawings processed before it keep their changes.
 
 ## Collaboration folder investigation handoff
 

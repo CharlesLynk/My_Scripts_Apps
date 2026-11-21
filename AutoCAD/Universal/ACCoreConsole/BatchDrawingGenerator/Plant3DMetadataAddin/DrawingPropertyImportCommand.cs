@@ -18,7 +18,7 @@ using System.Security.Cryptography;
 
 namespace Plant3DMetadataAddin
 {
-    public class DrawingPropertyImportCommand
+    public partial class DrawingPropertyImportCommand
     {
         private const string DrawingRelativePathHeader = "DrawingRelativePath";
         private const string LegacyDrawingFileNameHeader = "DrawingFileName";
@@ -47,7 +47,7 @@ namespace Plant3DMetadataAddin
             }
 
             var csvPrompt = new PromptStringOptions(
-                "\nEnter the full path to the metadata CSV (DWG paths are relative to its folder): ")
+                "\nEnter the full path to the metadata CSV (DWG paths are relative to the active project folder): ")
             {
                 AllowSpaces = true
             };
@@ -99,11 +99,10 @@ namespace Plant3DMetadataAddin
             try
             {
                 var mappings = ReadPropertyMappings(projectPart);
-                var records = ReadDrawingRecords(csvPath, mappings);
+                var records = ReadDrawingRecords(csvPath, mappings, projectRootPath);
                 var folderPathsToCreate = ValidateRecords(
                     projectPart,
                     records,
-                    csvPath,
                     projectRootPath);
                 editor.WriteMessage(
                     "\nPreflight passed: {0} drawing(s), {1} property column(s), project part '{2}'.",
@@ -114,8 +113,8 @@ namespace Plant3DMetadataAddin
                     "\nFile placement: {0} source DWG(s) will be copied to their project folders; existing identical destination files will be registered in place.",
                     records.Count(record => record.CopySourceToDestination));
                 editor.WriteMessage(
-                    "\nSource DWGs are resolved relative to the CSV folder: {0}",
-                    Path.GetDirectoryName(csvPath));
+                    "\nSource DWGs are resolved from the active project folder: {0}",
+                    projectRootPath);
                 editor.WriteMessage(
                     "\nPlant 3D will register each DWG from its intended project-folder location. Review any XREF validation warnings after import.");
                 if (folderPathsToCreate.Count > 0)
@@ -223,7 +222,8 @@ namespace Plant3DMetadataAddin
 
         private static List<DrawingRecord> ReadDrawingRecords(
             string csvPath,
-            List<PropertyMapping> metadata)
+            List<PropertyMapping> metadata,
+            string sourceRootPath)
         {
             string[] headers;
             var rows = new List<string[]>();
@@ -340,7 +340,9 @@ namespace Plant3DMetadataAddin
             }
 
             var records = new List<DrawingRecord>();
-            var sourceDirectory = Path.GetDirectoryName(Path.GetFullPath(csvPath));
+            var sourceDirectory = string.IsNullOrWhiteSpace(sourceRootPath)
+                ? null
+                : Path.GetFullPath(sourceRootPath);
             foreach (var fields in rows)
             {
                 var drawingPath = fields[drawingPathIndex].Trim();
@@ -388,7 +390,7 @@ namespace Plant3DMetadataAddin
                     fileName,
                     relativePath,
                     relativeFolderPath,
-                    Path.Combine(sourceDirectory, relativePath),
+                    sourceDirectory == null ? null : Path.Combine(sourceDirectory, relativePath),
                     propertyValues));
             }
 
@@ -410,7 +412,7 @@ namespace Plant3DMetadataAddin
                  normalizedPath[1] == ':'))
             {
                 throw new InvalidOperationException(
-                    "DrawingRelativePath must be relative to the CSV directory: " +
+                    "DrawingRelativePath must be relative to the active project folder: " +
                     drawingPath);
             }
 
@@ -469,7 +471,6 @@ namespace Plant3DMetadataAddin
         private static List<string> ValidateRecords(
             Project projectPart,
             List<DrawingRecord> records,
-            string csvPath,
             string projectRootPath)
         {
             var preflightIssues = new List<string>();
@@ -613,12 +614,6 @@ namespace Plant3DMetadataAddin
 
                 record.FilePath = destinationFilePath;
                 record.CopySourceToDestination = true;
-            }
-
-            if (string.IsNullOrWhiteSpace(Path.GetDirectoryName(csvPath)))
-            {
-                preflightIssues.Add(
-                    "Could not determine the CSV directory for source drawings.");
             }
 
             if (preflightIssues.Count > 0)

@@ -12,7 +12,11 @@ param(
 
     [int]$MaxDrawings = 0,
 
-    [switch]$KeepLogs
+    [switch]$KeepLogs,
+
+    [switch]$UpdateExisting,
+
+    [string]$DrawingRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -313,11 +317,18 @@ if (-not (Test-Path -LiteralPath $AccoreConsolePath -PathType Leaf) -or
     throw "Select a valid accoreconsole.exe file: $AccoreConsolePath"
 }
 
-$TemplatePath = Resolve-InputFile -Path $TemplatePath -Title "AutoCAD template" -Filter "AutoCAD template (*.dwt)|*.dwt" -Extension ".dwt"
+if (-not $UpdateExisting) {
+    $TemplatePath = Resolve-InputFile -Path $TemplatePath -Title "AutoCAD template" -Filter "AutoCAD template (*.dwt)|*.dwt" -Extension ".dwt"
+}
 $CsvPath = Resolve-InputFile -Path $CsvPath -Title "Drawing data" -Filter "CSV files (*.csv)|*.csv" -Extension ".csv"
-$BorderXrefPath = Resolve-OptionalBorderXrefPath -Path $BorderXrefPath
+if (-not $UpdateExisting) {
+    $BorderXrefPath = Resolve-OptionalBorderXrefPath -Path $BorderXrefPath
+}
 
-$readableFiles = @($AccoreConsolePath, $TemplatePath)
+$readableFiles = @($AccoreConsolePath)
+if (-not $UpdateExisting) {
+    $readableFiles += $TemplatePath
+}
 if (-not [string]::IsNullOrWhiteSpace($BorderXrefPath)) {
     $readableFiles += $BorderXrefPath
 }
@@ -519,18 +530,165 @@ foreach ($row in $rows) {
     }
 }
 
-$OutputDirectory = Resolve-OutputDirectory -Path $OutputDirectory
-
 if ($MaxDrawings -gt 0) {
     $resolvedRows = @($resolvedRows | Select-Object -First $MaxDrawings)
 }
 
-$outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
 $generatorDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $lispHelperPath = Join-Path $generatorDirectory "CreateFromTemplate.lsp"
 if (-not (Test-Path -LiteralPath $lispHelperPath -PathType Leaf)) {
     throw "Required AutoLISP helper is missing: $lispHelperPath"
 }
+
+if ($UpdateExisting) {
+    if ([string]::IsNullOrWhiteSpace($DrawingRoot)) {
+        $DrawingRoot = Split-Path -Parent $CsvPath
+    }
+    $drawingRootPath = Resolve-FileSystemPath -Path $DrawingRoot
+    if (-not (Test-Path -LiteralPath $drawingRootPath -PathType Container)) {
+        throw "Drawing folder does not exist: $drawingRootPath"
+    }
+
+    $updateTargets = @()
+    $missingDrawings = @()
+    $existingBackups = @()
+    foreach ($drawing in $resolvedRows) {
+        $drawingPath = Join-Path $drawingRootPath $drawing.DrawingName
+        $backupPath = [System.IO.Path]::ChangeExtension($drawingPath, ".bak")
+        if (-not (Test-Path -LiteralPath $drawingPath -PathType Leaf)) {
+            $missingDrawings += $drawingPath
+        }
+        elseif (Test-Path -LiteralPath $backupPath) {
+            $existingBackups += $backupPath
+        }
+        else {
+            $updateTargets += [pscustomobject]@{
+                Drawing     = $drawing
+                DrawingPath = $drawingPath
+                BackupPath  = $backupPath
+            }
+        }
+    }
+    if ($missingDrawings.Count -gt 0) {
+        $missingText = $missingDrawings -join "`n  "
+        throw "Existing drawing(s) not found:`n  $missingText`nNo drawings were changed."
+    }
+    if ($existingBackups.Count -gt 0) {
+        $backupText = $existingBackups -join "`n  "
+        throw "Backup file(s) already exist; refusing to overwrite them. Move or delete them and retry:`n  $backupText`nNo drawings were changed."
+    }
+
+    if ($WhatIfPreference) {
+        foreach ($target in $updateTargets) {
+            Write-Host "What if: would back up $($target.DrawingPath) to $($target.BackupPath) and update its block attributes in place"
+        }
+        return
+    }
+
+    $approvedTargets = @(
+        foreach ($target in $updateTargets) {
+            if ($PSCmdlet.ShouldProcess($target.DrawingPath, "Update block attributes in place (original kept as .bak)")) {
+                $target
+            }
+        }
+    )
+    if ($approvedTargets.Count -eq 0) {
+        Write-Host "No drawings were selected for update."
+        return
+    }
+
+    $logDirectory = Join-Path $drawingRootPath "logs"
+    $workRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("AutoCADBatchUpdate-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $workRoot | Out-Null
+    $updatedCount = 0
+
+    try {
+        for ($index = 0; $index -lt $approvedTargets.Count; $index++) {
+            $target = $approvedTargets[$index]
+            $label = ($index + 1).ToString("000")
+            $drawingName = $target.Drawing.DrawingName
+            $jobDirectory = Join-Path $workRoot ("update-" + $label)
+            New-Item -ItemType Directory -Path $jobDirectory | Out-Null
+            $resultPath = Join-Path $jobDirectory "result.txt"
+            $scriptPath = Join-Path $jobDirectory "update.scr"
+            $mappingList = ConvertTo-LispMappings -Mappings $mappings -Values $target.Drawing.Values
+            $updateLines = @(
+                "(load $(ConvertTo-LispString $lispHelperPath))"
+                "(setq *batch-unresolved-xrefs* nil)"
+                "(setq *batch-mappings* '$mappingList)"
+                "(setq *batch-result-file* $(ConvertTo-LispString $resultPath))"
+                "(c:CREATEFROMCSV)"
+            )
+            Write-Utf8File -Path $scriptPath -Content (($updateLines -join "`r`n") + "`r`n")
+
+            Copy-Item -LiteralPath $target.DrawingPath -Destination $target.BackupPath
+            Write-Host "Updating $drawingName ($($index + 1) of $($approvedTargets.Count))..."
+            $updateProcess = Invoke-CoreConsole -DrawingPath $target.DrawingPath -ScriptPath $scriptPath
+            $updateLogText = $updateProcess.StdOut + [Environment]::NewLine + $updateProcess.StdErr
+            $updateLogFile = Join-Path $logDirectory ("update-" + $label + ".accoreconsole.log")
+            $updateErrorLogFile = Join-Path $logDirectory ("update-" + $label + ".accoreconsole.err")
+            $updateFailure = $null
+
+            if ($updateLogText -match '(?i)File load canceled|SECURELOAD') {
+                $updateFailure = "AutoCAD blocked loading the AutoLISP helper '$lispHelperPath'. Add '$generatorDirectory' to AutoCAD's Trusted Locations/TRUSTEDPATHS, or ask IT to approve that folder, then retry."
+            }
+            elseif (-not (Test-Path -LiteralPath $resultPath -PathType Leaf) -or
+                (Get-Content -LiteralPath $resultPath -Raw).Trim() -ne "SUCCESS") {
+                $updateFailure = "Core Console did not report success for '$drawingName'."
+                $updateDetail = Get-AutoCadErrorText -LogText $updateLogText
+                if ($updateDetail) {
+                    $updateFailure += " $updateDetail"
+                }
+            }
+            elseif ($updateProcess.ExitCode -ne 0) {
+                $updateFailure = "Core Console exited with code $($updateProcess.ExitCode) after updating '$drawingName'."
+                $updateDetail = Get-AutoCadErrorText -LogText $updateLogText
+                if ($updateDetail) {
+                    $updateFailure += " $updateDetail"
+                }
+            }
+
+            if ($updateFailure) {
+                $originalHash = (Get-FileHash -LiteralPath $target.DrawingPath -Algorithm SHA256).Hash
+                $backupHash = (Get-FileHash -LiteralPath $target.BackupPath -Algorithm SHA256).Hash
+                if ($originalHash -eq $backupHash) {
+                    Remove-Item -LiteralPath $target.BackupPath -Force
+                    $backupNote = "The drawing was not modified, so its backup was removed."
+                }
+                else {
+                    $backupNote = "The drawing was modified before the failure; the original is saved as $($target.BackupPath)."
+                }
+                Save-CoreConsoleLogs `
+                    -StdOut $updateProcess.StdOut `
+                    -StdErr $updateProcess.StdErr `
+                    -DestinationLog $updateLogFile `
+                    -DestinationErrorLog $updateErrorLogFile | Out-Null
+                throw "$updateFailure`n$backupNote`nUpdated $updatedCount of $($approvedTargets.Count) drawing(s) before stopping.`nLogs saved to:`n  $updateLogFile`n  $updateErrorLogFile"
+            }
+
+            if ($KeepLogs) {
+                Save-CoreConsoleLogs `
+                    -StdOut $updateProcess.StdOut `
+                    -StdErr $updateProcess.StdErr `
+                    -DestinationLog $updateLogFile `
+                    -DestinationErrorLog $updateErrorLogFile | Out-Null
+            }
+            Write-Host "Updated $($target.DrawingPath)"
+            $updatedCount++
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $workRoot) {
+            Remove-Item -LiteralPath $workRoot -Recurse -Force
+        }
+    }
+
+    Write-Host "Update complete. Updated $updatedCount drawing(s). Each original was kept as a .bak file beside it."
+    return
+}
+
+$OutputDirectory = Resolve-OutputDirectory -Path $OutputDirectory
+$outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
 
 if ($WhatIfPreference) {
     foreach ($drawing in $resolvedRows) {

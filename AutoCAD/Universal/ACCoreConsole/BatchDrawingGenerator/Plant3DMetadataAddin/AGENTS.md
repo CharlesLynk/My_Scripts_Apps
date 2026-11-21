@@ -6,14 +6,14 @@ Read this file and `README.md` before changing this add-in.
 
 - This is a .NET 10 Windows add-in for AutoCAD Plant 3D 2026.
 - Plant APIs require the full AutoCAD Plant 3D application, an active drawing, and the intended signed-in project. Accoreconsole is not a supported runtime for these commands.
-- `P3DPROJECTAPIINFO` is read-only diagnostics. `P3DIMPORTDRAWINGPROPERTIES` changes the active project and its drawings.
+- `P3DPROJECTAPIINFO` is read-only diagnostics. `P3DIMPORTDRAWINGPROPERTIES` changes the active project and its drawings. `P3DUPDATEDRAWINGPROPERTIES` changes property values only on drawings already registered in the active project.
 - The import command is PnId-only; access the `PnId` project part directly instead of prompting for a part.
 
 ## Import invariants
 
 - Keep strict CSV field-count and property-mapping validation before the user confirms `ADD`.
 - `DrawingRelativePath` is canonical. Continue accepting `DrawingFileName` only as a legacy alias; reject a CSV containing both.
-- Resolve source DWGs relative to the CSV directory. Destination folder paths are relative to the PnId project part.
+- Resolve source DWGs relative to the active Plant 3D project's local folder, not the CSV directory. Destination folder paths are relative to the PnId project part.
 - After `ADD`, register each drawing from its intended project-folder location. Copy an external source into the existing destination folder without overwriting; allow an already-present destination DWG when its contents match the source and it is not registered.
 - Aggregate missing-source, missing/unregistered destination-folder, registered-drawing, and different-destination-file conflicts before copying DWGs or changing the project.
 - Show all missing folder paths before confirmation. One `ADD` authorizes the Project Manager folder workflow and import.
@@ -26,6 +26,12 @@ Read this file and `README.md` before changing this add-in.
 - After registration, only rewrite an absolute XREF path when both the drawing and existing XREF target are inside the active project's local folder. Leave missing or outside-project targets unchanged and report them.
 - The XREF pass edits registered DWGs; users must review warnings and check in changes through Project Manager.
 - Stop on the first import error and report it. Do not silently roll back, retry, or claim that a failed drawing was not registered.
+
+## Update invariants
+
+- `P3DUPDATEDRAWINGPROPERTIES` must only update drawings already registered in the PnId part. Look them up through the project's folder and item tree. Never fall back to the source path, and never copy, register, create folders, or run XREF processing.
+- Validate the whole CSV and match every property column before the user types `UPDATE`. Skip and report unregistered rows, and do not write values that already match.
+- Call `SetDrawingPropertyValue` and `AcceptDrawingProperties` per drawing. Stop on the first error and report it; do not claim rollback.
 
 ## Collaboration-folder investigation handoff
 
