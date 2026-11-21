@@ -1,0 +1,6 @@
+{
+    "Fit-Compact": { "Mode": "Fit", "MinSize": 6, "MaxSize": 9 },
+    "Fit-Large": { "Mode": "Fit", "MinSize": 8, "MaxSize": 12 },
+    "Fixed-8": { "Mode": "Fixed", "Size": 8 },
+    "Fixed-10": { "Mode": "Fixed", "Size": 10 }
+}
