@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Quick diagnostic guide for common issues with the homelab setup script and root switcher.
+Quick diagnostic guide for common issues with the Raspberry Pi setup scripts and root switcher. USB boot sections apply to Raspberry Pi 4 and 5.
 
 ## 📖 Reading This Guide
 
@@ -27,25 +27,14 @@ glow /root/README.md
 Run these commands to get a fast overview:
 
 ```bash
-# Services
-docker ps -a
-
 # Boot + storage
 findmnt / /boot/firmware
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,PARTUUID
 
 # Network
 ping -c 1 1.1.1.1
-tailscale status
-
-# Firewall (optional)
-sudo systemctl is-active nftables
-sudo nft list ruleset
-
-# Logs
-docker logs --tail 50 pihole
-docker logs --tail 50 homeassistant
-docker logs --tail 50 homeway
+ip addr
+ip route
 ```
 
 ---
@@ -63,9 +52,6 @@ chmod +x homelab-setup.sh switch-root.sh
 
 # Root switcher (interactive menu)
 sudo ./switch-root.sh
-
-# Homelab setup (requires mode)
-sudo ./homelab-setup.sh install-docker
 ```
 
 ### Check shebangs
@@ -100,7 +86,7 @@ Best practice:
 
 ---
 
-## ❌ USB Storage Device Not Detected (switch-root.sh)
+## ❌ USB Storage Device Not Detected (Pi 4, switch-root.sh)
 
 ### Symptoms
 - “No USB storage devices detected”
@@ -115,13 +101,13 @@ dmesg | grep -i sd
 ```
 
 ### Common fixes
-- Use a powered USB hub (Pi 3/4 especially)
+- Use a powered USB hub
 - Try a different USB cable or port
 - Restart udev: sudo systemctl restart udev
 
 ---
 
-## ❌ Partitioning or Device Node Issues
+## ❌ Partitioning or Device Node Issues (Pi 4/5)
 
 ### Symptoms
 - “Device is busy”
@@ -154,7 +140,7 @@ Notes:
 
 ---
 
-## ❌ PARTUUID Conflicts
+## ❌ PARTUUID Conflicts (Pi 4/5)
 
 ### Symptoms
 - “PARTUUID conflict detected”
@@ -177,7 +163,7 @@ The scripts automatically check and fail safe when a conflict is detected.
 
 ---
 
-## ❌ USB Boot Issues (Pi 5 / Power)
+## ❌ USB Boot Issues (Pi 4 / Power)
 
 ### Symptoms
 - USB drive not detected during boot
@@ -199,11 +185,11 @@ Expected:
 
 ### EEPROM boot order (manual only)
 Only needed if you want full USB boot without SD fallback.
-Use raspi-config or rpi-eeprom-config.
+Use raspi-config or rpi-eeprom-config. Option 8 in switch-root.sh also manages this on Pi 4.
 
 ---
 
-## ❌ System Won’t Boot After Migration
+## ❌ System Won’t Boot After Migration (Pi 4/5)
 
 ### Emergency recovery
 1) Boot from SD only (remove USB drive)
@@ -225,7 +211,7 @@ If needed, run switch-root.sh option 3 to reconfigure USB boot partitions.
 
 ---
 
-## ❌ switch-root.sh Download/Flash Issues (Option 7)
+## ❌ switch-root.sh Download/Flash Issues (Option 7, Pi 4/5)
 
 ### Symptoms
 - Download stalls
@@ -258,202 +244,18 @@ The script validates:
 
 ---
 
-## ❌ Docker Install / Docker Daemon Issues
-
-### Symptoms
-- Docker command missing after install
-- Docker daemon not running
+## ❌ SSH or WiFi Not Working After Setup
 
 ### Diagnostic
 ```bash
-docker --version
-systemctl status docker
-journalctl -u docker -n 50
+sudo ./switch-root.sh   # then choose option 2
+ip addr
+systemctl status ssh
 ```
 
 ### Fix
-```bash
-sudo systemctl start docker
-sudo systemctl enable docker
-```
-
-If installation failed, re-run:
-```bash
-sudo ./homelab-setup.sh install-docker
-```
-
----
-
-## ❌ Pi-hole Won’t Start
-
-### Symptoms
-- Container crashes
-- Port 53 conflict
-- Port 80 conflict
-
-### Diagnostic
-```bash
-sudo ss -tulpn | grep :53
-sudo ss -tulpn | grep :80
-systemctl status systemd-resolved
-docker logs pihole
-```
-
-### Fix (common)
-```bash
-# Disable systemd-resolved
-sudo systemctl stop systemd-resolved
-sudo systemctl disable systemd-resolved
-
-# Replace resolv.conf
-sudo rm /etc/resolv.conf
-echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
-echo "nameserver 1.0.0.1" | sudo tee -a /etc/resolv.conf
-
-# Restart Pi-hole
-docker restart pihole
-```
-
----
-
-## ❌ Home Assistant Won’t Start
-
-### Symptoms
-- Container keeps restarting
-- “Unhealthy” status
-- Very slow first start
-
-### Diagnostic
-```bash
-docker ps -a | grep homeassistant
-docker logs --tail 100 homeassistant
-ls -la /homelab/homeassistant
-df -h /homelab
-```
-
-### Fix
-```bash
-# Permissions
-sudo chown -R root:root /homelab/homeassistant
-
-# Fresh start (destructive)
-sudo rm -rf /homelab/homeassistant/*
-```
-
-Note: First start can take 10–15 minutes on slower storage.
-
----
-
-## ❌ Homeway Won’t Start / HOMEWAY_TOKEN Issues
-
-### Symptoms
-- HOMEWAY_TOKEN not set
-- Container restarts
-
-### Diagnostic
-```bash
-docker logs homeway
-ls -la /homelab/compose/.env
-grep HOMEWAY_TOKEN /homelab/compose/.env
-```
-
-### Fix
-```bash
-# Run configure mode to populate .env
-sudo ./homelab-setup.sh configure
-
-# Or set manually
-cd /homelab/compose
-sed -i '/^HOMEWAY_TOKEN=/d' .env
-echo "HOMEWAY_TOKEN=your-token" >> .env
-chmod 600 .env
-
-docker compose -f homeway-compose.yml up -d
-```
-
-Notes:
-- install-docker creates a placeholder .env with empty HOMEWAY_TOKEN
-- configure mode fills the token
-- .env persists across reboots and restores
-
----
-
-## ❌ Tailscale Won’t Connect
-
-### Diagnostic
-```bash
-tailscale status
-systemctl status tailscaled
-journalctl -u tailscaled -n 50
-```
-
-### Fix
-```bash
-sudo systemctl restart tailscaled
-sudo tailscale up --ssh --accept-dns=false
-```
-
-If auth key expired, generate a new one and re-run configure mode.
-
----
-
-## ❌ Locked Out After Firewall Configuration
-
-### Cause
-The firewall (nftables) allows only LAN subnet + Tailscale.
-If the subnet was wrong, SSH is blocked.
-
-### Recovery
-```bash
-# Local console
-sudo nft flush ruleset
-sudo systemctl stop nftables
-
-# Or remove config
-sudo rm /etc/nftables.conf
-```
-
-Then re-run:
-```bash
-sudo ./homelab-setup.sh configure
-```
-
----
-
-## ❌ Backup Fails
-
-### Diagnostic
-```bash
-df -h /homelab
-ls -lh /homelab/backups
-journalctl -p err -n 20
-```
-
-### Fix
-```bash
-# Free space
-docker system prune -a --volumes
-
-# Remove old backups
-sudo rm -rf /homelab/backups/homelab-backup-OLD*.tar.gz
-```
-
----
-
-## ❌ Restore Fails
-
-### Diagnostic
-```bash
-ls -lh /homelab/backups
-cd /homelab/backups
-docker logs pihole
-docker logs homeassistant
-```
-
-### Fix
-- Try an older backup
-- Verify Docker is running
-- Check disk space
+- Re-run option 2 to review SSH and WiFi state and update first-boot seed files.
+- If the target already completed first boot, seed-file edits will not reconfigure it. Connect with a console (keyboard/HDMI) and fix the settings there.
 
 ---
 
@@ -467,24 +269,46 @@ uptime
 ```
 
 ### Fix
-- Migrate to USB storage (switch-root.sh option 6)
+- Migrate to USB storage (switch-root.sh option 6, Pi 4/5 only)
 - Use an SSD or faster USB adapter
-- Reduce container load or disable Homeway
+
+---
+
+## ❌ Camera Not Detected (Pi Zero 2 W, IMX519)
+
+See [camera/README.md](camera/README.md) for the full camera setup. The camera checks are in `camera-setup.sh --verify`.
+
+### Symptoms
+- `rpicam-still --list-cameras` does not list imx519
+- Test capture fails
+
+### Fix
+- Reseat the ribbon. The Zero 2 W needs a 22-to-15-pin adapter. Make sure the blue tab faces the correct way for your adapter.
+- Confirm `/boot/firmware/config.txt` has `camera_auto_detect=0` and `dtoverlay=imx519` under `[all]`.
+- Reboot after changing `config.txt`.
+
+---
+
+## ❌ RTSP Stream Not Running (camera-stream service)
+
+### Diagnostic
+```bash
+systemctl status camera-stream
+journalctl -u camera-stream -e
+```
+
+### Fix
+- Run `sudo bash camera-setup.sh --verify` to see which step fails.
+- If the stream is up but Frigate cannot read it, check the password in the homelab `frigate/.env` matches `sudo cat /etc/mediamtx/frigate-password` on the Pi.
 
 ---
 
 ## 🆘 Emergency Recovery Checklist
 
-### If boot fails
+### If boot fails (Pi 4/5)
 1) Boot from SD only
 2) Restore /boot/firmware/cmdline.txt.bak
 3) Re-run switch-root.sh option 3 or 4
-
-### If Docker is broken
-```bash
-sudo systemctl restart docker
-journalctl -u docker -n 100
-```
 
 ### If network is broken
 ```bash
@@ -516,22 +340,9 @@ Run this to create a diagnostic file you can share:
   echo -e "\n=== Disk ==="
   lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,PARTUUID
 
-  echo -e "\n=== Docker Containers ==="
-  docker ps -a
-
-  echo -e "\n=== Tailscale ==="
-  tailscale status
-
-  echo -e "\n=== Firewall ==="
-  sudo systemctl is-active nftables
-  sudo nft list ruleset 2>/dev/null | head -40
-
-  echo -e "\n=== Homeway Token ==="
-  if [[ -f /homelab/compose/.env ]]; then
-    sed 's/HOMEWAY_TOKEN=.*/HOMEWAY_TOKEN=***MASKED***/' /homelab/compose/.env
-  else
-    echo "Missing /homelab/compose/.env"
-  fi
+  echo -e "\n=== Network ==="
+  ip addr
+  ip route
 
   echo -e "\n=== Recent Errors ==="
   journalctl -p err -n 20 --no-pager

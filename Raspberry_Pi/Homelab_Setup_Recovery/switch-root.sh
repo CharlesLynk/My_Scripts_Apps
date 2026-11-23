@@ -8,15 +8,16 @@
 # Options (interactive menu):
 #   1) Show current setting
 #   2) Verify initial configuration (SSH and WiFi)
-#   3) Configure USB boot partitions (add power settings to config.txt)
-#   4) Switch to current-device-only (boot+root on current device)
-#   5) Switch to Hybrid (boot on current device, root on another)
-#   6) Clone OS to USB target (boot+root)
-#   7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd)
-#   8) Configure EEPROM boot order (SD/USB priority)
+#   3) Configure USB boot partitions (add power settings to config.txt) [Pi 4/5 only]
+#   4) Switch to current-device-only (boot+root on current device) [Pi 4/5 only]
+#   5) Switch to Hybrid (boot on current device, root on another) [Pi 4/5 only]
+#   6) Clone OS to USB target (boot+root) [Pi 4/5 only]
+#   7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd) [Pi 4/5 only]
+#   8) Configure EEPROM boot order (SD/USB priority) [Pi 4/5 only]
 #   q) Quit
 #
 # Notes:
+#   - Options 3-8 are USB boot features for Raspberry Pi 4 and 5. They refuse to run on other boards, including Zero 2 W.
 #   - This script edits /boot/firmware/cmdline.txt in place.
 #   - Before the first change, it saves a copy as cmdline.txt.bak.
 #   - If a backup already exists, you will be prompted whether to overwrite it.
@@ -791,6 +792,17 @@ is_raspberry_pi_5() {
   local model=""
   model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
   [[ "$model" == *"Raspberry Pi 5"* ]]
+}
+
+# Helper: Allow USB boot options only on Raspberry Pi 4 or 5 (refuses Zero 2 W and unidentified boards)
+require_usb_boot_board() {
+  local model=""
+  model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
+  if [[ "$model" == *"Raspberry Pi 4"* || "$model" == *"Raspberry Pi 5"* ]]; then
+    return 0
+  fi
+  log_error "USB boot options (3-8) are for Raspberry Pi 4 or 5 only. Detected: ${model:-unknown board}"
+  return 1
 }
 
 # Helper: Remove legacy forced host overlay added by old versions of this script
@@ -3023,7 +3035,6 @@ sync_system_configs() {
     "/etc/hosts"
     "/etc/timezone"
     "/etc/locale.gen"
-    "/etc/nftables.conf"
     "/etc/ssh/sshd_config"
   )
   
@@ -5543,7 +5554,7 @@ clone_os_to_usb_target() {
     log_info "💡 Performance Note: You're migrating from USB to USB"
     log_info "   Alternative approach (faster, ~2 min vs 20 min):"
     log_info "   1. Flash fresh Raspberry Pi OS directly to target SSD using Pi Imager"
-    log_info "   2. Boot from new SSD and run homelab-setup.sh to restore configs"
+    log_info "   2. Boot from new SSD and run switch-root.sh option 2 to verify SSH and WiFi"
     log_info "   This avoids the slow USB-to-USB copy step entirely"
     echo
   fi
@@ -5660,7 +5671,7 @@ configure_usb_boot_partitions() {
   log_step "Configure USB Boot Partitions"
   log_info "This will check all USB boot partitions and ensure they have:"
   log_info "  - USB power settings in config.txt"
-  log_info "  - Homelab setup scripts"
+  log_info "  - Setup helper scripts"
   echo
   log_info "Note: This only updates files, it does NOT change boot order."
   echo
@@ -6154,12 +6165,12 @@ fi
 log_step "Raspberry Pi Root Switcher"
 echo "1) Show current setting"
 echo "2) Verify initial configuration (SSH and WiFi)"
-echo "3) Configure USB boot partitions (add power settings to config.txt)"
-echo "4) Switch to current-device-only (boot+root on current device)"
-echo "5) Switch to Hybrid (boot on current device, root on another)"
-echo "6) Clone OS to USB target (boot+root)"
-echo "7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd)"
-echo "8) Configure EEPROM boot order (SD/USB priority)"
+echo "3) Configure USB boot partitions (add power settings to config.txt) [Pi 4/5 only]"
+echo "4) Switch to current-device-only (boot+root on current device) [Pi 4/5 only]"
+echo "5) Switch to Hybrid (boot on current device, root on another) [Pi 4/5 only]"
+echo "6) Clone OS to USB target (boot+root) [Pi 4/5 only]"
+echo "7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd) [Pi 4/5 only]"
+echo "8) Configure EEPROM boot order (SD/USB priority) [Pi 4/5 only]"
 echo "q) Quit"
 read -rp "Enter choice: " choice
 choice="${choice,,}"
@@ -6167,12 +6178,12 @@ choice="${choice,,}"
 case "$choice" in
   1) show_current ;;
   2) check_initial_config --include-boot-targets ;;
-  3) configure_usb_boot_partitions ;;
-  4) switch_current_only ;;
-  5) switch_hybrid ;;
-  6) clone_os_to_usb_target ;;
-  7) flash_fresh_usb ;;
-  8) configure_eeprom_boot_order ;;
+  3) require_usb_boot_board && configure_usb_boot_partitions ;;
+  4) require_usb_boot_board && switch_current_only ;;
+  5) require_usb_boot_board && switch_hybrid ;;
+  6) require_usb_boot_board && clone_os_to_usb_target ;;
+  7) require_usb_boot_board && flash_fresh_usb ;;
+  8) require_usb_boot_board && configure_eeprom_boot_order ;;
   q) echo "Exiting." ;;
   *) err "Invalid choice" ;;
 esac

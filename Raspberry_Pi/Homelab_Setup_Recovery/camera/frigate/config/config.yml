@@ -1,0 +1,49 @@
+mqtt:
+  enabled: true
+  host: mosquitto
+  user: frigate
+  password: "{FRIGATE_MQTT_PASSWORD}"
+
+# Pulls the Pi's RTSP stream once. Replace PI_ADDRESS with the Pi's Tailscale IP.
+go2rtc:
+  streams:
+    pi_cam:
+      - rtsp://frigate:{FRIGATE_RTSP_PASSWORD}@PI_ADDRESS:8554/cam
+
+detectors:
+  cpu:
+    type: cpu
+
+cameras:
+  pi_zero_cam:
+    ffmpeg:
+      inputs:
+        # Local restream of the go2rtc stream above, so the Pi serves one connection
+        - path: rtsp://127.0.0.1:8554/pi_cam
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+            - record
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+    objects:
+      track:
+        - person
+        - car
+        - dog
+        - cat
+    record:
+      enabled: true
+      # Keep only clips around detected events, not continuous footage
+      continuous:
+        days: 0
+      alerts:
+        retain:
+          days: 14
+      detections:
+        retain:
+          days: 14
+    snapshots:
+      enabled: true

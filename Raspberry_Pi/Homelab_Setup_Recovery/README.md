@@ -1,36 +1,32 @@
-# Raspberry Pi Homelab Setup Scripts
+# Raspberry Pi Headless Setup Scripts
 
-Automated setup scripts for Raspberry Pi OS (Bookworm/Trixie) that help you migrate from SD to USB storage and deploy a Docker-based homelab stack with secure access.
+Setup scripts for Raspberry Pi OS (Bookworm/Trixie) for first-time headless configuration: SSH and WiFi pre-checks, first-boot seed files, and helper functions. Pi-hole, Home Assistant, and Tailscale now run on the Windows Hyper-V homelab, so they are not set up by these scripts.
 
 ## 🚀 Features
 
-- **USB Migration and Boot Management** (`switch-root.sh`)
-  - Current-device-only, hybrid, and USB-only configurations
-  - Full USB flash workflow (download + SHA256 verification + write)
-  - USB boot partition auto-configuration (power settings + scripts)
-  - Safe cmdline backup and rollback
-  - Pre-checks for SSH/WiFi before boot changes
-- **Docker Homelab Stack** (`homelab-setup.sh`)
-  - Pi-hole, Home Assistant, Homeway, Tailscale
-  - Optional nftables firewall with LAN subnet auto-detection
-  - Robust retry logic for downloads and image pulls
-- **Backup and Restore**
-  - Single tar.gz backup file per run
-  - Integrity verification and safe restore flow
-  - Keeps the newest 3 backups
+- **Boot and Storage Manager** (`switch-root.sh`)
+  - SSH and WiFi pre-checks before boot changes
+  - First-boot seed file updates for the next boot target (`ssh`, `network-config`, `user-data`)
+  - Safe `cmdline.txt` backup and rollback
+  - Fresh OS flash workflow with SHA256 verification (option 7)
+  - **USB boot features (options 3–8) are Raspberry Pi 4 and 5 only; the script refuses to run them on other boards**
+- **Shared Helpers** (`homelab-setup.sh`)
+  - Logging, prompts, disk-space checks, and retry helpers for headless setup
+  - Currently has no setup modes. It is kept as a helper library and placeholder entry point.
 
 ## 📋 Prerequisites
 
 ### Hardware
-- Raspberry Pi 4 or 5 (Pi 3 may work but untested)
-- USB storage device: SSD/USB flash/NVMe (powered hub recommended on Pi 3)
+- Raspberry Pi 4 or 5 for USB boot features (options 3–8)
+- Raspberry Pi 4 or 5 for generic first-boot setup
+- Raspberry Pi Zero 2W is not covered by the USB boot options (it has no USB-A port; USB boot is untested on it and not supported by these options)
 - SD card with Raspberry Pi OS Lite (Bookworm/Trixie)
-- Ethernet recommended
+- Ethernet recommended for first-time setup
+- USB storage device (SSD/USB flash/NVMe) if using USB boot (Pi 4 or 5)
 
 ### Network & Credentials
-- Static IP for Pi-hole (recommended): `192.168.1.199`
-- Tailscale auth key: https://login.tailscale.com/admin/settings/keys
-- Home Assistant long-lived access token (used by Homeway) generated from HA UI
+- WiFi SSID and password (if not using Ethernet)
+- Username and password for the new system
 
 ## 🎯 Quick Start
 
@@ -42,7 +38,7 @@ Use this sequence to place the scripts in a location `switch-root.sh` already se
 $PiUser   = "admin"
 $PiHost   = "192.168.1.25"
 $SourceDir = "D:\Utilities\Transfer"
-$TempDir   = "/home/$PiUser/homelab-scripts"
+$TempDir   = "/home/$PiUser/pi-setup-scripts"
 
 # 1) Nuke keygen if it locks you out
 ssh-keygen.exe -R $PiHost
@@ -59,25 +55,15 @@ ssh "$PiUser@$PiHost" "sudo cp '$TempDir'/* /boot/firmware/ && sudo rm '$TempDir
 
 ```
 
-### Fast Path: Fresh OS on USB (Recommended)
+### Fast Path: Fresh OS on USB (Pi 4/5)
 1) Flash Raspberry Pi OS Lite to USB using Pi Imager **or** `switch-root.sh` option 7.
 2) Boot from USB.
-3) Run:
-   ```bash
-   sudo ./homelab-setup.sh install-docker
-   sudo ./homelab-setup.sh configure
-   sudo ./homelab-setup.sh backup
-   ```
+3) Run `sudo ./switch-root.sh` and choose option 2 to verify SSH and WiFi.
 
-### Migration Path: Keep Existing System
-1) Run `switch-root.sh` option 6 (USB-only) and choose whether to copy your filesystem.
+### Migration Path: Keep Existing System (Pi 4/5)
+1) Run `switch-root.sh` option 6 (Clone OS to USB target) and choose whether to copy your filesystem.
 2) Reboot to USB.
-3) Run:
-   ```bash
-   sudo ./homelab-setup.sh install-docker
-   sudo ./homelab-setup.sh configure
-   sudo ./homelab-setup.sh backup
-   ```
+3) Run `sudo ./switch-root.sh` and choose option 2 to verify SSH and WiFi.
 
 ## 📦 Script Inventory
 
@@ -91,34 +77,32 @@ sudo ./switch-root.sh
 Menu options:
 1) Show current setting
 2) Verify initial configuration (SSH and WiFi)
-3) Configure USB boot partitions (power settings + scripts)
-4) Switch to current-device-only (boot+root on current device)
-5) Switch to Hybrid (boot on current device, root on another)
-6) Switch to USB-only (full USB storage setup with boot+root)
-7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd)
-8) Configure EEPROM boot order (SD/USB priority)
+3) Configure USB boot partitions (add power settings to config.txt) — **Pi 4/5 only**
+4) Switch to current-device-only (boot+root on current device) — **Pi 4/5 only**
+5) Switch to Hybrid (boot on current device, root on another) — **Pi 4/5 only**
+6) Clone OS to USB target (boot+root) — **Pi 4/5 only**
+7) Flash fresh Raspberry Pi OS to USB (wget + sha256sum + dd) — **Pi 4/5 only**
+8) Configure EEPROM boot order (SD/USB priority) — **Pi 4/5 only**
 
 Key behaviors:
 - Performs SSH/WiFi checks before options 4–7.
 - Option 2 can prompt for target-first-boot SSH enable/disable and WiFi SSID/password, then update target boot seed files (`ssh`, `network-config`, `user-data`) when a next boot target is detected.
 - Option 2 warns when the target appears to have already completed first boot (seed-file edits may not reconfigure an already-initialized system).
 - Creates a backup of `/boot/firmware/cmdline.txt` before changes.
-- Options 4–6 auto-configure all USB boot partitions; option 7 configures only the flashed device.
-- Option 7 now applies Fresh_Install-formatted `cmdline.txt`, `config.txt`, `network-config`, `user-data`, and `ssh` files after flash.
+- Options 3–6 configure USB boot partitions; option 7 configures only the device it flashed.
+- Option 7 applies Fresh_Install-formatted `cmdline.txt`, `config.txt`, `network-config`, `user-data`, and `ssh` files after flash.
 - Option 7 prompts for plaintext WiFi SSID/password, username/password, and hostname, then dynamically rewrites target PARTUUID/fstab.
 
-### `homelab-setup.sh` – Docker Stack Installer
+### `homelab-setup.sh` – Shared Helpers
 
-Run:
-```bash
-sudo ./homelab-setup.sh <mode>
-```
+Currently has no setup modes. Running it prints a notice and exits. Its helper functions (logging, prompts, disk-space checks, retry wrappers) are available for new setup modes. The file is kept in the boot partition alongside `switch-root.sh` so both are available after a root migration.
 
-Modes:
-- `install-docker`: Install Docker, deploy Pi-hole + Home Assistant, create Homeway compose + .env, install Tailscale
-- `configure`: Configure Tailscale, optional firewall (nftables), collect HA token for Homeway, optionally lock root
-- `backup`: Create a single tar.gz backup (keeps latest 3)
-- `restore`: Restore from a selected backup
+### `camera/` – Arducam IMX519 RTSP Camera (Pi Zero 2 W)
+
+Planned setup for a Pi Zero 2 W with an Arducam IMX519. The Pi streams RTSP. Motion detection, recording, and viewing run on the homelab in Frigate. See [camera/README.md](camera/README.md).
+
+- `camera/camera-setup.sh` – installs camera packages, enables the IMX519 overlay, verifies the camera, and runs the RTSP stream (MediaMTX) as a systemd service
+- `camera/frigate/` – Docker Compose files and Frigate config for the homelab Linux VM
 
 ## 🧭 Detailed Usage
 
@@ -129,7 +113,7 @@ Modes:
 - Optionally writes first-boot seed connectivity files (`ssh`, `network-config`, `user-data`) on the next boot target.
 - Shows a first-boot applicability warning before writing seed files if cloud-init appears already finalized.
 
-### `switch-root.sh` option 6 – USB-only setup
+### `switch-root.sh` option 6 – Clone OS to USB target (Pi 4/5 only)
 - Partitions USB (512MB FAT32 boot + ext4 root)
 - Clones /boot/firmware to USB boot
 - Updates USB cmdline.txt root=PARTUUID
@@ -137,130 +121,74 @@ Modes:
 - Writes fstab on USB root
 - Configures power settings and scripts on USB boot
 
-### `switch-root.sh` option 7 – Flash fresh OS to USB
+### `switch-root.sh` option 7 – Flash fresh OS to USB (Pi 4/5 only)
 - Downloads Raspberry Pi OS image and SHA256 checksum
 - Validates XZ integrity and verifies checksum when available (prompts if checksum download fails)
 - Writes image via `dd`, regenerates partition identifiers, and rewrites boot/root mappings
 - Applies Fresh_Install-style first-boot files with prompted WiFi/user/hostname values
 
-### `switch-root.sh` option 8 – Configure EEPROM boot order
+### `switch-root.sh` option 8 – Configure EEPROM boot order (Pi 4/5 only)
 - Reads and validates current EEPROM boot order.
 - Lets you choose SD/USB preference safely.
 - Re-checks target boot continuity/readiness after change.
 
-### `homelab-setup.sh install-docker`
-What it does:
-- Installs prerequisites and Docker + Compose plugin
-- Detects and resolves port conflicts
-- Pulls Pi-hole and Home Assistant images with retry
-- Starts Pi-hole and Home Assistant (host networking)
-- Creates Homeway compose file and `.env` placeholder
-- Installs Tailscale
-- Installs `glow` when available for terminal Markdown viewing
-- Adds Hagezi blocklist to Pi-hole
-
-Service URLs:
-- Pi-hole: http://<pi-ip>/admin (password from script)
-- Home Assistant: http://<pi-ip>:8123
-
-### `homelab-setup.sh configure`
-What it does:
-- Connects Tailscale (`--ssh --accept-dns=false`)
-- Optional firewall (nftables) with LAN subnet auto-detection
-- Prompts for HA long-lived token and stores it in `/homelab/compose/.env` as `HOMEWAY_TOKEN`
-- Starts Homeway
-- Optional root account password lock (sudo still works)
-
-### `homelab-setup.sh backup`
-- Creates: `/homelab/backups/homelab-backup-YYYY-MM-DD_HHMMSS.tar.gz`
-- Includes: Pi-hole config, Home Assistant config, compose files (including `.env`), nftables config (if present), Tailscale state
-- Verifies archive integrity
-- Keeps newest 3 backups
-
-### `homelab-setup.sh restore`
-- Selects a backup from the list
-- Stops containers + Tailscale
-- Restores `/homelab` and system configs (`/etc/nftables.conf`, `/var/lib/tailscale/tailscaled.state` when present)
-- Restarts containers and Tailscale
-
-## 📁 Directory Layout
+## 📁 Script Files on the Boot Partition
 
 ```
-/homelab/
-├── compose/
-│   ├── .env
-│   ├── pihole-compose.yml
-│   ├── homeassistant-compose.yml
-│   └── homeway-compose.yml
-├── pihole/
-│   └── etc-pihole/
-├── homeassistant/
-├── homeway/
-└── backups/
+/boot/firmware/
+├── switch-root.sh
+├── homelab-setup.sh
+├── README.md
+├── TROUBLESHOOTING.md
+├── cmdline.txt
+├── cmdline.txt.bak      (created by switch-root.sh)
+└── ...
 ```
 
 ## 🔧 Common Tasks
 
 Check status:
 ```bash
-docker ps
-tailscale status
+findmnt / /boot/firmware
+df -h
+lsblk
 ```
 
-Update containers:
+Check SSH and WiFi state:
 ```bash
-cd /homelab/compose
-docker compose -f pihole-compose.yml pull && docker compose -f pihole-compose.yml up -d
-docker compose -f homeassistant-compose.yml pull && docker compose -f homeassistant-compose.yml up -d
-docker compose -f homeway-compose.yml pull && docker compose -f homeway-compose.yml up -d
-```
-
-Change Pi-hole password:
-```bash
-docker exec -it pihole pihole -a -p
+sudo ./switch-root.sh   # then choose option 2
 ```
 
 ## 🔒 Security Notes
 
-- Change Pi-hole password immediately.
-- Use Tailscale ACLs for remote access control.
-- Consider enabling the optional firewall during `configure`.
-- `.env` is permissioned to 600 and contains the Homeway token.
+- Use a strong password for the new user account.
+- Option 7 writes the WiFi password in plaintext to first-boot `network-config` and stores the user password as a hash in `user-data`. Remove or secure those files on the boot partition once the Pi has finished first boot.
 
 ## 🛠️ Troubleshooting
 
 Quick diagnostics:
 ```bash
-docker ps -a
 findmnt / /boot/firmware
 df -h
-tailscale status
-docker logs pihole
-docker logs homeassistant
+lsblk -f
 ```
 
 Common issues:
-- Pi-hole won’t start: disable `systemd-resolved` and restart container
-- Boot fails after migration: restore `/boot/firmware/cmdline.txt.bak`
-- Homeway won’t start: verify `/homelab/compose/.env` has `HOMEWAY_TOKEN=`
+- Boot fails after migration (Pi 4/5): restore `/boot/firmware/cmdline.txt.bak`
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more.
 
 ## 🔄 Customization
 
 Edit constants in `homelab-setup.sh` before running if needed:
-- `PIHOLE_PASSWORD`
-- `PIHOLE_DNS_UPSTREAM`
-- `PIHOLE_STATIC_IP`
-- `HAGEZI_BLOCKLIST`
+- `CONNECTION_RETRY_MAX_ATTEMPTS` / `CONNECTION_RETRY_DELAY`
+- `APT_RETRY_ATTEMPTS` / `APT_RETRY_DELAY`
+- `MIN_DISK_SPACE_MB`
 
 ## 📚 Resources
 
-- Script help: `./homelab-setup.sh help`
+- Script help: `sudo ./switch-root.sh`
 - Raspberry Pi docs: https://www.raspberrypi.com/documentation/
-- Pi-hole docs: https://docs.pi-hole.net/
-- Home Assistant docs: https://www.home-assistant.io/docs/
-- Tailscale docs: https://tailscale.com/kb/
 
 ---
 
