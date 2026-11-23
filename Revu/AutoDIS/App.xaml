@@ -1,0 +1,22 @@
+<Application
+    x:Class="MbrohDrawingIndexCreator.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Navy #0B1F41 is exact (from the title bar code). Orange #E87000 is sampled from the logo.
+                 The navy light/dark tints are approximations. -->
+            <Color x:Key="MbrohNavyColor">#FF0B1F41</Color>
+            <Color x:Key="MbrohNavyLightColor">#FF1F3A66</Color>
+            <Color x:Key="MbrohNavyDarkColor">#FF06142C</Color>
+            <Color x:Key="MbrohOrangeColor">#FFE87000</Color>
+
+            <SolidColorBrush x:Key="MbrohNavyBrush" Color="{StaticResource MbrohNavyColor}" />
+            <SolidColorBrush x:Key="MbrohOrangeBrush" Color="{StaticResource MbrohOrangeColor}" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,104 @@
+<Window
+    x:Class="MbrohDrawingIndexCreator.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Approximate layout. The original compiled XAML could not be recovered from the DLL.
+         Control names, labels, and handler hookups were recovered from the binary. -->
+    <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Custom title bar. Caption buttons sit on the right, so the drag region stops short of them. -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Margin="0,0,144,0" Background="Transparent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Image Source="/Assets/Mbroh%2020th%20Logo%20High%20Res.png" Height="32" Margin="12,0,10,0" />
+            <TextBlock Grid.Column="1" Text="DRAWING INDEX CREATOR" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Foreground="{StaticResource MbrohNavyBrush}" />
+        </Grid>
+
+        <MenuBar Grid.Row="1">
+            <MenuBarItem x:Name="SettingsMenuBarItem" Title="Settings">
+                <MenuFlyoutItem Text="OCR / DPI Settings..." Click="SettingsMenuItem_Click" />
+            </MenuBarItem>
+            <MenuBarItem Title="Help">
+                <MenuFlyoutItem Text="How to Create a Template" Click="TemplateHelpButton_Click" />
+                <MenuFlyoutItem Text="Open Log File" Click="OpenLogFileMenuItem_Click" />
+                <MenuFlyoutItem Text="About" Click="AboutMenuItem_Click" />
+            </MenuBarItem>
+        </MenuBar>
+
+        <ScrollViewer Grid.Row="2" Padding="24">
+            <StackPanel Spacing="12" MaxWidth="760" HorizontalAlignment="Left">
+
+                <!-- Invisible focus target. The page focuses it on load so no text box starts focused. -->
+                <Button x:Name="FocusSink" Width="0" Height="0" Padding="0" BorderThickness="0" Opacity="0" />
+
+                <TextBlock Text="Template PDF:" FontWeight="SemiBold" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PdfPathTextBox" IsReadOnly="True" />
+                    <Button x:Name="BrowsePdfButton" Grid.Column="1" Content="Browse..." Click="PickPdfButton_Click" />
+                </Grid>
+                <HyperlinkButton x:Name="TemplateHelpButton" Content="How to create a template" Click="TemplateHelpButton_Click" />
+
+                <TextBlock Text="Source Combined Sheet Set:" FontWeight="SemiBold" Margin="0,12,0,0" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="CombinedSetPathTextBox" IsReadOnly="True" />
+                    <Button x:Name="BrowseCombinedSetButton" Grid.Column="1" Content="Browse..." Click="PickCombinedSetButton_Click" />
+                    <Button x:Name="ClearCombinedSetButton" Grid.Column="2" Content="Clear" Click="ClearCombinedSetButton_Click" />
+                </Grid>
+
+                <CheckBox x:Name="IncludeSheetsCheckBox" Content="Include all sheets in output" Margin="0,12,0,0" />
+                <CheckBox x:Name="IncludeHyperlinksCheckBox" Content="Make drawing numbers clickable links to sheets" />
+                <CheckBox x:Name="ShortGeneralNumbersCheckBox" Content="Short index numbers (G-01 instead of 00-G-01)" />
+
+                <!-- Checkbox label is a guess. It was not recovered from the binary. -->
+                <CheckBox x:Name="IncludeBookmarksCheckBox" Content="Include bookmarks"
+                          Checked="IncludeBookmarksCheckBox_CheckedChanged"
+                          Unchecked="IncludeBookmarksCheckBox_CheckedChanged" />
+                <TextBlock Text="Generate bookmarks based on:" Margin="0,4,0,0" />
+                <ComboBox x:Name="BookmarkSourceComboBox" SelectedIndex="0">
+                    <ComboBoxItem Content="the source combined sheet" />
+                    <ComboBoxItem Content="the generated drawing index" />
+                </ComboBox>
+
+                <TextBlock Text="Font:" FontWeight="SemiBold" Margin="0,12,0,0" />
+                <ComboBox x:Name="FontComboBox" SelectedIndex="0">
+                    <ComboBoxItem Content="Arial" />
+                    <ComboBoxItem Content="Helvetica" />
+                    <ComboBoxItem Content="Times New Roman" />
+                    <ComboBoxItem Content="Courier New" />
+                </ComboBox>
+
+                <StackPanel x:Name="GenerationProgressPanel" Visibility="Collapsed" Spacing="6" Margin="0,12,0,0">
+                    <ProgressBar x:Name="GenerationProgressBar" Minimum="0" Maximum="100" Value="0" />
+                    <TextBlock x:Name="GenerationStatusText" />
+                    <Button x:Name="CancelGenerationButton" Content="Cancel" Click="CancelGenerationButton_Click" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
+                    <Button x:Name="GenerateButton" Content="Generate PDF" Style="{StaticResource AccentButtonStyle}"
+                            Click="GenerateDrawingIndexButton_Click" />
+                    <Button x:Name="GenerateCSVButton" Content="Generate CSV (Index Only)"
+                            Click="GenerateCSVButton_Click" />
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

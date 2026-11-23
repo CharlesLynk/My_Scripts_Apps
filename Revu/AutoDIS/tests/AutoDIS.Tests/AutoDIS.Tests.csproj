@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Test project. It compiles the pure-logic source files from the app directly
+    (linked, not copied) so the tests exercise the real code without needing the
+    WinUI/XAML app to be built or launched.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\PdfContentRedactor.cs" Link="Linked\PdfContentRedactor.cs" />
+    <Compile Include="..\..\AppSupport.cs" Link="Linked\AppSupport.cs" />
+    <Compile Include="..\..\Diagnostics.cs" Link="Linked\Diagnostics.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="PdfSharp" />
+  </ItemGroup>
+
+</Project>

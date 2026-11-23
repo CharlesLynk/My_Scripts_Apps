@@ -1,0 +1,24 @@
+<Project>
+  <!--
+    Central package management: every NuGet version used by the app and its tests is listed here.
+    To upgrade a package, change its Version in this one file.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- App -->
+    <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.7.0" />
+    <PackageVersion Include="PdfSharp" Version="6.0.0" />
+    <PackageVersion Include="PdfPig" Version="0.1.13" />
+    <PackageVersion Include="Tesseract" Version="4.1.1" />
+    <PackageVersion Include="System.Drawing.Common" Version="10.0.15" />
+
+    <!-- Tests -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>

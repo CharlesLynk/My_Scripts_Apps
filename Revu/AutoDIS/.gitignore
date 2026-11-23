@@ -1,0 +1,30 @@
+# Build output (per-platform folders from Release x64/x86/ARM64 builds)
+bin/
+obj/
+/x64/
+/x86/
+/ARM64/
+Generated Files/
+# MSIX packaging outputs and signing keys
+AppPackages/
+BundleArtifacts/
+*.msix
+*.msixbundle
+*.appxbundle
+*.appxupload
+*.appxsym
+*.pfx
+*.p12
+*.pvk
+*.snk
+# Test and coverage output
+TestResults/
+*.coverage
+*.coveragexml
+# Visual Studio per-user files
+*.user
+*.suo
+# Build logs
+*.binlog
+# Partial downloads/commits from the atomic output writer
+*.partial
