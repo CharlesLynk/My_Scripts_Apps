@@ -1,0 +1,60 @@
+name: AutoDIS CI
+
+on:
+  push:
+    paths:
+      - 'Revu/AutoDIS/**'
+      - '.github/workflows/autodis.yml'
+  pull_request:
+    paths:
+      - 'Revu/AutoDIS/**'
+      - '.github/workflows/autodis.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Revu/AutoDIS
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore app
+        run: dotnet restore MbrohDrawingIndexCreator.csproj -p:Platform=x64
+
+      - name: Build app
+        run: dotnet build MbrohDrawingIndexCreator.csproj -c Release --no-restore -p:Platform=x64
+
+      - name: Run unit tests
+        run: dotnet test tests/AutoDIS.Tests/AutoDIS.Tests.csproj -c Release --logger "trx;LogFileName=autodis-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autodis-test-results
+          path: Revu/AutoDIS/tests/AutoDIS.Tests/TestResults/autodis-tests.trx
+          if-no-files-found: warn
+
+  vulnerability-scan:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore app
+        run: dotnet restore MbrohDrawingIndexCreator.csproj -p:Platform=x64
+
+      - name: Check for vulnerable packages
+        run: dotnet list MbrohDrawingIndexCreator.csproj package --vulnerable --include-transitive

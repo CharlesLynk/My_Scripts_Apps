@@ -35,3 +35,18 @@ npm-debug.log*
 *.log
 .env
 .env.*
+
+# Large packaged app artifacts (MSIX/AppX bundles, runtime dependencies, symbols, installers)
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appxsym
+*.msi
+*.msp
+
+# Large archives, disk images, and OCR model data
+*.iso
+*.7z
+*.rar
+*.traineddata
