@@ -28,3 +28,11 @@ TestResults/
 *.binlog
 # Partial downloads/commits from the atomic output writer
 *.partial
+# Public OCR models and word list: downloaded and SHA-256 verified by OcrModels.targets on first build, so they are not committed
+/tessdata/
+/dictionary/english-enable.txt
+# MSIX/Store artifacts and the unpacked sideload test packages are rebuildable
+/reference/**/*.msix
+/reference/**/*.msixbundle
+/reference/**/*.appxsym
+/reference/**/Dependencies/

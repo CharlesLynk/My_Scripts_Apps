@@ -35,7 +35,6 @@ using UglyToad.PdfPig.Graphics;
 using WinRT;
 using WinRT.Interop;
 using Windows.ApplicationModel;
-using Windows.Data.Pdf;
 using Windows.Foundation;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -61,10 +60,34 @@ public sealed partial class MainWindow : Window
 			Total = P_1;
 		}
 
+		private readonly object _gate = new object();
+
 		public void Report(string P_0)
 		{
-			Current++;
-			_progress?.Report((Current, Total, P_0));
+			lock (_gate)
+			{
+				Current++;
+				_progress?.Report((Current, Total, P_0));
+			}
+		}
+
+		// A new status line without moving the bar (stages that have no countable steps).
+		public void Status(string P_0)
+		{
+			lock (_gate)
+			{
+				_progress?.Report((Current, Total, P_0));
+			}
+		}
+
+		// For callers on several threads: the message is built from the count this call claims.
+		public void Report(Func<int, string> P_0)
+		{
+			lock (_gate)
+			{
+				Current++;
+				_progress?.Report((Current, Total, P_0(Current)));
+			}
 		}
 	}
 
@@ -226,12 +249,6 @@ public sealed partial class MainWindow : Window
 		}
 	}
 
-	internal enum OcrQualityTier
-	{
-		Fast,
-		Best
-	}
-
 	private sealed class BookmarkNode
 	{
 		public string Title = string.Empty;
@@ -250,9 +267,18 @@ public sealed partial class MainWindow : Window
 
 	private static readonly (double r, double g, double b) NotFoundHighlightColor = (r: 1.0, g: 1.0, b: 0.0);
 
-	private static double OcrRenderDpi = LoadOcrRenderDpi();
+	// OCR was not confident about this cell: orange, so it stands apart from the yellow "not found" cells.
+	private static readonly (double r, double g, double b) UncertainHighlightColor = (r: 1.0, g: 0.72, b: 0.3);
 
-	private static OcrQualityTier OcrQuality = LoadOcrQualityTier();
+	private static OcrPreset OcrPresetSetting = LoadOcrPreset();
+
+	private static ResourceLevel ResourceLevelSetting = LoadResourceLevel();
+
+	// Fixed image resolution for reading title blocks (0 = automatic, the preset decides).
+	// An example sheet number typed by the user (optional). It is not saved: the format belongs to one drawing set, not to the program.
+	private static string IdExampleSetting = string.Empty;
+
+	private static OcrPresetSettings CurrentOcrPreset => OcrPresets.Get(OcrPresetSetting);
 
 	public MainWindow()
 	{
@@ -378,74 +404,110 @@ public sealed partial class MainWindow : Window
 
 	private async void SettingsMenuItem_Click(object? sender, RoutedEventArgs e)
 	{
-		TextBox dpiBox = new TextBox
+		ComboBox presetBox = new ComboBox
 		{
-			Header = $"OCR Render DPI ({150.0:0}–{2400.0:0})",
-			Text = OcrRenderDpi.ToString(CultureInfo.InvariantCulture),
-			InputScope = new InputScope
-			{
-				Names = 
-				{
-					new InputScopeName(InputScopeNameValue.Number)
-				}
-			}
-		};
-		TextBlock errorText = new TextBlock
-		{
-			Foreground = new SolidColorBrush(Colors.Red),
-			TextWrapping = TextWrapping.Wrap,
-			Visibility = Visibility.Collapsed
-		};
-		ComboBox qualityBox = new ComboBox
-		{
-			Header = "OCR Quality",
+			Header = "OCR speed / detail",
 			HorizontalAlignment = HorizontalAlignment.Stretch
 		};
-		qualityBox.Items.Add("Fast (STD)");
-		qualityBox.Items.Add("Best (HQ)");
-		qualityBox.SelectedIndex = ((OcrQuality == OcrQualityTier.Best) ? 1 : 0);
+		foreach (OcrPresetSettings preset in OcrPresets.Presets)
+		{
+			presetBox.Items.Add(preset.DisplayName);
+		}
+		presetBox.SelectedIndex = (int)OcrPresetSetting;
+		TextBlock presetDescription = new TextBlock
+		{
+			TextWrapping = TextWrapping.Wrap,
+			Text = CurrentOcrPreset.Description
+		};
+		presetBox.SelectionChanged += (object s, SelectionChangedEventArgs args) =>
+		{
+			if (presetBox.SelectedIndex >= 0)
+			{
+				presetDescription.Text = OcrPresets.Get((OcrPreset)presetBox.SelectedIndex).Description;
+			}
+		};
+		ComboBox resourceBox = new ComboBox
+		{
+			Header = "Computer resources",
+			HorizontalAlignment = HorizontalAlignment.Stretch
+		};
+		foreach (ResourceLevel level in Enum.GetValues<ResourceLevel>())
+		{
+			resourceBox.Items.Add(ResourcePlanner.DisplayName(level));
+		}
+		resourceBox.SelectedIndex = (int)ResourceLevelSetting;
+		HardwareSnapshot hardwareNow = HardwareProbe.Probe();
+		TextBlock resourceDescription = new TextBlock
+		{
+			TextWrapping = TextWrapping.Wrap
+		};
+		void ShowResourceDescription()
+		{
+			ResourceLevel selected = (ResourceLevel)Math.Max(0, resourceBox.SelectedIndex);
+			ResourcePlan plan = ResourcePlanner.Plan(selected, hardwareNow);
+			resourceDescription.Text = ResourcePlanner.Description(selected) + "\n" + ResourcePlanner.Summary(plan, hardwareNow);
+		}
+		ShowResourceDescription();
+		resourceBox.SelectionChanged += (object s, SelectionChangedEventArgs args) => ShowResourceDescription();
+		CheckBox reviewBox = new CheckBox
+		{
+			Content = "Review the discipline headings (with a picture of each) before the index is saved",
+			IsChecked = ReviewBeforeSaveSetting
+		};
+		TextBox idExampleBox = new TextBox
+		{
+			Header = "Sheet number example (optional)",
+			PlaceholderText = "for example HH-A-01",
+			Text = IdExampleSetting,
+			HorizontalAlignment = HorizontalAlignment.Stretch
+		};
 		StackPanel stackPanel = new StackPanel
 		{
 			Spacing = 8.0
 		};
 		stackPanel.Children.Add(new TextBlock
 		{
-			Text = "Resolution used when OCR falls back to reading a sheet's title block as an image (e.g. vector/SHX-font text PdfPig can't read directly). Higher values can help with misreads on some PDF sets, at the cost of slower OCR.",
+			Text = "Some sheets have title blocks that cannot be read as text (scanned pages, or CAD lettering drawn as lines). For those, the app reads the title block as an image (OCR). This setting trades speed for detail. Balanced suits most drawing sets; choose Quality or Ultra for scanned drawings or sets with thin or italic lettering throughout, and Fast or Fastest for clean sets when you need the quickest result.",
 			TextWrapping = TextWrapping.Wrap
 		});
-		stackPanel.Children.Add(dpiBox);
-		stackPanel.Children.Add(errorText);
+		stackPanel.Children.Add(presetBox);
+		stackPanel.Children.Add(presetDescription);
 		stackPanel.Children.Add(new TextBlock
 		{
-			Text = "Which Tesseract model to use for that OCR fallback. Best is a larger, more accurate model that may help with font-specific misreads (e.g. CAD stencil fonts), at the cost of slower OCR.",
+			Text = "Entries that OCR is not sure about are highlighted in orange in the index so you can check them.",
 			TextWrapping = TextWrapping.Wrap
 		});
-		stackPanel.Children.Add(qualityBox);
-		ContentDialog contentDialog = new ContentDialog();
-		contentDialog.Title = "OCR / DPI Settings";
-		contentDialog.Content = stackPanel;
-		contentDialog.PrimaryButtonText = "Save";
-		contentDialog.CloseButtonText = "Cancel";
-		contentDialog.DefaultButton = ContentDialogButton.Primary;
-		contentDialog.XamlRoot = Content.XamlRoot;
-		contentDialog.PrimaryButtonClick += (ContentDialog s, ContentDialogButtonClickEventArgs args) =>
+		stackPanel.Children.Add(new TextBlock
 		{
-			if (!double.TryParse(dpiBox.Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var num) || num < 150.0 || num > 2400.0)
+			Text = "How much of this computer a run may use. The program checks what the computer has and takes more or less of it; it does not change the result, only how fast it arrives and how much else you can do meanwhile.",
+			TextWrapping = TextWrapping.Wrap
+		});
+		stackPanel.Children.Add(resourceBox);
+		stackPanel.Children.Add(resourceDescription);
+		stackPanel.Children.Add(reviewBox);
+		stackPanel.Children.Add(new TextBlock
+		{
+			Text = "If the sheet numbers in this set are hard to read, type one of them here as an example. Only its pattern is used (letters, digits and dashes, not their count), so HH-A-01 also covers WT-A-104. Numbers read in a different format are corrected toward it where possible and highlighted. The example is used for this session only; clear it for the next drawing set.",
+			TextWrapping = TextWrapping.Wrap
+		});
+		stackPanel.Children.Add(idExampleBox);
+		await ShowPopupWindowAsync("Settings", null, stackPanel, "Save", "Cancel", 720.0, 760.0, onPrimary: () =>
+		{
+			if (presetBox.SelectedIndex >= 0)
 			{
-				errorText.Text = $"Enter a number between {150.0:0} and {2400.0:0}.";
-				errorText.Visibility = Visibility.Visible;
-				args.Cancel = true;
+				OcrPresetSetting = (OcrPreset)presetBox.SelectedIndex;
+				SaveOcrPreset(OcrPresetSetting);
 			}
-			else
+			if (resourceBox.SelectedIndex >= 0)
 			{
-				OcrRenderDpi = num;
-				SaveOcrRenderDpi(num);
-				SaveOcrQualityTier(OcrQuality = ((qualityBox.SelectedIndex == 1) ? OcrQualityTier.Best : OcrQualityTier.Fast));
+				ResourceLevelSetting = (ResourceLevel)resourceBox.SelectedIndex;
+				SaveResourceLevel(ResourceLevelSetting);
 			}
-		};
-		await contentDialog.ShowAsync();
+			IdExampleSetting = (idExampleBox.Text ?? string.Empty).Trim();
+			ReviewBeforeSaveSetting = reviewBox.IsChecked == true;
+			SaveReviewBeforeSave(ReviewBeforeSaveSetting);
+		});
 	}
-
 	private async void AboutMenuItem_Click(object? sender, RoutedEventArgs e)
 	{
 		await new ContentDialog
@@ -1142,7 +1204,7 @@ public sealed partial class MainWindow : Window
 				}
 				num22 = array[num19];
 			}
-			list4[num18][num19].Add((true, text2, null));
+			list4[num18][num19].Add((true, text2, item4.Item2.FirstOrDefault(r => r.DisciplineUncertain)));
 			num22 -= num23;
 			foreach (DrawingIndexItem item5 in item4.Item2)
 			{
@@ -1163,7 +1225,7 @@ public sealed partial class MainWindow : Window
 						num19 = 0;
 					}
 					num22 = array[num19];
-					list4[num18][num19].Add((true, text3, null));
+					list4[num18][num19].Add((true, text3, item4.Item2.FirstOrDefault(r => r.DisciplineUncertain)));
 					num22 -= num23;
 				}
 				list4[num18][num19].Add((false, null, item5));
@@ -1236,16 +1298,19 @@ public sealed partial class MainWindow : Window
 					{
 						num5 += 6.0;
 						bool flag = item.headerText.StartsWith("[DISCIPLINE NOT FOUND]", StringComparison.Ordinal);
+						bool headerUncertain = !flag && item.row != null && item.row.DisciplineUncertain;
 						double num6 = MeasureBoxWidth(item.headerText, xFont3, P_5.Sum());
-						AddFreeTextAnnotation(P_0, P_1, item.headerText, num4, num5, num6, headerHeight + 4.0, headerFontSize, P_7, 0, true, flag ? new (double, double, double)?(NotFoundHighlightColor) : (((double, double, double)?)null));
+						AddFreeTextAnnotation(P_0, P_1, item.headerText, num4, num5, num6, headerHeight + 4.0, headerFontSize, P_7, 0, true, flag ? new (double, double, double)?(NotFoundHighlightColor) : (headerUncertain ? new (double, double, double)?(UncertainHighlightColor) : (((double, double, double)?)null)));
 						num5 += headerHeight + 6.0;
 						continue;
 					}
 					double num7 = MeasureBoxWidth(item.row.SeqNo.ToString(), xFont, P_5[0]);
 					AddFreeTextAnnotation(P_0, P_1, item.row.SeqNo.ToString(), num4, num5, num7, rowHeight, cellFontSize, P_7);
-					bool flag2 = item.row.DrawingNumber == "[NOT FOUND]";
+					bool idNotFound = item.row.DrawingNumber == "[NOT FOUND]";
+					bool idUncertain = !idNotFound && item.row.DrawingNumberUncertain;
+					bool flag2 = idNotFound || idUncertain;
 					double num8 = MeasureBoxWidth(item.row.DrawingNumber, flag2 ? xFont2 : xFont, P_5[1]);
-					PdfDictionary pdfDictionary = AddFreeTextAnnotation(P_0, P_1, item.row.DrawingNumber, num4 + P_5[0], num5, num8, rowHeight, cellFontSize, P_7, 0, flag2, flag2 ? new (double, double, double)?(NotFoundHighlightColor) : (((double, double, double)?)null));
+					PdfDictionary pdfDictionary = AddFreeTextAnnotation(P_0, P_1, item.row.DrawingNumber, num4 + P_5[0], num5, num8, rowHeight, cellFontSize, P_7, 0, flag2, idNotFound ? new (double, double, double)?(NotFoundHighlightColor) : (idUncertain ? new (double, double, double)?(UncertainHighlightColor) : (((double, double, double)?)null)));
 					if (P_9 && pdfDictionary != null)
 					{
 						double num9 = MeasureLinkWidth(item.row.DrawingNumber, flag2 ? xFont2 : xFont, num8);
@@ -1255,9 +1320,11 @@ public sealed partial class MainWindow : Window
 							P_8[item.row] = (P_1, pdfDictionary2);
 						}
 					}
-					bool flag3 = item.row.Title == "[DESCRIPTION NOT FOUND]";
+					bool titleNotFound = item.row.Title == "[DESCRIPTION NOT FOUND]";
+					bool titleUncertain = !titleNotFound && item.row.TitleUncertain;
+					bool flag3 = titleNotFound || titleUncertain;
 					double num10 = MeasureBoxWidth(item.row.Title, flag3 ? xFont2 : xFont, P_5[2]);
-					AddFreeTextAnnotation(P_0, P_1, item.row.Title, num4 + P_5[0] + P_5[1], num5, num10, rowHeight, cellFontSize, P_7, 0, flag3, flag3 ? new (double, double, double)?(NotFoundHighlightColor) : (((double, double, double)?)null));
+					AddFreeTextAnnotation(P_0, P_1, item.row.Title, num4 + P_5[0] + P_5[1], num5, num10, rowHeight, cellFontSize, P_7, 0, flag3, titleNotFound ? new (double, double, double)?(NotFoundHighlightColor) : (titleUncertain ? new (double, double, double)?(UncertainHighlightColor) : (((double, double, double)?)null)));
 					num5 += rowHeight;
 				}
 			}
@@ -1600,7 +1667,7 @@ public sealed partial class MainWindow : Window
 		}
 	}
 
-	private static string? GenerateDrawingIndexCSV(string P_0, FieldRect P_1, FieldRect P_2, FieldRect P_3, string P_4, IProgress<(int current, int total, string status)> P_5, CancellationToken P_6, string P_7 = "DrawingIndex_", bool P_8 = true, string P_9 = "Arial", string? P_10 = null, string? P_11 = null, bool P_12 = false, bool P_13 = false)
+	private static string? GenerateDrawingIndexCSV(string P_0, FieldRect P_1, FieldRect P_2, FieldRect P_3, string P_4, IProgress<(int current, int total, string status)> P_5, CancellationToken P_6, string P_7 = "DrawingIndex_", bool P_8 = true, string P_9 = "Arial", string? P_10 = null, string? P_11 = null, bool P_12 = false, bool P_13 = false, OcrRunStats? P_14 = null)
 	{
 		P_5.Report((0, 0, "Scanning folder for sheet PDFs..."));
 		if (!Directory.Exists(Path.GetDirectoryName(P_0) ?? string.Empty))
@@ -1613,7 +1680,7 @@ public sealed partial class MainWindow : Window
 		{
 			bool flag = P_12;
 			bool flag2 = P_13;
-			item = GenerateDrawingIndexCore(P_0, P_1, P_2, P_3, false, false, P_4, P_5, P_6, text, false, P_9, P_7, P_10, null, false, true, flag, null, flag2).finalRows;
+			item = GenerateDrawingIndexCore(P_0, P_1, P_2, P_3, false, false, P_4, P_5, P_6, text, false, P_9, P_7, P_10, null, false, true, flag, null, flag2, P_14).finalRows;
 		}
 		finally
 		{
@@ -1643,7 +1710,8 @@ public sealed partial class MainWindow : Window
 		try
 		{
 			StringBuilder stringBuilder = new StringBuilder();
-			stringBuilder.AppendLine("SEQ. NO.,DISCIPLINE,DWG. NO.,DESCRIPTION");
+			bool anyUncertain = item.Any(r => r.DrawingNumberUncertain || r.DisciplineUncertain || r.TitleUncertain);
+			stringBuilder.AppendLine(anyUncertain ? "SEQ. NO.,DISCIPLINE,DWG. NO.,DESCRIPTION,CHECK" : "SEQ. NO.,DISCIPLINE,DWG. NO.,DESCRIPTION");
 			foreach (DrawingIndexItem item3 in item)
 			{
 				string text3 = EscapeCsvField(item3.SeqNo.ToString());
@@ -1659,6 +1727,24 @@ public sealed partial class MainWindow : Window
 				appendInterpolatedStringHandler.AppendFormatted(text5);
 				appendInterpolatedStringHandler.AppendLiteral(",");
 				appendInterpolatedStringHandler.AppendFormatted(text6);
+				if (anyUncertain)
+				{
+					List<string> toCheck = new List<string>();
+					if (item3.DisciplineUncertain)
+					{
+						toCheck.Add("DISCIPLINE");
+					}
+					if (item3.DrawingNumberUncertain)
+					{
+						toCheck.Add("DWG. NO.");
+					}
+					if (item3.TitleUncertain)
+					{
+						toCheck.Add("DESCRIPTION");
+					}
+					appendInterpolatedStringHandler.AppendLiteral(",");
+					appendInterpolatedStringHandler.AppendFormatted(EscapeCsvField(string.Join("; ", toCheck)));
+				}
 				stringBuilder2.AppendLine(ref appendInterpolatedStringHandler);
 			}
 			File.WriteAllText(text2, stringBuilder.ToString(), Encoding.UTF8);
@@ -2097,260 +2183,92 @@ public sealed partial class MainWindow : Window
 		}
 	}
 
-	private static double LoadOcrRenderDpi()
+	private static OcrPreset LoadOcrPreset()
 	{
-		if (LoadSettingsFile().TryGetValue("Dpi", out string value) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var num) && num >= 150.0 && num <= 2400.0)
-		{
-			return num;
-		}
-		return 600.0;
+		return LoadSettingsFile().TryGetValue("OcrPreset", out string value) ? OcrPresets.ParseOrDefault(value) : OcrPresets.Default;
 	}
 
-	private static void SaveOcrRenderDpi(double P_0)
+	private static ResourceLevel LoadResourceLevel()
+	{
+		return LoadSettingsFile().TryGetValue("ResourceLevel", out string value) ? ResourcePlanner.ParseOrDefault(value) : ResourcePlanner.Default;
+	}
+
+	private static void SaveResourceLevel(ResourceLevel level)
 	{
 		Dictionary<string, string> dictionary = LoadSettingsFile();
-		dictionary["Dpi"] = P_0.ToString(CultureInfo.InvariantCulture);
+		dictionary["ResourceLevel"] = level.ToString();
 		SaveSettingsFile(dictionary);
 	}
 
-	private static OcrQualityTier LoadOcrQualityTier()
-	{
-		if (LoadSettingsFile().TryGetValue("OcrQuality", out string value) && Enum.TryParse<OcrQualityTier>(value, ignoreCase: true, out var result))
-		{
-			return result;
-		}
-		return OcrQualityTier.Best;
-	}
-
-	private static void SaveOcrQualityTier(OcrQualityTier P_0)
+	private static void SaveOcrPreset(OcrPreset preset)
 	{
 		Dictionary<string, string> dictionary = LoadSettingsFile();
-		dictionary["OcrQuality"] = P_0.ToString();
+		dictionary["OcrPreset"] = preset.ToString();
 		SaveSettingsFile(dictionary);
 	}
-
-	private static TesseractEngine? TryCreateOcrEngine(string P_0)
+	// Checked before the user picks an output file, so a broken OCR install is reported up front instead of producing a silently incomplete index.
+	private async Task<bool> ConfirmOcrAvailableAsync(string logPath)
 	{
-		try
+		OcrEngineSet? engines = await Task.Run(() => OcrSupport.TryCreateEngineSet(OcrSupport.DefaultTessdataDirectory, false, out _));
+		if (engines != null)
 		{
-			string text = Path.Combine(AppContext.BaseDirectory, "tessdata");
-			string text2 = ((OcrQuality == OcrQualityTier.Best) ? "eng_best" : "eng");
-			return new TesseractEngine(text, text2, EngineMode.LstmOnly);
+			engines.Dispose();
+			return true;
 		}
-		catch (Exception ex)
+		string reason = await Task.Run(() =>
 		{
-			try
-			{
-				File.AppendAllText(P_0, $"{DateTime.Now}: OCR unavailable (Tesseract engine init failed, quality={OcrQuality}): {ex.Message}\n");
-			}
-			catch
-			{
-			}
-			return null;
-		}
+			OcrSupport.TryCreateEngineSet(OcrSupport.DefaultTessdataDirectory, false, out string? why);
+			return why ?? "unknown error";
+		});
+		AppLog.TryAppend(logPath, $"{DateTime.Now}: OCR preflight failed: {reason}");
+		ContentDialog dialog = new ContentDialog
+		{
+			Title = "OCR is not available",
+			Content = "Sheets whose title block has no readable text (scanned or CAD-vector sheets) cannot be read without OCR, and their index entries will be marked [NOT FOUND].\n\nReason: " + reason + "\n\nReinstalling the app normally fixes this.",
+			PrimaryButtonText = "Continue without OCR",
+			CloseButtonText = "Cancel",
+			DefaultButton = ContentDialogButton.Close,
+			XamlRoot = Content.XamlRoot
+		};
+		return await dialog.ShowAsync() == ContentDialogResult.Primary;
 	}
 
-	private static Windows.Data.Pdf.PdfDocument? GetOrOpenWinPdfDocument(string P_0, Dictionary<string, Windows.Data.Pdf.PdfDocument>? P_1)
+	private async Task ReportOcrOutcomeAsync(OcrRunStats stats, string logPath)
 	{
-		if (P_1 != null && P_1.TryGetValue(P_0, out Windows.Data.Pdf.PdfDocument value))
-		{
-			return value;
-		}
-		try
-		{
-			Windows.Data.Pdf.PdfDocument result = Windows.Data.Pdf.PdfDocument.LoadFromFileAsync(StorageFile.GetFileFromPathAsync(P_0).AsTask().GetAwaiter()
-				.GetResult()).AsTask().GetAwaiter()
-				.GetResult();
-			if (P_1 != null)
-			{
-				P_1[P_0] = result;
-			}
-			return result;
-		}
-		catch
-		{
-			return null;
-		}
-	}
-
-	private static Bitmap? RenderPdfPageCropToBitmap(string P_0, double P_1, FieldRect P_2, double P_3, int P_4 = 0, Dictionary<string, Windows.Data.Pdf.PdfDocument>? P_5 = null)
-	{
-		try
-		{
-			Windows.Data.Pdf.PdfDocument orOpenWinPdfDocument = GetOrOpenWinPdfDocument(P_0, P_5);
-			if (orOpenWinPdfDocument == null || P_4 < 0 || P_4 >= orOpenWinPdfDocument.PageCount)
-			{
-				return null;
-			}
-			using Windows.Data.Pdf.PdfPage pdfPage = orOpenWinPdfDocument.GetPage((uint)P_4);
-			double num = P_3 / 72.0;
-			double num2 = P_2.X2 - P_2.X1;
-			double num3 = P_2.Y2 - P_2.Y1;
-			Windows.Foundation.Rect sourceRect = new Windows.Foundation.Rect(P_2.X1 * 1.3333333333333333, (P_1 - P_2.Y2) * 1.3333333333333333, num2 * 1.3333333333333333, num3 * 1.3333333333333333);
-			uint destinationWidth = (uint)Math.Max(1.0, Math.Round(num2 * num));
-			uint destinationHeight = (uint)Math.Max(1.0, Math.Round(num3 * num));
-			PdfPageRenderOptions pdfPageRenderOptions = new PdfPageRenderOptions
-			{
-				DestinationWidth = destinationWidth,
-				DestinationHeight = destinationHeight,
-				SourceRect = sourceRect
-			};
-			using InMemoryRandomAccessStream inMemoryRandomAccessStream = new InMemoryRandomAccessStream();
-			pdfPage.RenderToStreamAsync(inMemoryRandomAccessStream, pdfPageRenderOptions).AsTask().GetAwaiter()
-				.GetResult();
-			inMemoryRandomAccessStream.Seek(0uL);
-			using Stream stream = inMemoryRandomAccessStream.AsStreamForRead();
-			return new Bitmap(stream);
-		}
-		catch
-		{
-			return null;
-		}
-	}
-
-	private static bool IsPlausibleShortOcrField(string P_0)
-	{
-		if (P_0.Length > 30)
-		{
-			return false;
-		}
-		if (P_0.IndexOfAny(new char[9] { '\n', '\r', '§', '{', '}', '|', '!', '"', '\\' }) >= 0)
-		{
-			return false;
-		}
-		return true;
-	}
-
-	private static string OcrFieldRect(Bitmap P_0, FieldRect P_1, double P_2, double P_3, TesseractEngine P_4, bool P_5 = false)
-	{
-		try
-		{
-			double num = (double)P_0.Width / P_2;
-			double num2 = (double)P_0.Height / P_3;
-			double num3 = Math.Max(0.0, P_1.X1 - 4.0) * num;
-			double num4 = (P_1.X2 + 4.0) * num;
-			double num5 = (P_3 - (P_1.Y2 + 4.0)) * num2;
-			double num6 = (P_3 - Math.Max(0.0, P_1.Y1 - 4.0)) * num2;
-			int num7 = Math.Clamp((int)Math.Floor(num3), 0, P_0.Width - 1);
-			int num8 = Math.Clamp((int)Math.Floor(num5), 0, P_0.Height - 1);
-			int width = Math.Clamp((int)Math.Ceiling(num4 - num3), 1, P_0.Width - num7);
-			int height = Math.Clamp((int)Math.Ceiling(num6 - num5), 1, P_0.Height - num8);
-			using Bitmap bitmap = P_0.Clone(new Rectangle(num7, num8, width, height), P_0.PixelFormat);
-			using MemoryStream memoryStream = new MemoryStream();
-			bitmap.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
-			using Pix pix = Pix.LoadFromMemory(memoryStream.ToArray());
-			using Tesseract.Page page = P_4.Process(pix);
-			string text = page.GetText().Trim();
-			if (!P_5 || text.IndexOfAny(new char[2] { '\n', '\r' }) < 0)
-			{
-				return text;
-			}
-			double num9 = (P_3 - P_1.Y2) * num2 - (double)num8;
-			double val = (P_3 - P_1.Y1) * num2 - (double)num8;
-			string text2 = string.Empty;
-			double num10 = 0.0;
-			using (ResultIterator resultIterator = page.GetIterator())
-			{
-				resultIterator.Begin();
-				do
-				{
-					if (!resultIterator.TryGetBoundingBox(PageIteratorLevel.TextLine, out var rect))
-					{
-						continue;
-					}
-					string text3 = (resultIterator.GetText(PageIteratorLevel.TextLine) ?? string.Empty).Trim();
-					if (text3.Length != 0)
-					{
-						double num11 = Math.Min(rect.Y2, val) - Math.Max(rect.Y1, num9);
-						if (num11 > num10)
-						{
-							num10 = num11;
-							text2 = text3;
-						}
-					}
-				}
-				while (resultIterator.Next(PageIteratorLevel.TextLine));
-			}
-			return (num10 > 0.0) ? text2 : text;
-		}
-		catch
-		{
-			return string.Empty;
-		}
-	}
-
-	private static void ApplyOcrFallback(TesseractEngine? P_0, string P_1, double P_2, double P_3, FieldRect P_4, FieldRect P_5, FieldRect P_6, ref string P_7, ref string P_8, ref string P_9, string P_10, int P_11 = 0, Dictionary<string, Windows.Data.Pdf.PdfDocument>? P_12 = null)
-	{
-		if (P_0 == null || (!string.IsNullOrWhiteSpace(P_7) && !string.IsNullOrWhiteSpace(P_8) && !string.IsNullOrWhiteSpace(P_9)))
+		AppLog.TryAppend(logPath, $"{DateTime.Now}: OCR summary: {stats.Describe()}");
+		AppLog.TryAppend(logPath, $"{DateTime.Now}: OCR image scale: {OcrFieldRecognizer.DescribeScaleStats()}");
+		if (!stats.HasProblem)
 		{
 			return;
 		}
-		Stopwatch stopwatch = Stopwatch.StartNew();
-		double num = Math.Max(0.0, Math.Min(P_4.X1, Math.Min(P_5.X1, P_6.X1)) - 20.0);
-		double num2 = Math.Max(0.0, Math.Min(P_4.Y1, Math.Min(P_5.Y1, P_6.Y1)) - 20.0);
-		double num3 = Math.Min(P_2, Math.Max(P_4.X2, Math.Max(P_5.X2, P_6.X2)) + 20.0);
-		double num4 = Math.Min(P_3, Math.Max(P_4.Y2, Math.Max(P_5.Y2, P_6.Y2)) + 20.0);
-		FieldRect unionRect = new FieldRect(num, num2, num3, num4);
-		Stopwatch stopwatch2 = Stopwatch.StartNew();
-		using (Bitmap bitmap = RenderPdfPageCropToBitmap(P_1, P_3, unionRect, OcrRenderDpi, P_11, P_12))
+		List<string> lines = new List<string>();
+		if (!stats.EngineAvailable)
 		{
-			stopwatch2.Stop();
-			if (bitmap == null)
+			lines.Add($"OCR was needed on {stats.SheetsNeedingOcr} sheet(s) but was not available, so those entries are marked [NOT FOUND] / [DESCRIPTION NOT FOUND].");
+		}
+		else
+		{
+			lines.Add($"{stats.SheetsNeedingOcr} sheet(s) had to be read by OCR.");
+			if (stats.SheetsStillMissing > 0)
 			{
-				return;
+				lines.Add($"{stats.SheetsStillMissing} still have a missing field; those are marked in yellow ([NOT FOUND]).");
 			}
-			double num5 = unionRect.X2 - unionRect.X1;
-			double num6 = unionRect.Y2 - unionRect.Y1;
-			int num7 = bitmap.Width * bitmap.Height;
-			long num8 = 0L;
-			long num9 = 0L;
-			long num10 = 0L;
-			if (string.IsNullOrWhiteSpace(P_7))
+			if (stats.LowConfidenceCount > 0)
 			{
-				Stopwatch stopwatch3 = Stopwatch.StartNew();
-				P_7 = OcrFieldRect(bitmap, ToLocal(P_4), num5, num6, P_0);
-				if (!IsPlausibleShortOcrField(P_7))
-				{
-					P_7 = string.Empty;
-				}
-				num8 = stopwatch3.ElapsedMilliseconds;
+				lines.Add($"{stats.LowConfidenceCount} were read with low confidence; those cells are highlighted in orange in the index. Please check them against the sheets.");
 			}
-			if (string.IsNullOrWhiteSpace(P_8))
+			if (stats.RenderFailures > 0)
 			{
-				Stopwatch stopwatch4 = Stopwatch.StartNew();
-				P_8 = OcrFieldRect(bitmap, ToLocal(P_5), num5, num6, P_0, true);
-				P_8 = P_8.Trim(' ', '\t', '\r', '\n', '|');
-				if (P_8 == "1&C")
-				{
-					P_8 = "I&C";
-				}
-				if (!IsPlausibleShortOcrField(P_8))
-				{
-					P_8 = string.Empty;
-				}
-				num9 = stopwatch4.ElapsedMilliseconds;
-			}
-			if (string.IsNullOrWhiteSpace(P_9))
-			{
-				Stopwatch stopwatch5 = Stopwatch.StartNew();
-				P_9 = OcrFieldRect(bitmap, ToLocal(P_6), num5, num6, P_0);
-				P_9 = P_9.Replace('|', 'I');
-				P_9 = CollapseConsecutiveDashes(NormalizeDashesToEnDash(P_9));
-				num10 = stopwatch5.ElapsedMilliseconds;
-			}
-			stopwatch.Stop();
-			try
-			{
-				File.AppendAllText(P_10, $"{DateTime.Now}: OCR TIMING {Path.GetFileName(P_1)}: render={stopwatch2.ElapsedMilliseconds}ms ({bitmap.Width}x{bitmap.Height}={(double)num7 / 1000000.0:0.0}MP) drawingOCR={num8}ms disciplineOCR={num9}ms descOCR={num10}ms total={stopwatch.ElapsedMilliseconds}ms drawing=[{P_7}] discipline=[{P_8}] desc=[{P_9.Replace("\n", "\\n").Replace("\r", "")}]\n");
-			}
-			catch
-			{
+				lines.Add($"{stats.RenderFailures} sheet image(s) could not be rendered for OCR.");
 			}
 		}
-		FieldRect ToLocal(FieldRect fieldRect)
+		await new ContentDialog
 		{
-			return new FieldRect(fieldRect.X1 - unionRect.X1, fieldRect.Y1 - unionRect.Y1, fieldRect.X2 - unionRect.X1, fieldRect.Y2 - unionRect.Y1);
-		}
+			Title = "Please review some entries",
+			Content = string.Join("\n\n", lines) + "\n\nDetails were written to:\n" + logPath,
+			CloseButtonText = "OK",
+			XamlRoot = Content.XamlRoot
+		}.ShowAsync();
 	}
 
 	private static string FindTextInRect(UglyToad.PdfPig.Content.Page P_0, FieldRect P_1, out List<TextHit> P_2, double P_3 = 10.0)
@@ -2819,29 +2737,21 @@ public sealed partial class MainWindow : Window
 					return null;
 				}
 				FieldRect fieldRect = new FieldRect(0.0, 0.0, width, height);
-				using Bitmap bitmap = RenderPdfPageCropToBitmap(P_0, height, fieldRect, 100.0);
-				if (bitmap == null)
+				GrayImage? picture = PdfiumRender.TryRegion(P_0, 0, fieldRect.X1, fieldRect.Y1, fieldRect.X2, fieldRect.Y2, 100.0, out string? drawProblem);
+				if (picture == null)
 				{
-					Log("full-page render failed");
+					Log("full-page render failed: " + drawProblem);
 					return null;
 				}
-				w = bitmap.Width;
-				hgt = bitmap.Height;
+				w = picture.Width;
+				hgt = picture.Height;
 				if (w < 10 || hgt < 10)
 				{
 					return null;
 				}
-				using Bitmap bitmap2 = new Bitmap(w, hgt, PixelFormat.Format24bppRgb);
-				using (Graphics graphics = Graphics.FromImage(bitmap2))
 				{
-					graphics.DrawImage(bitmap, 0, 0, w, hgt);
-				}
-				BitmapData bitmapData = bitmap2.LockBits(new Rectangle(0, 0, w, hgt), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-				try
-				{
-					stride = bitmapData.Stride;
-					bytes = new byte[stride * hgt];
-					Marshal.Copy(bitmapData.Scan0, bytes, 0, bytes.Length);
+					stride = w;
+					bytes = picture.Pixels;
 					int num = Math.Max(1, (int)((double)w * 0.15));
 					int num2 = Math.Max(1, (int)((double)hgt * 0.15));
 					double num3 = 1.3888888888888888;
@@ -2879,10 +2789,6 @@ public sealed partial class MainWindow : Window
 					}
 					Log($"found border: Left={num9:0.##}, Bottom={num12:0.##}, Right={num10:0.##}, Top={num11:0.##}");
 					return (num9, num12, num10, num11, width, height);
-				}
-				finally
-				{
-					bitmap2.UnlockBits(bitmapData);
 				}
 			}
 			double ColDarkFraction(int x)
@@ -2940,8 +2846,7 @@ public sealed partial class MainWindow : Window
 			}
 			bool IsDark(int num17, int num16)
 			{
-				int num15 = num16 * stride + num17 * 3;
-				return (bytes[num15] + bytes[num15 + 1] + bytes[num15 + 2]) / 3 < 150;
+				return bytes[num16 * stride + num17] < 150;
 			}
 			double RowDarkFraction(int y)
 			{
@@ -3054,6 +2959,15 @@ public sealed partial class MainWindow : Window
 		{
 		}
 		Diagnostics.Split("template prep (rotation + fields)", templateTimer); // DIAG
+		if (!await ConfirmOcrAvailableAsync(logPath))
+		{
+			if (normalizedTemplateTempFile != null)
+			{
+				FileHygiene.DeleteQuietly(normalizedTemplateTempFile);
+			}
+			return;
+		}
+		OcrRunStats ocrStats = new OcrRunStats();
 		bool includeSheetsInOutput = IncludeSheetsCheckBox.IsChecked == true;
 		bool includeHyperlinks = IncludeHyperlinksCheckBox.IsChecked == true;
 		bool includeBookmarks = IncludeBookmarksCheckBox.IsChecked == true;
@@ -3093,7 +3007,10 @@ public sealed partial class MainWindow : Window
 		}
 		string chosenOutputPath = storageFile.Path;
 		string partialOutputPath = FileHygiene.PartialPathFor(chosenOutputPath);
+		// The index is built in a local file and copied to its destination at the end (see GenerateDrawingIndexCore).
+		string workOutputPath = Path.Combine(Path.GetTempPath(), $"AutoDIS_work_{Guid.NewGuid():N}_{Path.GetFileName(chosenOutputPath)}");
 		_generationCts = new CancellationTokenSource();
+		_reviewHost = this;
 		CancellationToken token = _generationCts.Token;
 		Progress<(int current, int total, string status)> progress = new Progress<(int, int, string)>(((int current, int total, string status) p) =>
 		{
@@ -3109,6 +3026,7 @@ public sealed partial class MainWindow : Window
 				GenerationProgressBar.IsIndeterminate = true;
 			}
 		});
+		totalTimer?.Restart(); // DIAG
 		GenerateButton.IsEnabled = false;
 		GenerateCSVButton.IsEnabled = false;
 		CancelGenerationButton.IsEnabled = true;
@@ -3132,7 +3050,15 @@ public sealed partial class MainWindow : Window
 		Exception failure = null;
 		try
 		{
-			outPath = (await Task.Run(() => GenerateDrawingIndexCore(templatePath, drawingRect, disciplineRect, descriptionRect, includeSheetsInOutput, includeHyperlinks, logPath, progress, token, outputPrefix, appendDT, selectedFontFamily, null, combinedSetPath, partialOutputPath, includeBookmarks, bookmarksFromGeneratedIndex, normalizedTemplateTempFile != null, sheetNumberRect, shortGeneralNumbers), token)).Item1;
+			outPath = (await Task.Run(() => GenerateDrawingIndexCore(templatePath, drawingRect, disciplineRect, descriptionRect, includeSheetsInOutput, includeHyperlinks, logPath, progress, token, outputPrefix, appendDT, selectedFontFamily, null, combinedSetPath, workOutputPath, includeBookmarks, bookmarksFromGeneratedIndex, normalizedTemplateTempFile != null, sheetNumberRect, shortGeneralNumbers, ocrStats), token)).Item1;
+			if (outPath != null)
+			{
+				var copyBackTimer = Diagnostics.Start(); // DIAG
+				string copyOut = await Task.Run(() => CopyFileWithProgress(workOutputPath, partialOutputPath, token, progress, "Copying the finished file to its destination"), token);
+				AppLog.TryAppend(logPath, $"{DateTime.Now}: Copied the finished file to its destination: {copyOut}");
+				Diagnostics.Split("copy result to destination", copyBackTimer, copyOut); // DIAG
+				outPath = partialOutputPath;
+			}
 		}
 		catch (OperationCanceledException)
 		{
@@ -3176,9 +3102,11 @@ public sealed partial class MainWindow : Window
 			GenerationProgressPanel.Visibility = Visibility.Collapsed;
 			_generationCts?.Dispose();
 			_generationCts = null;
+			_reviewHost = null;
 			if (_closeAfterRun) { Close(); }
 			Diagnostics.Split("total", totalTimer); // DIAG
 			Diagnostics.EndRun(); // DIAG
+			FileHygiene.DeleteQuietly(workOutputPath);
 			if (normalizedTemplateTempFile != null)
 			{
 				try
@@ -3208,6 +3136,7 @@ public sealed partial class MainWindow : Window
 		}
 		if (failure == null)
 		{
+			await ReportOcrOutcomeAsync(ocrStats, logPath);
 			try
 			{
 				if (outPath != null && File.Exists(outPath))
@@ -3292,6 +3221,15 @@ public sealed partial class MainWindow : Window
 		catch
 		{
 		}
+		if (!await ConfirmOcrAvailableAsync(logPath))
+		{
+			if (normalizedTemplateTempFile != null)
+			{
+				FileHygiene.DeleteQuietly(normalizedTemplateTempFile);
+			}
+			return;
+		}
+		OcrRunStats ocrStats = new OcrRunStats();
 		string outputPrefix = "Drawing Index";
 		bool appendDT = true;
 		string selectedFontFamily = GetSelectedFontFamily();
@@ -3328,6 +3266,7 @@ public sealed partial class MainWindow : Window
 		string chosenOutputPath = storageFile.Path;
 		string partialOutputPath = FileHygiene.PartialPathFor(chosenOutputPath);
 		_generationCts = new CancellationTokenSource();
+		_reviewHost = this;
 		CancellationToken token = _generationCts.Token;
 		Progress<(int current, int total, string status)> progress = new Progress<(int, int, string)>(((int current, int total, string status) p) =>
 		{
@@ -3369,7 +3308,7 @@ public sealed partial class MainWindow : Window
 		Exception failure = null;
 		try
 		{
-			outPath = await Task.Run(() => GenerateDrawingIndexCSV(templatePath, drawingRect, disciplineRect, descriptionRect, logPath, progress, token, outputPrefix, appendDT, selectedFontFamily, combinedSetPath, partialOutputPath, normalizedTemplateTempFile != null, shortGeneralNumbers), token);
+			outPath = await Task.Run(() => GenerateDrawingIndexCSV(templatePath, drawingRect, disciplineRect, descriptionRect, logPath, progress, token, outputPrefix, appendDT, selectedFontFamily, combinedSetPath, partialOutputPath, normalizedTemplateTempFile != null, shortGeneralNumbers, ocrStats), token);
 		}
 		catch (OperationCanceledException)
 		{
@@ -3413,6 +3352,7 @@ public sealed partial class MainWindow : Window
 			GenerationProgressPanel.Visibility = Visibility.Collapsed;
 			_generationCts?.Dispose();
 			_generationCts = null;
+			_reviewHost = null;
 			if (_closeAfterRun) { Close(); }
 			Diagnostics.Split("total", totalTimer); // DIAG
 			Diagnostics.EndRun(); // DIAG
@@ -3445,6 +3385,7 @@ public sealed partial class MainWindow : Window
 		}
 		if (failure == null)
 		{
+			await ReportOcrOutcomeAsync(ocrStats, logPath);
 			try
 			{
 				if (outPath != null && File.Exists(outPath))
@@ -3495,8 +3436,89 @@ public sealed partial class MainWindow : Window
 		GenerationStatusText.Text = "Cancelling...";
 	}
 
-	private static (string? outPath, List<DrawingIndexItem>? finalRows) GenerateDrawingIndexCore(string P_0, FieldRect P_1, FieldRect P_2, FieldRect P_3, bool P_4, bool P_5, string P_6, IProgress<(int current, int total, string status)> P_7, CancellationToken P_8, string P_9 = "DrawingIndex_Output_", bool P_10 = true, string P_11 = "Arial", string? P_12 = null, string? P_13 = null, string? P_14 = null, bool P_15 = false, bool P_16 = true, bool P_17 = false, FieldRect? P_18 = null, bool P_19 = false)
+	// Large sheet sets live on a network share, where the many small reads and writes of building the index were the slowest part
+	// of a run. The set is copied once, sequentially, to a local working folder and everything else works from that copy.
+	private static (string? outPath, List<DrawingIndexItem>? finalRows) GenerateDrawingIndexCore(string P_0, FieldRect P_1, FieldRect P_2, FieldRect P_3, bool P_4, bool P_5, string P_6, IProgress<(int current, int total, string status)> P_7, CancellationToken P_8, string P_9 = "DrawingIndex_Output_", bool P_10 = true, string P_11 = "Arial", string? P_12 = null, string? P_13 = null, string? P_14 = null, bool P_15 = false, bool P_16 = true, bool P_17 = false, FieldRect? P_18 = null, bool P_19 = false, OcrRunStats? P_20 = null)
 	{
+		string? workFolder = null;
+		ProcessPriorityClass? previousPriority = null;
+		TimeSpan gcPause = TimeSpan.Zero;
+		int gcGen2 = 0;
+		long gcAllocated = 0;
+		try
+		{
+			long setBytes = !string.IsNullOrWhiteSpace(P_13) && File.Exists(P_13) ? new FileInfo(P_13).Length : 0L;
+			HardwareSnapshot hardware = HardwareProbe.Probe();
+			ResourcePlan plan = ResourcePlanner.Plan(ResourceLevelSetting, hardware, setBytes);
+			gcPause = GC.GetTotalPauseDuration();
+			gcGen2 = GC.CollectionCount(2);
+			gcAllocated = GC.GetTotalAllocatedBytes();
+			_resourcePlan = plan;
+			RenderGate = new SemaphoreSlim(plan.RenderConcurrency);
+			_renderPool = new RenderPool(plan.RenderProcesses, () => new ProcessRenderConnection(m => AppLog.TryAppend(P_6, $"{DateTime.Now}: {m}")), m => AppLog.TryAppend(P_6, $"{DateTime.Now}: {m}"));
+			AppLog.TryAppend(P_6, $"{DateTime.Now}: Resources - {ResourcePlanner.Summary(plan, hardware)}");
+			try
+			{
+				using Process self = Process.GetCurrentProcess();
+				previousPriority = self.PriorityClass;
+				self.PriorityClass = plan.Priority;
+			}
+			catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
+			{
+				previousPriority = null;
+			}
+			if (!string.IsNullOrWhiteSpace(P_13) && File.Exists(P_13))
+			{
+				workFolder = Path.Combine(Path.GetTempPath(), "AutoDIS_work_" + Guid.NewGuid().ToString("N"));
+				Directory.CreateDirectory(workFolder);
+				string localCopy = Path.Combine(workFolder, Path.GetFileName(P_13));
+				var copyTimer = Diagnostics.Start(); // DIAG
+				string copyIn = CopyFileWithProgress(P_13, localCopy, P_8, P_7, "Copying the sheet set to a local working file");
+				AppLog.TryAppend(P_6, $"{DateTime.Now}: Copied the sheet set to a local working file: {copyIn}");
+				Diagnostics.Split("copy sheet set locally", copyTimer, Path.GetFileName(P_13) + " " + copyIn); // DIAG
+				P_13 = localCopy;
+			}
+			return GenerateDrawingIndexCoreInner(P_0, P_1, P_2, P_3, P_4, P_5, P_6, P_7, P_8, P_9, P_10, P_11, P_12, P_13, P_14, P_15, P_16, P_17, P_18, P_19, P_20);
+		}
+		finally
+		{
+			RenderPool? pool = _renderPool;
+			_renderPool = null;
+			if (pool != null)
+			{
+				pool.Dispose();
+				AppLog.TryAppend(P_6, $"{DateTime.Now}: Page-drawing helpers: {pool.ProcessesStarted} process(es) started, {pool.Rendered} page(s) drawn by them, {pool.Declined} drawn in the main program instead");
+			}
+			AppLog.TryAppend(P_6, $"{DateTime.Now}: Memory management during this run: {(GC.GetTotalPauseDuration() - gcPause).TotalSeconds:0.0} s paused for garbage collection, {GC.CollectionCount(2) - gcGen2} full collections, {(GC.GetTotalAllocatedBytes() - gcAllocated) / (1024 * 1024)} MB allocated");
+			if (previousPriority.HasValue)
+			{
+				try
+				{
+					using Process self = Process.GetCurrentProcess();
+					self.PriorityClass = previousPriority.Value;
+				}
+				catch (Exception ex) when (ex is InvalidOperationException || ex is System.ComponentModel.Win32Exception)
+				{
+				}
+			}
+			if (workFolder != null)
+			{
+				try
+				{
+					Directory.Delete(workFolder, recursive: true);
+				}
+				catch (IOException)
+				{
+				}
+				catch (UnauthorizedAccessException)
+				{
+				}
+			}
+		}
+	}
+	private static (string? outPath, List<DrawingIndexItem>? finalRows) GenerateDrawingIndexCoreInner(string P_0, FieldRect P_1, FieldRect P_2, FieldRect P_3, bool P_4, bool P_5, string P_6, IProgress<(int current, int total, string status)> P_7, CancellationToken P_8, string P_9 = "DrawingIndex_Output_", bool P_10 = true, string P_11 = "Arial", string? P_12 = null, string? P_13 = null, string? P_14 = null, bool P_15 = false, bool P_16 = true, bool P_17 = false, FieldRect? P_18 = null, bool P_19 = false, OcrRunStats? P_20 = null)
+	{
+			OcrRunStats ocrStats = P_20 ?? new OcrRunStats();
 		bool flag = !string.IsNullOrWhiteSpace(P_13) && File.Exists(P_13);
 		var setupTimer = Diagnostics.Start(); // DIAG
 		P_7.Report((0, 0, flag ? "Opening combined sheet set..." : "Scanning folder for sheet PDFs..."));
@@ -3505,7 +3527,8 @@ public sealed partial class MainWindow : Window
 		{
 			return (outPath: null, finalRows: null);
 		}
-		using UglyToad.PdfPig.PdfDocument pdfDocument = (flag ? UglyToad.PdfPig.PdfDocument.Open(P_13) : null);
+		byte[]? combinedBytes = flag ? File.ReadAllBytes(P_13) : null;
+		using UglyToad.PdfPig.PdfDocument pdfDocument = (flag ? UglyToad.PdfPig.PdfDocument.Open(combinedBytes) : null);
 		int num = (flag ? pdfDocument.NumberOfPages : 0);
 		List<(string, int)> list;
 		List<(string, int)> skippedFiles = new List<(string, int)>();
@@ -3527,117 +3550,37 @@ public sealed partial class MainWindow : Window
 		int progressFactor = (!P_4) ? 1 : 2;
 		Diagnostics.Split("scan sources", setupTimer, $"{list.Count} candidate(s)"); // DIAG
 		ProgressTracker progressTracker = new ProgressTracker(P_7, list.Count * progressFactor);
-		using TesseractEngine tesseractEngine = TryCreateOcrEngine(P_6);
+		OcrEngineSet? probeEngines = TryCreateOcrEngines(P_6, ocrStats, out OcrEngineSet? largeEngines);
 		Diagnostics.Split("ocr engine init", setupTimer); // DIAG
-		Dictionary<string, Windows.Data.Pdf.PdfDocument> dictionary = new Dictionary<string, Windows.Data.Pdf.PdfDocument>();
-		List<DrawingIndexItem> list5 = new List<DrawingIndexItem>();
-		List<(string, int)> sources = list;
-		List<(string, int)> sheets = new List<(string, int)>();
-		int num3 = 1;
-		for (int num4 = 0; num4 < sources.Count; num4++)
+		_templatePageSize = ReadPageSize(P_0);
+		SheetRead[] sheetReads = ReadSheets(list, flag, combinedBytes, P_1, P_2, P_3, probeEngines, ocrStats, P_6, progressTracker, P_8);
+		combinedBytes = null;
+		pdfDocument?.Dispose();
+		progressTracker.Status("Checking the index for patterns and likely mistakes...");
+		bool willSecondLook = largeEngines != null && CurrentOcrPreset.SecondLook;
+		var assembled = AssembleSheets(sheetReads, list, P_19, ocrStats, P_6, !willSecondLook);
+		Diagnostics.Split("index analysis", setupTimer); // DIAG
+		if (willSecondLook)
 		{
-			P_8.ThrowIfCancellationRequested();
-			(string, int) tuple = sources[num4];
-			string item = tuple.Item1;
-			int item2 = tuple.Item2;
-			string text3 = (flag ? $"page {item2 + 1} of the combined set" : Path.GetFileName(item));
-			var sheetTimer = Diagnostics.Start(); // DIAG
-			UglyToad.PdfPig.PdfDocument pdfDocument3 = null;
-			try
+			if (assembled.flagged.Count > 0)
 			{
-				UglyToad.PdfPig.Content.Page page = (flag ? pdfDocument.GetPage(item2 + 1) : null);
-				if (!flag)
-				{
-					try
-					{
-						pdfDocument3 = UglyToad.PdfPig.PdfDocument.Open(item);
-						int pageCount = pdfDocument3.NumberOfPages;
-						if (pageCount != 1)
-						{
-							skippedFiles.Add((Path.GetFileName(item), pageCount));
-							continue;
-						}
-						page = pdfDocument3.GetPages().FirstOrDefault();
-					}
-					catch
-					{
-						skippedFiles.Add((Path.GetFileName(item), -1));
-						continue;
-					}
-				}
-				sheets.Add((item, item2));
-				progressTracker.Report($"Reading sheet {sheets.Count}{(flag ? $" of {sources.Count}" : string.Empty)}: {text3}");
-				if (sheets.Count == 1)
-				{
-					list5.Add(new DrawingIndexItem
-					{
-						SeqNo = num3++,
-						DrawingNumber = GeneralDrawingNumber(0, P_19),
-						Discipline = "GENERAL",
-						Title = "COVER SHEET",
-						SourcePdfPath = item,
-						SourcePageIndex = item2
-					});
-					continue;
-				}
-				Diagnostics.Split("open sheet", sheetTimer, text3); // DIAG
-				if (page != null)
-				{
-					string text4 = FindTextInRect(page, P_1, out List<TextHit> list6);
-					string text5 = FindTextInRect(page, P_2, out List<TextHit> list7);
-					string text6 = FindTextInRect(page, P_3, out List<TextHit> list8);
-					if (list6.Count >= 2)
-					{
-						text4 = ((!HasOverlappingHits(list6)) ? ClosestHitToRect(list6, P_1).Text : string.Empty);
-					}
-					Diagnostics.Split("field lookup", sheetTimer, text3); // DIAG
-					bool flag2 = !string.IsNullOrWhiteSpace(text6);
-					ApplyOcrFallback(tesseractEngine, item, page.Width, page.Height, P_1, P_2, P_3, ref text4, ref text5, ref text6, P_6, item2, dictionary);
-					Diagnostics.Split("ocr fallback", sheetTimer, Path.GetFileName(item)); // DIAG
-					text4 = FlattenEmbeddedNewlines(text4);
-					text5 = FlattenEmbeddedNewlines(text5);
-					text6 = FlattenEmbeddedNewlines(text6);
-					text5 = text5.Trim(' ', '\t', '\r', '\n', '|');
-					if (flag2)
-					{
-						text6 = StripLeadingDuplicateFieldByPosition(text6, list8, text5, list7);
-						text6 = StripLeadingDuplicateFieldByPosition(text6, list8, text4, list6);
-					}
-					text4 = text4.Replace('£', 'E');
-					text4 = text4.Replace("/", "");
-					text4 = text4.Replace("=", "").Replace("%", "");
-					text4 = NormalizeDashesToEnDash(text4);
-					text6 = NormalizeDashesToEnDash(text6);
-					text4 = CollapseConsecutiveDashes(text4);
-					if (string.IsNullOrWhiteSpace(text4))
-					{
-						text4 = "[NOT FOUND]";
-					}
-					if (string.IsNullOrWhiteSpace(text6))
-					{
-						text6 = "[DESCRIPTION NOT FOUND]";
-					}
-					list5.Add(new DrawingIndexItem
-					{
-						SeqNo = num3++,
-						DrawingNumber = text4,
-						Discipline = text5,
-						Title = text6,
-						SourcePdfPath = item,
-						SourcePageIndex = item2
-					});
-				}
+				SecondLook(assembled.flagged, list, P_1, P_2, P_3, largeEngines, ocrStats, P_6, progressTracker, P_8);
+				Diagnostics.Split("second look (large model)", setupTimer, $"{assembled.flagged.Count} sheet(s)"); // DIAG
 			}
-			catch (Exception ex) when (ex is not OperationCanceledException)
+			else
 			{
-				AppLog.TryAppend(P_6, $"{DateTime.Now}: Sheet {Path.GetFileName(item)} (page {item2 + 1}) skipped after an error: {ex.Message}");
+				largeEngines!.Dispose();
 			}
-			finally
-			{
-				pdfDocument3?.Dispose();
-			}
+			assembled = AssembleSheets(sheetReads, list, P_19, ocrStats, P_6, true);
 		}
-		list = sheets;
+		else
+		{
+			largeEngines?.Dispose();
+		}
+		List<DrawingIndexItem> list5 = assembled.rows;
+		ReviewEntries(list5, P_2, P_3, P_6, P_7, P_8);
+		List<(string, int)> sheets = assembled.sheets;
+		skippedFiles.AddRange(assembled.skipped);		list = sheets;
 		Diagnostics.Split("sheet loop (all sheets)", setupTimer, $"{sheets.Count} kept, {skippedFiles.Count} skipped"); // DIAG
 		progressTracker.Total = list.Count * progressFactor;
 		if (skippedFiles.Count > 0)
@@ -4630,6 +4573,7 @@ public sealed partial class MainWindow : Window
 			{
 				List<(string, int)> list5 = P_7.ToList();
 				File.AppendAllText(logPath, $"Sheet import requested: includeSheetsInOutput={P_8}, sheetEntries count={list5.Count}\n");
+				P_13?.Status("Importing sheets into the index...");
 				int count = outDoc.Pages.Count;
 				List<(string, int)> list6 = (flag ? list5.Where(((string Path, int PageIndex) en) => !(en.Path == coverSheetPath) || en.PageIndex != coverSheetPageIndex).ToList() : list5);
 				File.AppendAllText(logPath, $"Starting sheet import: indexPageCount={count}, sheets to import={list6.Count}\n");
@@ -4789,6 +4733,7 @@ public sealed partial class MainWindow : Window
 			}
 			Diagnostics.Split("bookmarks and links", xTimer); // DIAG
 			EnsureAcroFormDefaultResources(outDoc, P_16);
+			P_13?.Status("Saving the finished index and sheets (large sets take a moment)...");
 			RunWithFileLockRetry(() =>
 			{
 				outDoc.Save(P_2);

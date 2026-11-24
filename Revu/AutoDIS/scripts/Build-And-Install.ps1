@@ -119,6 +119,22 @@ if (-not $msix) {
     throw 'Build finished but no .msix package was found.'
 }
 
+# The OCR fallback is silently useless if the models or native Tesseract libraries are not in the package.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [IO.Compression.ZipFile]::OpenRead($msix.FullName)
+try {
+    $entries = $zip.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }
+    $required = 'tessdata/eng.traineddata', 'tessdata/eng_best.traineddata', 'x64/tesseract41.dll', 'x64/leptonica-1.80.0.dll', 'runtimes/win-x64/native/pdfium.dll'
+    $missing = $required | Where-Object { $entries -notcontains $_ }
+    if ($missing) {
+        throw "The package is missing OCR files, so OCR would not work: $($missing -join ', ')"
+    }
+}
+finally {
+    $zip.Dispose()
+}
+Write-Host 'OCR models and native libraries are in the package.' -ForegroundColor Green
+
 if ($signingMode -eq 'Personal') {
     $signtool = Get-ChildItem -Path "$env:USERPROFILE\.nuget\packages\microsoft.windows.sdk.buildtools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1

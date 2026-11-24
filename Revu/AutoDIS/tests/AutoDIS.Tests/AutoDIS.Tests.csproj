@@ -17,6 +17,19 @@
     <Compile Include="..\..\PdfContentRedactor.cs" Link="Linked\PdfContentRedactor.cs" />
     <Compile Include="..\..\AppSupport.cs" Link="Linked\AppSupport.cs" />
     <Compile Include="..\..\Diagnostics.cs" Link="Linked\Diagnostics.cs" />
+    <Compile Include="..\..\OcrSupport.cs" Link="Linked\OcrSupport.cs" />
+    <Compile Include="..\..\OcrImage.cs" Link="Linked\OcrImage.cs" />
+    <Compile Include="..\..\OcrPreset.cs" Link="Linked\OcrPreset.cs" />
+    <Compile Include="..\..\ResourcePlan.cs" Link="Linked\ResourcePlan.cs" />
+    <Compile Include="..\..\FastCopy.cs" Link="Linked\FastCopy.cs" />
+    <Compile Include="..\..\OcrDictionary.cs" Link="Linked\OcrDictionary.cs" />
+    <Compile Include="..\..\RenderProtocol.cs" Link="Linked\RenderProtocol.cs" />
+    <Compile Include="..\..\RenderPool.cs" Link="Linked\RenderPool.cs" />
+    <Compile Include="..\..\OcrVectorRaster.cs" Link="Linked\OcrVectorRaster.cs" />
+    <Compile Include="..\..\OcrTextCleanup.cs" Link="Linked\OcrTextCleanup.cs" />
+    <Compile Include="..\..\OcrFieldRecognizer.cs" Link="Linked\OcrFieldRecognizer.cs" />
+    <Compile Include="..\..\OcrIndexAnalysis.cs" Link="Linked\OcrIndexAnalysis.cs" />
+    <Compile Include="..\..\OcrSetProfile.cs" Link="Linked\OcrSetProfile.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +37,14 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="PdfSharp" />
+    <PackageReference Include="Tesseract" />
+    <PackageReference Include="System.Drawing.Common" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\dictionary\drawing-terms.txt" Link="dictionary\drawing-terms.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The same OCR models and word list the app ships, downloaded and verified on first build. -->
+  <Import Project="..\..\OcrModels.targets" />
 </Project>

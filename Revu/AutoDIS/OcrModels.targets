@@ -1,0 +1,51 @@
+<Project>
+
+  <!--
+    Large, public, unmodified data files the OCR needs. They are not committed: the first build downloads each one,
+    verifies its SHA-256 and places it next to the sources (the paths are in .gitignore). Imported by the app and the
+    test project, so a fresh clone builds with no manual steps. Update Url and Sha256 together to change a model.
+  -->
+  <PropertyGroup>
+    <OcrModelRoot>$(MSBuildThisFileDirectory)</OcrModelRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <OcrModel Include="$(OcrModelRoot)tessdata\eng.traineddata" Link="tessdata\eng.traineddata" CopyToOutputDirectory="PreserveNewest"
+              Url="https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
+              Sha256="7D4322BD2A7749724879683FC3912CB542F19906C83BCC1A52132556427170B2" />
+    <OcrModel Include="$(OcrModelRoot)tessdata\eng_best.traineddata" Link="tessdata\eng_best.traineddata" CopyToOutputDirectory="PreserveNewest"
+              Url="https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata"
+              Sha256="8280AED0782FE27257A68EA10FE7EF324CA0F8D85BD2FD145D1C2B560BCB66BA" />
+    <OcrModel Include="$(OcrModelRoot)dictionary\english-enable.txt" Link="dictionary\english-enable.txt" CopyToOutputDirectory="PreserveNewest"
+              Url="https://raw.githubusercontent.com/dolph/dictionary/master/enable1.txt"
+              Sha256="3F16130220645692ED49C7134E24A18504C2CA55B3C012F7290E3E77C63B1A89" />
+  </ItemGroup>
+
+  <Target Name="FetchOcrModels" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <_MissingOcrModel Include="@(OcrModel)" Condition="!Exists('%(FullPath)')" />
+    </ItemGroup>
+
+    <Message Importance="high" Condition="'@(_MissingOcrModel)' != ''" Text="Downloading OCR model %(_MissingOcrModel.Link)" />
+    <DownloadFile Condition="'@(_MissingOcrModel)' != ''" SourceUrl="%(_MissingOcrModel.Url)"
+                  DestinationFolder="%(_MissingOcrModel.RootDir)%(_MissingOcrModel.Directory)"
+                  DestinationFileName="%(_MissingOcrModel.Filename)%(_MissingOcrModel.Extension).partial" Retries="3" />
+
+    <GetFileHash Condition="'@(_MissingOcrModel)' != ''" Files="@(_MissingOcrModel->'%(FullPath).partial')" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_DownloadedOcrModel" />
+    </GetFileHash>
+    <Error Condition="'@(_DownloadedOcrModel)' != '' and '%(_DownloadedOcrModel.FileHash)' != '%(_DownloadedOcrModel.Sha256)'"
+           Text="Downloaded %(_DownloadedOcrModel.Link) does not match the expected SHA-256 (%(_DownloadedOcrModel.Sha256)). Delete it and rebuild, or update OcrModels.targets if the upstream file changed." />
+    <Move Condition="'@(_DownloadedOcrModel)' != ''" SourceFiles="@(_DownloadedOcrModel)"
+          DestinationFiles="@(_DownloadedOcrModel->'%(RootDir)%(Directory)%(Filename)')" />
+
+    <Error Condition="!Exists('%(OcrModel.FullPath)')"
+           Text="%(OcrModel.Link) is missing and could not be downloaded from %(OcrModel.Url). The OCR fallback cannot work without it." />
+
+    <!-- Added here rather than globbed so they are picked up even when they were only just downloaded. -->
+    <ItemGroup>
+      <Content Include="@(OcrModel)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

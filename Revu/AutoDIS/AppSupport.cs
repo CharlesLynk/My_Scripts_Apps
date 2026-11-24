@@ -5,12 +5,18 @@ namespace MbrohDrawingIndexCreator
 {
 	internal static class AppLog
 	{
+		private static readonly object Gate = new object();
+
 		// Log writes must never cause a generation to fail, so write errors are ignored.
+		// Serialized because the sheet-reading workers log from several threads.
 		internal static void TryAppend(string logPath, string message)
 		{
 			try
 			{
-				File.AppendAllText(logPath, message.EndsWith("\n", StringComparison.Ordinal) ? message : message + "\n");
+				lock (Gate)
+				{
+					File.AppendAllText(logPath, message.EndsWith("\n", StringComparison.Ordinal) ? message : message + "\n");
+				}
 			}
 			catch (IOException)
 			{

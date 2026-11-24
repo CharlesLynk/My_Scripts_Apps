@@ -23,14 +23,23 @@
     <LangVersion>14.0</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CheckForOverflowUnderflow>false</CheckForOverflowUnderflow>
+    <!-- Sheet reading runs on several threads that allocate heavily (PdfPig). Workstation GC serialises them (stop-the-world pauses took more than half the run); Server GC cut that to a fifth. The property is ServerGarbageCollection - the earlier spelling was silently ignored. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <!-- Original deployment files and the large MSIX packages live here and must not be compiled. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);reference\**;tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Page parsing and image work allocate many multi-megabyte arrays; by default each one lands in the large-object heap and triggers a full collection. Measured: fewer full collections and about 8% less time. -->
+    <RuntimeHostConfigurationOption Include="System.GC.LOHThreshold" Value="16777216" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="PdfSharp" />
     <PackageReference Include="PdfPig" />
+    <PackageReference Include="PDFiumCore" />
     <PackageReference Include="Tesseract" />
     <PackageReference Include="System.Drawing.Common" />
   </ItemGroup>
@@ -40,9 +49,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Content Include="Images\**" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="tessdata\*.traineddata">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <Content Include="dictionary\drawing-terms.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- The OCR models and the ENABLE word list are downloaded and verified at build time (see OcrModels.targets). -->
+  <Import Project="OcrModels.targets" />
 
 </Project>
