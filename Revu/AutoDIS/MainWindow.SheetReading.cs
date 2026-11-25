@@ -410,7 +410,7 @@ public sealed partial class MainWindow
 		}
 	}
 
-	// Second look (Quality and Ultra presets): the entries still in doubt after the whole index was checked for patterns are
+	// Second look (Thorough preset): the entries still in doubt after the whole index was checked for patterns are
 	// read again with the large, more detailed model. The new reading replaces the old only if it scores at least as well,
 	// and the index is then assembled and checked again.
 	private static void SecondLook(List<FlaggedSheet> flagged, IReadOnlyList<(string path, int page)> sources, FieldRect idRect, FieldRect disciplineRect, FieldRect titleRect, OcrEngineSet? probeLarge, OcrRunStats stats, string logPath, ProgressTracker progress, CancellationToken token)

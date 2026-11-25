@@ -467,7 +467,7 @@ public sealed partial class MainWindow : Window
 		};
 		stackPanel.Children.Add(new TextBlock
 		{
-			Text = "Some sheets have title blocks that cannot be read as text (scanned pages, or CAD lettering drawn as lines). For those, the app reads the title block as an image (OCR). This setting trades speed for detail. Balanced suits most drawing sets; choose Quality or Ultra for scanned drawings or sets with thin or italic lettering throughout, and Fast or Fastest for clean sets when you need the quickest result.",
+			Text = "Some sheets have title blocks that cannot be read as text (scanned pages, or CAD lettering drawn as lines). For those, the app reads the title block as an image (OCR). This setting trades speed for detail. Balanced suits most drawing sets; choose Thorough for scanned drawings or sets with thin or italic lettering throughout, and Fast for clean sets when you need the quickest result.",
 			TextWrapping = TextWrapping.Wrap
 		});
 		stackPanel.Children.Add(presetBox);

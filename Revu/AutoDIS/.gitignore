@@ -36,3 +36,7 @@ TestResults/
 /reference/**/*.msixbundle
 /reference/**/*.appxsym
 /reference/**/Dependencies/
+# Local test data for the bench tools (client drawing titles, hand-read answers); recreate as described in tools/bench/README.md
+/tools/bench/data/
+/tools/bench/**/bin/
+/tools/bench/**/obj/

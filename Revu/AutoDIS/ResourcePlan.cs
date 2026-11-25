@@ -168,7 +168,46 @@ namespace MbrohDrawingIndexCreator
 				_ => Math.Clamp(cores, 2, 8)
 			};
 			int helpers = Math.Max(1, Math.Min(helperTarget, workers));
+			// Test lever (diagnostics builds only): %TEMP%\AutoDIS\tuning.txt with "workers=N" and/or "helpers=N" lines replaces the plan's counts.
+			if (Diagnostics.Enabled) // DIAG
+			{
+				(int? tunedWorkers, int? tunedHelpers) = ReadTuning(); // DIAG
+				workers = tunedWorkers ?? workers; // DIAG
+				helpers = tunedHelpers ?? Math.Min(helpers, workers); // DIAG
+			}
 			return new ResourcePlan(level, workers, Math.Clamp(Math.Min(renders, workers), 1, RenderPlateau), helpers, budget, priority, limited);
+		}
+
+		private static (int? workers, int? helpers) ReadTuning() // DIAG
+		{
+			int? workers = null;
+			int? helpers = null;
+			try
+			{
+				string file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AutoDIS", "tuning.txt");
+				if (System.IO.File.Exists(file))
+				{
+					foreach (string line in System.IO.File.ReadAllLines(file))
+					{
+						string[] parts = line.Split('=', 2);
+						if (parts.Length == 2 && int.TryParse(parts[1].Trim(), out int value) && value >= 1 && value <= 32)
+						{
+							if (parts[0].Trim().Equals("workers", StringComparison.OrdinalIgnoreCase))
+							{
+								workers = value;
+							}
+							else if (parts[0].Trim().Equals("helpers", StringComparison.OrdinalIgnoreCase))
+							{
+								helpers = value;
+							}
+						}
+					}
+				}
+			}
+			catch (Exception ex) when (ex is System.IO.IOException || ex is UnauthorizedAccessException)
+			{
+			}
+			return (workers, helpers);
 		}
 
 		internal static string Summary(ResourcePlan plan, HardwareSnapshot hardware)

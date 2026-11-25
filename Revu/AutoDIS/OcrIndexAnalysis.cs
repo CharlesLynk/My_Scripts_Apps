@@ -709,6 +709,7 @@ namespace MbrohDrawingIndexCreator
 				if (string.IsNullOrWhiteSpace(row.Discipline))
 				{
 					string? inferred = letter != null && letter.Length == 1 ? DisciplineFor(letterByDiscipline, letter) : null;
+					inferred ??= letter != null ? DisciplineBetweenNeighbours(rows, parsed, i, letter) : null;
 					if (inferred != null && row.DisciplineOcr)
 					{
 						row.Discipline = inferred;
@@ -732,6 +733,30 @@ namespace MbrohDrawingIndexCreator
 					row.Reasons.Add(contradictsSeries ? "discipline does not match the sheet number series" : "discipline not seen elsewhere in the set");
 				}
 			}
+		}
+
+		// A sheet with no discipline between two sheets of the same series that agree on one ("CIVIL/YARD" before and after) takes it. A series that
+		// changes discipline part-way (CIVIL/YARD, then CIVIL DETAILS) is left alone where the neighbours disagree.
+		private static string? DisciplineBetweenNeighbours(IList<IndexRow> rows, (string prefix, int number, int width)?[] parsed, int index, string letter)
+		{
+			string? Nearest(int step)
+			{
+				for (int j = index + step; j >= 0 && j < rows.Count; j += step)
+				{
+					if (!parsed[j].HasValue || IdPattern.TailLetter(parsed[j]!.Value.prefix) != letter)
+					{
+						return null;
+					}
+					if (!string.IsNullOrWhiteSpace(rows[j].Discipline))
+					{
+						return rows[j].Discipline;
+					}
+				}
+				return null;
+			}
+			string? before = Nearest(-1);
+			string? after = Nearest(1);
+			return before != null && string.Equals(before, after, StringComparison.OrdinalIgnoreCase) ? before : null;
 		}
 
 		private static string? DisciplineFor(Dictionary<string, Dictionary<string, int>> letterByDiscipline, string letter)

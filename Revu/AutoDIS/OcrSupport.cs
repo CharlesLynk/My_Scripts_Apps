@@ -67,7 +67,7 @@ namespace MbrohDrawingIndexCreator
 
 		internal string? EngineMessage { get; set; }
 
-		// True when the large model loaded, so doubtful entries get a second look (Quality and Ultra presets).
+		// True when the large model loaded, so doubtful entries get a second look (Thorough preset).
 		internal bool SecondLookAvailable { get; set; }
 
 		internal int SecondLookFields => Volatile.Read(ref _secondLookFields);
@@ -212,7 +212,7 @@ namespace MbrohDrawingIndexCreator
 			return new OcrEngineResult { Message = string.Join("; ", problems) };
 		}
 
-		// useBestModel: the larger, more accurate model (the Quality and Ultra presets) instead of the fast one.
+		// useBestModel: the larger, more accurate model (the Thorough preset) instead of the fast one.
 		// Returns null when no model can be loaded; reason then says why (or why the other model was used).
 		internal static OcrEngineSet? TryCreateEngineSet(string tessdataDirectory, bool useBestModel, out string? reason)
 		{

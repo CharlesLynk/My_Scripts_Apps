@@ -461,6 +461,12 @@ namespace MbrohDrawingIndexCreator
 			s = Regex.Replace(s, @"\s{2,}", " ").Trim();			List<string> tokens = s.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
 			for (int i = 0; i < tokens.Count; i++)
 			{
+				// A speck of dust or a frame fragment in front of a word (".PLAN").
+				Match leading = Regex.Match(tokens[i], @"^[.,;:'`]+([A-Z]{3,})$");
+				if (leading.Success)
+				{
+					tokens[i] = leading.Groups[1].Value;
+				}
 				// A stray period after a word. Short words are only trusted to be plain words when the set uses them often.
 				Match m = Regex.Match(tokens[i], @"^([A-Z]{2,})\.$");
 				if (m.Success && !AbbreviationsWithPeriod.Contains(m.Groups[1].Value) && (m.Groups[1].Length >= 4 || ObservedCount(m.Groups[1].Value) >= 3))
@@ -496,14 +502,50 @@ namespace MbrohDrawingIndexCreator
 					tokens[i] = "1";
 				}
 			}
+			tokens = DropStrayMarks(tokens, out bool trailingDropped);
 			tokens = MergeSplitWords(tokens);
 			tokens = CorrectSpelling(tokens, out bool spellingGuessed);
+			spellingGuessed |= trailingDropped;
 			tokens = CorrectFromContext(tokens, ref spellingGuessed);
 			string beforeSnap = string.Join(" ", tokens);
 			string refined = SnapTitle(beforeSnap);
 			guessed = spellingGuessed || !string.Equals(refined, beforeSnap, StringComparison.Ordinal);
 			changed = !string.Equals(refined, original, StringComparison.Ordinal);
 			return refined;
+		}
+
+		// Frame lines and specks on scanned sheets come back as a lone "I" (or a short lowercase scrap such as "oe") between words. A lone I
+		// after a word is kept only where the set writes that word with a Roman numeral elsewhere (PHASE I beside PHASE II). Dropped from the
+		// middle of a title it is certain enough to go unflagged; dropped from the end it may have been a real numeral, so the title is flagged.
+		private List<string> DropStrayMarks(List<string> tokens, out bool trailingDropped)
+		{
+			trailingDropped = false;
+			if (tokens.Count < 3)
+			{
+				return tokens;
+			}
+			int capitalised = tokens.Count(t => t.Any(char.IsLetter) && !t.Any(char.IsLower));
+			bool capitalTitle = capitalised >= 2 && capitalised >= tokens.Count(t => t.Any(char.IsLetter)) - 2;
+			List<string> kept = new List<string>(tokens.Count);
+			for (int i = 0; i < tokens.Count; i++)
+			{
+				string token = tokens[i];
+				if (capitalTitle && Regex.IsMatch(token, "^[a-z]{1,2}$"))
+				{
+					continue;
+				}
+				bool romanContext = i > 0 && (_wordThenRoman.GetValueOrDefault(tokens[i - 1]) > 0 || Regex.IsMatch(tokens[i - 1], @"^NO\.?\d*$"));
+				if (token == "I" && i > 0 && !romanContext && Regex.IsMatch(tokens[i - 1], "^[A-Z]{3,}$"))
+				{
+					if (i == tokens.Count - 1)
+					{
+						trailingDropped = true;
+					}
+					continue;
+				}
+				kept.Add(token);
+			}
+			return kept;
 		}
 
 		private readonly Dictionary<string, int> _wordRows = new Dictionary<string, int>(StringComparer.Ordinal);

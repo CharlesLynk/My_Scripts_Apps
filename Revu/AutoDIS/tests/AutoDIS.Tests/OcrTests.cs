@@ -160,13 +160,17 @@ public sealed class OcrTests : IDisposable
 	}
 
 	[Fact]
-	public void Presets_AreOrderedFromFastestToUltraWithBalancedAsTheDefault()
+	public void Presets_AreOrderedFromFastToThoroughWithBalancedAsTheDefault()
 	{
-		Assert.Equal(5, OcrPresets.Presets.Count);
+		Assert.Equal(3, OcrPresets.Presets.Count);
 		Assert.Equal(OcrPreset.Balanced, OcrPresets.Default);
 		Assert.Equal(OcrPreset.Balanced, OcrPresets.ParseOrDefault(null));
 		Assert.Equal(OcrPreset.Balanced, OcrPresets.ParseOrDefault("nonsense"));
-		Assert.Equal(OcrPreset.Quality, OcrPresets.ParseOrDefault("quality"));
+		Assert.Equal(OcrPreset.Thorough, OcrPresets.ParseOrDefault("thorough"));
+		// Settings saved before the presets were reduced to three.
+		Assert.Equal(OcrPreset.Fast, OcrPresets.ParseOrDefault("Fastest"));
+		Assert.Equal(OcrPreset.Thorough, OcrPresets.ParseOrDefault("Quality"));
+		Assert.Equal(OcrPreset.Thorough, OcrPresets.ParseOrDefault("Ultra"));
 		for (int i = 0; i < OcrPresets.Presets.Count; i++)
 		{
 			Assert.Equal((OcrPreset)i, OcrPresets.Presets[i].Preset);
@@ -177,20 +181,16 @@ public sealed class OcrTests : IDisposable
 	[Fact]
 	public void Presets_GetMoreThoroughStepByStep()
 	{
-		OcrPresetSettings fastest = OcrPresets.Get(OcrPreset.Fastest);
+		OcrPresetSettings fast = OcrPresets.Get(OcrPreset.Fast);
 		OcrPresetSettings balanced = OcrPresets.Get(OcrPreset.Balanced);
-		OcrPresetSettings quality = OcrPresets.Get(OcrPreset.Quality);
-		OcrPresetSettings ultra = OcrPresets.Get(OcrPreset.Ultra);
+		OcrPresetSettings thorough = OcrPresets.Get(OcrPreset.Thorough);
 
-		Assert.True(fastest.MaxRetries < OcrPresets.Get(OcrPreset.Fast).MaxRetries);
+		Assert.True(fast.MaxRetries < balanced.MaxRetries);
+		Assert.True(fast.TitlePasses < balanced.TitlePasses);
+		Assert.False(fast.SecondLook);
 		Assert.False(balanced.SecondLook);
-		Assert.True(quality.SecondLook);
-		Assert.True(ultra.AllVariants);
-		Assert.True(balanced.MaxRetries > OcrPresets.Get(OcrPreset.Fast).MaxRetries);
-		Assert.False(fastest.SecondLook);
-		Assert.True(ultra.SecondLook);
+		Assert.True(thorough.SecondLook);
 	}
-
 	[Fact]
 	public void Presets_ReadTitlesFromThickenedStrokesButSmallFieldsUntouchedFirst()
 	{
@@ -200,9 +200,6 @@ public sealed class OcrTests : IDisposable
 		Assert.Contains(OcrVariant.ThickDeslant, balanced.OptionsFor(OcrFieldKind.Title).FirstPass);
 		Assert.Equal(new[] { OcrVariant.Plain }, balanced.OptionsFor(OcrFieldKind.SheetId).FirstPass);
 		Assert.Equal(new[] { OcrVariant.Plain }, balanced.OptionsFor(OcrFieldKind.Discipline).FirstPass);
-		Assert.Equal(4, OcrPresets.Get(OcrPreset.Ultra).OptionsFor(OcrFieldKind.SheetId).FirstPass.Count);
-		Assert.Equal(OcrPresets.Get(OcrPreset.Quality).OptionsFor(OcrFieldKind.Title).FirstPass, OcrPresets.Get(OcrPreset.Quality).OptionsFor(OcrFieldKind.Title, secondLook: true).FirstPass);
-		Assert.Equal(4, OcrPresets.Get(OcrPreset.Ultra).OptionsFor(OcrFieldKind.Title, secondLook: true).FirstPass.Count);
 	}
 	private static Pix RenderText(string text)
 	{

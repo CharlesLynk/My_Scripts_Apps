@@ -27,7 +27,7 @@
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <!-- Original deployment files and the large MSIX packages live here and must not be compiled. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);reference\**;tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);reference\**;tests\**;tools\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

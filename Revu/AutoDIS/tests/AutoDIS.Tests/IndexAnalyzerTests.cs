@@ -111,6 +111,39 @@ public sealed class IndexAnalyzerTests
 	}
 
 	[Fact]
+	public void StrayBarsAndSpecksFromScansAreDroppedButRealNumeralsKept()
+	{
+		OcrVocabulary vocabulary = OcrVocabulary.CreateDefault();
+		vocabulary.LearnFromTitles(new[] { "PHASE II SITE PLAN", "PHASE III SITE PLAN", "SURVEY CONTROL SOLIDS HANDLING IMP", "SITE PLAN" });
+
+		Assert.Equal("SURVEY CONTROL SOLIDS HANDLING IMP", vocabulary.RefineTitle("SURVEY CONTROL I SOLIDS HANDLING IMP", out _, out bool midGuessed));
+		Assert.False(midGuessed);
+		Assert.Equal("LAGOON MANHOLE DETAILS", vocabulary.RefineTitle("LAGOON MANHOLE oe DETAILS", out _));
+		Assert.Equal("LSPS DRAIN LINE PLAN AND PROFILE", vocabulary.RefineTitle("LSPS DRAIN LINE i PLAN AND PROFILE", out _));
+		Assert.Equal("EXISTING STRUCTURES ACTUATOR MODIFICATIONS", vocabulary.RefineTitle("EXISTING STRUCTURES ACTUATOR MODIFICATIONS I", out _, out bool endGuessed));
+		Assert.True(endGuessed);
+		Assert.Equal("SITE PHASE I PLAN", vocabulary.RefineTitle("SITE PHASE I PLAN", out _));
+		Assert.Equal("SLUDGE DELIVERY PLAN AND PROFILE", vocabulary.RefineTitle("SLUDGE DELIVERY .PLAN AND PROFILE", out _));
+	}
+
+	[Fact]
+	public void AMissingDisciplineBetweenAgreeingNeighboursInTheSameSeriesIsFilledAndFlagged()
+	{
+		List<IndexRow> rows = Analyze(
+			Ocr("SHI-Y-01", 90, "CIVIL/YARD", "OVERALL SITE PLAN", 90),
+			Ocr("SHI-Y-02", 90, "", "LOW SERVICE PUMP STATION", 90),
+			Ocr("SHI-Y-03", 90, "", "DECANT RETURN LINE PLAN", 90),
+			Ocr("SHI-Y-04", 90, "CIVIL/YARD", "DECANT RETURN LINE PROFILE", 90),
+			Ocr("SHI-Y-05", 90, "", "GRADING PLAN", 90),
+			Ocr("SHI-Y-06", 90, "CIVIL DETAILS", "VALVE VAULT DETAILS", 90));
+
+		Assert.Equal("CIVIL/YARD", rows[1].Discipline);
+		Assert.Equal("CIVIL/YARD", rows[2].Discipline);
+		Assert.True(rows[1].DisciplineUncertain);
+		Assert.True(string.IsNullOrWhiteSpace(rows[4].Discipline));
+	}
+
+	[Fact]
 	public void MisreadDisciplinesAreNotLearnedAsNewOnes()
 	{
 		OcrVocabulary vocabulary = OcrVocabulary.CreateDefault();
