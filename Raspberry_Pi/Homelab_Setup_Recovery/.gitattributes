@@ -1,0 +1,2 @@
+# These scripts are copied from Windows to Raspberry Pi OS and run with Bash.
+*.sh text eol=lf

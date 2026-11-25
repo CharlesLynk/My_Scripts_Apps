@@ -5,15 +5,18 @@ Purpose:
 - Default behavior is entire formula minification.
 - Optional behavior: keep header readable and minify only after a token line.
 
-Quick usage:
+Quick usage (Windows PowerShell 5.1; run from the checkout root and replace
+.\path\to\formula.xlf with your input path):
 1) Entirely minify (default mode):
-   powershell -ExecutionPolicy Bypass -File "d:\Utilities\My_Scripts_Apps\Excel\Compress-XlfFormula.ps1" -InputPath "d:\Utilities\My_Scripts_Apps\Excel\Tag_Databases\Modbus\OldDescription.xlf"
+   .\Excel\Compress-XlfFormula.ps1 -InputPath ".\path\to\formula.xlf"
 
 2) Minify after a token line and copy to clipboard:
-   powershell -ExecutionPolicy Bypass -File "d:\Utilities\My_Scripts_Apps\Excel\Compress-XlfFormula.ps1" -InputPath "d:\Utilities\My_Scripts_Apps\Excel\Tag_Databases\Modbus\OldDescription.xlf" -TokenString "cleanText," -CopyToClipboard
+   .\Excel\Compress-XlfFormula.ps1 -InputPath ".\path\to\formula.xlf" -TokenString "cleanText," -CopyToClipboard
 
 3) Explicitly request entire minify:
-   powershell -ExecutionPolicy Bypass -File "d:\Utilities\My_Scripts_Apps\Excel\Compress-XlfFormula.ps1" -InputPath "d:\Utilities\My_Scripts_Apps\Excel\Tag_Databases\Modbus\OldDescription.xlf" -MinifyAll
+   .\Excel\Compress-XlfFormula.ps1 -InputPath ".\path\to\formula.xlf" -MinifyAll
+
+The script processes text without Excel; -CopyToClipboard requires Set-Clipboard.
 
 Copilot reminder:
 - If the user says "compress ... using token ...", pass -TokenString.

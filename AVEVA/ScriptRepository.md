@@ -1,4 +1,31 @@
 
+## OMI launcher build and prerequisites
+
+From the checkout root in Windows PowerShell, compile without starting OMI:
+
+```powershell
+.\AVEVA\Build-OMI-Launcher.ps1
+```
+
+The build looks for the Windows .NET Framework 4.x `csc.exe` (Framework64,
+then Framework); use `-CompilerPath` for another compatible compiler with
+.NET Framework and Windows Forms references. The default output is
+`AVEVA\OMI_ViewAppLauncher.local.exe`. The parent directory must exist and
+the output filename must be unused. The checked-in EXE is not rebuilt in place.
+
+Only a rebuilt launcher recognizes `AVEVA_OMI_VIEW_EXE` (full path to
+`View.exe`) and `AVEVA_OMI_VIEWAPPS_DIR` (full path to the folder containing
+ViewApp subfolders). Set them in the launcher process environment for a custom
+install. Otherwise the launcher looks under `ArchestrA\Framework\Bin` in
+32-bit Program Files, as with the standard install. Launching requires an
+authorized AVEVA OMI installation and deployed ViewApps; the launcher still
+selects the most recently modified app subfolder.
+
+`ManifestGui.ps1` is separate and uses Windows WPF and `System.Xaml`. Use
+Windows PowerShell 5.1 in an STA session for its GUI.
+
+## Existing AVEVA script notes
+
 Change "Manual Position/Speed Setpoint" to change to "Auto" when in Auto (VFD and Mod)
 
 For OOS message, make an HMI attribute in the template to store a user defined message to be concatenated with User Name

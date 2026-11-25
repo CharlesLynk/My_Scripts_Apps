@@ -130,7 +130,8 @@ function Test-ReadableFile {
 }
 
 function Find-AccoreConsole {
-    $installRoot = Join-Path $env:ProgramFiles "Autodesk"
+    $programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    $installRoot = Join-Path $programFiles "Autodesk"
     if (Test-Path -LiteralPath $installRoot -PathType Container) {
         $installations = Get-ChildItem -LiteralPath $installRoot -Directory -Filter "AutoCAD*" |
             Sort-Object Name -Descending

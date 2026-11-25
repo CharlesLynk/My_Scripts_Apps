@@ -1,5 +1,9 @@
 
-// clipboard_owner_loop.c
+// ClipboardOwnerQuery.c
+// From the checkout root in a Visual Studio Developer Command Prompt
+// with MSVC and the Windows SDK installed, build a separate executable:
+//   cl /nologo /W4 /Fo"Clipboard\ClipboardOwnerQuery.scratch.obj" /Fe"Clipboard\ClipboardOwnerQuery.scratch.exe" "Clipboard\ClipboardOwnerQuery.c" user32.lib
+// This compiles and links without running the clipboard inspector.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>

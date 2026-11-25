@@ -104,6 +104,19 @@ Planned setup for a Pi Zero 2 W with an Arducam IMX519. The Pi streams RTSP. Mot
 - `camera/camera-setup.sh` – installs camera packages, enables the IMX519 overlay, verifies the camera, and runs the RTSP stream (MediaMTX) as a systemd service
 - `camera/frigate/` – Docker Compose files and Frigate config for the homelab Linux VM
 
+### Host-specific recovery prerequisites
+
+These are not portable defaults to replace from a checkout:
+
+| Area | Verify on the intended host before recovery |
+| --- | --- |
+| `HomeLab/HomeAssistant` | Verify the installed Home Assistant version, include-file layout, custom cards, and local entity/device IDs. The tracked inventory exports are historical snapshots, not fresh instance configuration. |
+| `HomeLab/PictureFrame` and `HomeLab/ubuntu-docker.sh` | The PictureFrame workflow depends on its browser/Android and configured data source. The installer depends on the target Ubuntu host and package sources; this checkout does not lock those host packages. |
+| `Networking` | The reference notes and Windows `netsh` script depend on the target topology, adapter names, and elevation. Verify local settings before making any network changes. |
+| `Raspberry_Pi/Fresh_Install` and boot recovery scripts | Confirm Pi model, OS release, boot devices and partition IDs, and local Wi-Fi/SSH provisioning. Do not copy host-specific boot or seed files to a different device unchanged. |
+| `Raspberry_Pi/KVM_GPIO.py` | Requires compatible Pi GPIO hardware and the Raspberry Pi OS package `python3-rpi.gpio` (`RPi.GPIO`); validate the pin mapping and permissions on the target Pi. |
+| `camera/` | The Pi overlay, tuning files and stream need hardware verification. The VM needs its own `.env`, broker password file, mounted writable storage, and the correct camera address; see [camera recovery](camera/README.md#homelab-setup-frigate). |
+
 ## 🧭 Detailed Usage
 
 ### `switch-root.sh` option 2 – Verify + pre-boot target connectivity update

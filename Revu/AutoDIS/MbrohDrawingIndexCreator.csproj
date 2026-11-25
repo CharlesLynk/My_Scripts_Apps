@@ -14,6 +14,7 @@
     <AppxPackageSigningEnabled Condition="'$(PackageCertificateThumbprint)' != ''">true</AppxPackageSigningEnabled>
     <AppxPackageSigningEnabled Condition="'$(PackageCertificateThumbprint)' == ''">false</AppxPackageSigningEnabled>
     <AppxBundle>Never</AppxBundle>
+    <AppxPackageDir Condition="'$(AppxPackageDir)' == ''">$([System.IO.Path]::Combine('$(ArtifactsPath)', 'packages'))\</AppxPackageDir>
     <DisableXamlGeneratedMain>true</DisableXamlGeneratedMain>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>

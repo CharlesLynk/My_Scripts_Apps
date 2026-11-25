@@ -1,6 +1,6 @@
 # Bench tools
 
-Small console projects used to measure OCR accuracy and speed against hand-read answers. They are not part of the app or its tests (the app project excludes `tools\**`). Each builds on its own (`dotnet run -c Release` in its folder). They link the app's source files directly, using absolute paths in their `.csproj` files, so edit those paths if the repository moves. Data paths inside `Program.cs` point at `%TEMP%` and need the same care.
+Small console projects used to measure OCR accuracy and speed against hand-read answers. They are not part of the app or its tests (the app project excludes `tools\**`). Use the .NET 10 SDK on Windows and run each tool with `dotnet run -c Release` in its directory. Linked source paths are relative to the project. `replay`, `vecbench`, and `scanbench` share the app's [external OCR cache](../../AGENTS.md#ocr-models-critical) and copy models and dictionaries to their build output. Benchmark input files are separate from the build: tools using the Bachman fixture resolve it under the current user's temporary directory, not the checkout.
 
 Test data is not committed. Recreate it under `%TEMP%`:
 

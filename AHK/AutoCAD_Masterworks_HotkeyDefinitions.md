@@ -1,5 +1,19 @@
 
 
+## AutoHotkey prerequisites
+
+- **v2:** `AutoCAD_DataManager.ahk`, `KeyMap_NumLockLock.ahk`,
+  `Studio5000_LabelChannels.ahk`.
+- **v1:** `CaseChanger.ahk`, `Excel_HorizontalScroll.ahk`,
+  `iFix_AutoPrint.ahk`, `KeyMap_RALT_to_MMB.ahk`, `Revu_Review.ahk`.
+
+Select the matching interpreter explicitly if both versions are installed.
+Application-specific hotkeys also require the relevant desktop application
+and expected window or UI state. Starting a script is not a syntax-only check:
+it can register hotkeys, send input, or request elevation.
+
+## Existing key map
+
 AUTOCAD (Old Workflow/New Workflow)
 	F2, F7 - Dimension 2234, 2436
 	F3, F8 - Create new 2234, 2436

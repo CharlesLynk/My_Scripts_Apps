@@ -5,8 +5,9 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using MbrohDrawingIndexCreator;
-string pdf = @"C:\Users\clynk\AppData\Local\Temp\bachdata\bach.pdf";
+string pdf = Path.Combine(Path.GetTempPath(), "bachdata", "bach.pdf");
 string outDir = args[0];
+Directory.CreateDirectory(outDir);
 var pages = args.Skip(1).Select(int.Parse).ToList();
 int perImage = 14;
 for (int chunk = 0; chunk * perImage < pages.Count; chunk++) {

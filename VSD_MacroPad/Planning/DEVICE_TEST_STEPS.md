@@ -2,6 +2,15 @@
 
 Run all commands from `VSD_MacroPad\Tools` in PowerShell.
 
+The tool uses the current account's `%APPDATA%\HotSpot\StreamDock\profiles` by
+default. Pass `-ProfilesRoot` to use another installation or an offline copy
+of an unpacked profile tree; the checked-in `.SDProfile` backups are not that
+tree. Set `-BackupRoot` and `-GeneratedRoot` to separate writable directories
+for an offline check. Defaults are `VSD_MacroPad\Backups\Auto` and
+`VSD_MacroPad\Generated`, relative to the script, not the current directory.
+Use Windows PowerShell 5.1; rendering uses Windows `System.Drawing`. Device
+checks require VSD Craft and a StreamDock.
+
 ## Before you start
 
 - Tested offline on temp copies only. Your live profiles have not been changed.

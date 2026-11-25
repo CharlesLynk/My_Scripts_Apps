@@ -8,8 +8,10 @@ using System.Threading.Tasks;
 using Tesseract;
 using UglyToad.PdfPig;
 using MbrohDrawingIndexCreator;
-string pdf=@"C:\Users\clynk\AppData\Local\Temp\bachdata\bach.pdf";
-string tess=@"C:\Users\clynk\Documents\My_Scripts_Apps\Revu\AutoDIS\tessdata";
+string pdf=Path.Combine(Path.GetTempPath(),"bachdata","bach.pdf");
+string tess=Path.Combine(AppContext.BaseDirectory,"tessdata");
+string output=Path.Combine(Path.GetTempPath(),"vecbench");
+Directory.CreateDirectory(output);
 var presetName=args[0]; int workers=int.Parse(args[1]); double DPI=double.Parse(Environment.GetEnvironmentVariable("EV_DPI")??"300"); if(Environment.GetEnvironmentVariable("EV_TARGET") is string tg) OcrFieldRecognizer.TargetLetterHeight=int.Parse(tg); string tag=Environment.GetEnvironmentVariable("EV_TAG")??"x"; double OVER=double.Parse(Environment.GetEnvironmentVariable("EV_OVER")??"0"); double MAXDPI=double.Parse(Environment.GetEnvironmentVariable("EV_MAX")??"900"); long dpiSum=0; int dpiN=0;
 var preset=OcrPresets.Get(Enum.Parse<OcrPreset>(presetName));
 var RI=(x1:1937.43,y1:65.46,x2:2000.94,y2:83.16); var RD=(x1:2023.8,y1:258.61,x2:2413.11,y2:275.31); var RT=(x1:2023.8,y1:208.17,x2:2413.11,y2:258.61);
@@ -56,8 +58,7 @@ Parallel.For(0,workers,w=>{
   }
 });
 Console.WriteLine($"avg field dpi {(dpiN==0?0:dpiSum/dpiN)}"); Console.WriteLine($"PROD {presetName} w={workers}: wall {sw.Elapsed.TotalSeconds:0.0}s open {tOpen/1000.0:0.0}s vector(sum) {tVec/1000.0:0.0}s ocr(sum) {tOcr/1000.0:0.0}s | vector usable {vecOk}, vector unusable (would fall back) {unusable}, declined {declined} [{string.Join("; ",reasons.Select(k=>k.Key+" x"+k.Value))}] | GC pause {GC.GetTotalPauseDuration().TotalSeconds:0.0}s");
-File.WriteAllLines($@"C:\Users\clynk\AppData\Local\Temp\vecbench\rows_ev_{presetName}_{tag}.tsv",Enumerable.Range(1,n).Select(i=>$"{i}\t{results[i]}"));
-
+File.WriteAllLines(Path.Combine(output,$"rows_ev_{presetName}_{tag}.tsv"),Enumerable.Range(1,n).Select(i=>$"{i}\t{results[i]}"));
 
 
 

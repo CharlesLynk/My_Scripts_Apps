@@ -45,6 +45,9 @@ npm-debug.log*
 *.msi
 *.msp
 
+# Local rebuild of the portable AVEVA launcher (the original EXE is tracked).
+/AVEVA/OMI_ViewAppLauncher.local.exe
+
 # Large archives, disk images, and OCR model data
 *.iso
 *.7z

@@ -25,7 +25,7 @@ param(
 
     [string]$PresetName,
 
-    [string]$ProfilesRoot = 'C:\Users\clynk\AppData\Roaming\HotSpot\StreamDock\profiles',
+    [string]$ProfilesRoot = $(if ($env:APPDATA) { Join-Path $env:APPDATA 'HotSpot\StreamDock\profiles' }),
     [string]$BackupRoot,
     [string]$BackupStamp,
     [string]$GeneratedRoot,
@@ -571,6 +571,9 @@ function Invoke-Apply {
 }
 
 if ($MyInvocation.InvocationName -ne '.') {
+    if ([string]::IsNullOrWhiteSpace($ProfilesRoot)) {
+        throw 'No profiles root was resolved from APPDATA. Supply -ProfilesRoot.'
+    }
     if (-not $BackupRoot) { $BackupRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'Backups\Auto' }
     if (-not $GeneratedRoot) { $GeneratedRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'Generated' }
     # Images are drawn on a 72 px key, so the default cap is higher than the text-size default.

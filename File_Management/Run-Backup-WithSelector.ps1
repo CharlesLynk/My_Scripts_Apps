@@ -26,8 +26,10 @@
   Disables Write-Progress UI to reduce overhead (useful for Task Scheduler).
 
 .NOTES
-  PowerShell 5.1 compatible.
-  Supports -WhatIf for dry-run.
+  Use Windows PowerShell 5.1 in an STA session for WPF; file copies require robocopy.
+  Review PathConfig, custom mappings, and -BackupRoot for the current machine
+  before running. Some mappings use site-specific folder names.
+  Supports -WhatIf for dry-run; this still opens the selector and can inspect sources.
 #>
 
 [CmdletBinding(SupportsShouldProcess = $true)]

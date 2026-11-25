@@ -4,8 +4,9 @@ using System.IO;
 using System.Linq;
 using Tesseract;
 using MbrohDrawingIndexCreator;
-string pdf=@"C:\Users\clynk\AppData\Local\Temp\bachdata\bach.pdf";
-string tess=@"C:\Users\clynk\Documents\My_Scripts_Apps\Revu\AutoDIS\tessdata";
+string pdf=Path.Combine(Path.GetTempPath(),"bachdata","bach.pdf");
+string tess=Path.Combine(AppContext.BaseDirectory,"tessdata");
+Directory.CreateDirectory(Path.Combine(Path.GetTempPath(),"scanbench"));
 double dpi=double.Parse(args[0]); if(args.Length>1) OcrFieldRecognizer.TargetLetterHeight=int.Parse(args[1]);
 var preset=OcrPresets.Get(OcrPreset.Balanced);
 var RI=(x1:1937.43,y1:65.46,x2:2000.94,y2:83.16); var RD=(x1:2023.8,y1:258.61,x2:2413.11,y2:275.31); var RT=(x1:2023.8,y1:208.17,x2:2413.11,y2:258.61);
@@ -16,7 +17,7 @@ GrayImage Crop(GrayImage img,(double x1,double y1,double x2,double y2) r){ doubl
 using var e=new TesseractEngine(tess,"eng",EngineMode.LstmOnly);
 var truth=File.ReadAllLines(Environment.GetEnvironmentVariable("TEMP")+@"\gt\truth.txt").Where(l=>l.Contains('|')).Select(l=>l.Split('|')).ToDictionary(p=>int.Parse(p[0]),p=>p);
 if(args.Length>2&&args[2]=="idtest"){
-  using var big=new TesseractEngine(tess,"eng_best",EngineMode.LstmOnly); var ultra=OcrPresets.Get(OcrPreset.Ultra);
+  using var big=new TesseractEngine(tess,"eng_best",EngineMode.LstmOnly); var ultra=OcrPresets.Get(OcrPreset.Thorough);
   foreach(var a in args.Skip(3)){ int pg=int.Parse(a); var im=PdfiumRender.TryRegion(pdf,pg-1,u.x1,u.y1,u.x2,u.y2,dpi,out _)!;
     foreach(var (n,eng) in new[]{("fast",e),("big",big)}){ var r=OcrFieldRecognizer.ReadAll(eng,Crop(im,pI),OcrFieldKind.SheetId,ultra.OptionsFor(OcrFieldKind.SheetId,true),out var all,Anchor(RI,pI)); Console.WriteLine($"p{pg} dpi{dpi} {n}: "+string.Join(" | ",all.Select(x=>x.Text.Replace("\n"," ")+"@"+x.Confidence.ToString("0")))); }
     File.WriteAllBytes($@"{Environment.GetEnvironmentVariable("TEMP")}\scanbench\pid{pg}.bmp",Crop(im,pI).ToBmp()); }
@@ -29,7 +30,6 @@ foreach(var pg in truth.Keys.Where(k=>k>=338).OrderBy(k=>k)){
   var rt=OcrFieldRecognizer.ReadAll(e,Crop(img,pT),OcrFieldKind.Title,preset.OptionsFor(OcrFieldKind.Title),out _);
   var t=truth[pg]; Console.WriteLine($"p{pg} id[{ri.Text}] vs [{t[1]}] | disc[{rd.Text.Replace('\n',' ')}] vs [{t[2]}] | title[{rt.Text.Replace('\n',' ')}] vs [{t[3]}]");
 }
-
 
 
 

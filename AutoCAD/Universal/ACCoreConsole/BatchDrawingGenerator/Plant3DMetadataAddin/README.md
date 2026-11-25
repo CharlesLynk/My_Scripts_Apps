@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This add-in imports drawing metadata into the active Plant 3D project. It targets AutoCAD Plant 3D 2026 and uses the managed assemblies installed under `C:\Program Files\Autodesk\AutoCAD 2026`.
+This add-in imports drawing metadata into the active Plant 3D project. It targets AutoCAD Plant 3D 2026 and references that release's installed managed assemblies.
 
 ## Project layout
 
@@ -37,11 +37,20 @@ Both commands require the full AutoCAD Plant 3D application with an active drawi
 
 ## Build and load
 
-Close Plant 3D before rebuilding if the add-in is loaded; AutoCAD locks the DLL. Build from this directory:
+Build on Windows with a .NET 10 SDK (or a newer SDK that can target .NET 10) and the AutoCAD Plant 3D 2026 managed assemblies. Close Plant 3D before rebuilding if the add-in is loaded; AutoCAD locks the DLL. From this directory:
 
 ```powershell
+dotnet restore .\Plant3DMetadataAddin.csproj
 dotnet build .\Plant3DMetadataAddin.csproj -c Debug
 ```
+
+Restore requires the .NET targeting packs, not the Autodesk DLLs. At build time, MSBuild defaults `AutoCADInstallDir` to `Autodesk\AutoCAD 2026` under 64-bit Program Files and `Plant3DInstallDir` to its `PLNT3D` subfolder. For a nonstandard install, set the corresponding environment variables in the build shell or pass MSBuild properties (which take precedence):
+
+```powershell
+dotnet build .\Plant3DMetadataAddin.csproj -c Debug "-p:AutoCADInstallDir=D:\CAD\AutoCAD 2026"
+```
+
+Set `Plant3DInstallDir` separately only if `PnPProjectManagerMgd.dll` is not in the default `PLNT3D` subfolder. The AutoCAD directory must contain `AcCoreMgd.dll`, `AcDbMgd.dll`, `AcMgd.dll`, `PnPDataObjects.dll`, and `PnPDataLinks.dll`. Plain AutoCAD is insufficient. A build reports missing paths before compilation; the Autodesk DLLs are not copied into the add-in output. This check verifies file presence, not release compatibility.
 
 Load the result with `NETLOAD`:
 

@@ -18,8 +18,16 @@ Attribute values and file paths are passed as text. The generator does not depen
 `Start-BatchTool.ps1` puts all three functions behind one window. Pick a function from the dropdown, browse to the files, tick any modifiers, and click Run.
 
 - **Generate new drawings from CSV** and **Update block attributes in existing drawings** run `Generate-Drawings.ps1` in a new PowerShell window. Watch that window for progress.
+- The GUI suggests the AutoCAD 2026 executable under 64-bit Program Files. Browse to `accoreconsole.exe` for any other install path. In the CLI, `-AccoreConsolePath` supplies the path explicitly; when omitted, the CLI searches the Autodesk directory under 64-bit Program Files before prompting.
 - **Validate CSV for Plant 3D property update** checks that the CSV has a `DrawingRelativePath` column and no blank paths, then shows the next steps. The update itself must run inside Plant 3D with `P3DUPDATEDRAWINGPROPERTIES`, so the launcher cannot run it.
 - Modifiers: `-WhatIf` preview only, `-KeepLogs`, and a max drawing count (0 means all).
+
+## Remaining workstation prerequisites
+
+- AutoPublish (`../Autopublish/All_In_One`) accepts an `AccorePath` in its existing JSON config for a nonstandard install. Its config, template, output folders, and plot settings (including the `MasterPwPdf.pc3` device and CTBs) still need to match the workstation. The executable fallback retains the existing release preference.
+- The two legacy CDMS title-block `.bat` launchers still point at an external drawing cache and external `.scr` files. The checked-in `CNL_*` scripts are not verified equivalents. Confirm the intended drawing set and script for each launcher before repointing it; one checked-in script explicitly saves drawings.
+- CDMS profiles, templates, startup LISP, and generator scripts still depend on workstation-specific support paths and project assets. They were not changed. The [Plant 3D metadata add-in](Plant3DMetadataAddin/README.md) additionally needs the full Plant 3D host and the intended project for runtime verification.
+
 ## Run a small test batch
 
 Edit `sample_drawings.csv` so each qualified header matches an actual paper-space block insert and attribute tag. Run without path arguments to browse for the DWT, CSV, and output folder. For the optional border XREF prompt, enter a DWG path, type `B` to browse, or press Enter to leave it blank. If `accoreconsole.exe` is not found in common AutoCAD install locations, the script prompts you to locate it:

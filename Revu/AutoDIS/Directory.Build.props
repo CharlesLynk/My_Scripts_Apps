@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <AutoDISCacheHome Condition="'$(MY_SCRIPTS_APPS_HOME)' != ''">$(MY_SCRIPTS_APPS_HOME)</AutoDISCacheHome>
+    <AutoDISCacheHome Condition="'$(AutoDISCacheHome)' == ''">$(LOCALAPPDATA)\My_Scripts_Apps</AutoDISCacheHome>
+    <AutoDISCacheRoot>$([System.IO.Path]::Combine('$(AutoDISCacheHome)', 'AutoDIS'))</AutoDISCacheRoot>
+    <!-- Keep linked worktrees and independent clones from sharing incremental build state. -->
+    <_AutoDISCheckoutKey>$([MSBuild]::StableStringHash('$(MSBuildThisFileDirectory)'))</_AutoDISCheckoutKey>
+    <ArtifactsPath Condition="'$(ArtifactsPath)' == ''">$([System.IO.Path]::Combine('$(AutoDISCacheRoot)', 'build', '$(_AutoDISCheckoutKey)'))</ArtifactsPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;AppPackages\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

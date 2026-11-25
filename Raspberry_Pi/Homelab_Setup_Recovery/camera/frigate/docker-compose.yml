@@ -11,7 +11,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./config:/config
-      - ./storage:/media/frigate
+      - "${FRIGATE_STORAGE_PATH:-./storage}:/media/frigate"
       - type: tmpfs
         target: /tmp/cache
         tmpfs:
@@ -26,7 +26,7 @@ services:
 
   mosquitto:
     container_name: mosquitto
-    image: eclipse-mosquitto:2
+    image: "${MOSQUITTO_IMAGE:-eclipse-mosquitto:2}"
     restart: unless-stopped
     volumes:
       - ./mosquitto:/mosquitto/config

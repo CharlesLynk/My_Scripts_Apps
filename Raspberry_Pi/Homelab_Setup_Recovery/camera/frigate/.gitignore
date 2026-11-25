@@ -1,2 +1,7 @@
 .env
 !.env.example
+/mosquitto/passwd
+/storage/
+/config/frigate.db
+/config/frigate.db-shm
+/config/frigate.db-wal

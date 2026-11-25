@@ -8,7 +8,8 @@ Add-Type -AssemblyName System.Drawing
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $generatorPath = Join-Path $scriptDir 'Generate-Drawings.ps1'
-$defaultAccore = 'C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe'
+$programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+$defaultAccore = Join-Path $programFiles 'Autodesk\AutoCAD 2026\accoreconsole.exe'
 
 $modeGenerate = 'Generate new drawings from CSV'
 $modeAttributes = 'Update block attributes in existing drawings'

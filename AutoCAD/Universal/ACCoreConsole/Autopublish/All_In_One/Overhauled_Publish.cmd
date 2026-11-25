@@ -100,12 +100,14 @@ if ($Cfg) {
 function Resolve-AccoreConsole {
 	param([string]$Hint)
 	if ($Hint -and (Test-Path -LiteralPath $Hint)) { return (Resolve-Path -LiteralPath $Hint).Path }
+	$programFiles = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+	$autodeskRoot = Join-Path $programFiles 'Autodesk'
 	$candidates = @(
-		'C:\Program Files\Autodesk\AutoCAD 2025\accoreconsole.exe',
-		'C:\Program Files\Autodesk\AutoCAD 2024\accoreconsole.exe',
-		'C:\Program Files\Autodesk\AutoCAD 2023\accoreconsole.exe'
-	) + (Get-ChildItem 'C:\Program Files\Autodesk' -Recurse -ErrorAction SilentlyContinue -Filter accoreconsole.exe | ForEach-Object { $_.FullName })
-	$hit = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+		(Join-Path $autodeskRoot 'AutoCAD 2025\accoreconsole.exe')
+		(Join-Path $autodeskRoot 'AutoCAD 2024\accoreconsole.exe')
+		(Join-Path $autodeskRoot 'AutoCAD 2023\accoreconsole.exe')
+	) + (Get-ChildItem -LiteralPath $autodeskRoot -Recurse -ErrorAction SilentlyContinue -Filter accoreconsole.exe | ForEach-Object { $_.FullName })
+	$hit = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 	return $hit
 }
 

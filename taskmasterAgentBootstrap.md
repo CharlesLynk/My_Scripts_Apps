@@ -32,6 +32,8 @@ Never run workspace-wide formatting, dependency installation, cleanup, staging, 
 
 Keep source code, manifests, lockfiles, small test fixtures, configuration templates, checksums, and reproducible acquisition scripts in Git. Keep large or reproducible artifacts outside Git whenever they can be rebuilt or reacquired from documented origins. This normally includes compiled outputs, package caches, virtual environments, downloaded installers, SDK archives, model weights, generated datasets, application bundles, and tool-specific caches.
 
+Small first-party utilities may keep a checked-in executable alongside its source when portability across workstations justifies it. This exception does not cover downloaded third-party binaries, models, dependency trees, or large applications and their installers. Build large applications from source on each compatible workstation or distribute approved, versioned binaries from a dedicated release repository or artifact store; do not commit them to the source repository.
+
 Use stable per-user local storage for reusable downloads and caches, and the operating system temporary directory only for disposable scratch data:
 
 - Windows reusable cache/data root: `%LOCALAPPDATA%\My_Scripts_Apps\`
@@ -68,28 +70,13 @@ At minimum, determine:
    - Any organizational policy limiting models, providers, data retention, or network access
 
 3. **Model assignment**
-   Ask which model the user wants for each applicable role. Do not hard-code vendor or model names into the durable workflow unless the user approves them.
-
-   Request choices for:
-   - Orchestrator / architect
-   - Implementation worker
-   - Test engineer
-   - Read-only researcher, if needed
-   - Integration reviewer
-   - Documentation worker, if separate
-   - Escalation model or fallback model
-
-   If the user does not know, provide a role-based recommendation using capability classes rather than assuming a specific model:
-   - **High-capability reasoning model:** architecture, decomposition, security-sensitive changes, ambiguous requirements, integration failures
-   - **Mid-cost coding/review model:** bounded implementation, substantial reviews, nontrivial tests
-   - **Low-cost coding model:** mechanical changes, stable-pattern implementation, test generation from explicit behavior
-   - **Fast low-cost model:** indexing, reference searches, documentation synchronization, formatting, and structured summaries
+   The user selects the master when starting the session; the master does not launch a replacement or escalation master. For delegated roles, use only the simple-worker allowlist in section 15. If the user has not selected an allowed worker, recommend one based on the workload.
 
 4. **Budget and concurrency**
    - Monthly or per-project usage ceiling
    - Maximum number of concurrent workers
    - Whether over-budget execution must stop automatically
-   - Whether expensive models require explicit escalation approval
+   - Whether a lower usage limit is needed for any allowed worker role
 
 5. **Git and approval policy**
    - Whether workers may create branches, worktrees, commits, pull requests, or merges
@@ -601,6 +588,9 @@ Ready
 ## Owner role
 Implementation Worker
 
+## Worker model
+Exact model selected from the section 15 allowlist.
+
 ## Objective
 One concrete outcome.
 
@@ -931,56 +921,21 @@ Use the findings to improve task templates, shared instructions, model routing, 
 
 # 15. Model-routing policy
 
-Do not bind durable workflow instructions to specific model names unless explicitly requested. Maintain a separate configurable role map.
+### 15.1 Delegated worker allowlist
 
-Ask the user to fill or approve:
+The only models any master or worker may launch are the three under **Top simple workers** in [AgentSelectionGuide.md](./AgentSelectionGuide.md#top-simple-workers). This applies to every delegated role, including implementers, testers, reviewers, researchers, fallback workers, and nested agents. Other models in the guide are not launch permissions. This rule does not change the model the user selected for the already-running master session.
 
-```markdown
-# Model Role Map
+| Allowed worker | Route these workloads here |
+|---|---|
+| **MAI Code 2 Flash** | Bounded code and build-file edits, routine bug fixes, small refactors with known invariants, and targeted tests against explicit acceptance criteria. |
+| **Claude Haiku 5.5** | Read-only research and reference verification, documentation tied to verified behavior, and lightweight independent review of a scoped change. |
+| **GPT-6 Luna** | Inventory and indexing, path and reference searches, data extraction and classification, and mechanical edits or checks with verifiable output. |
 
-| Role | Primary model | Fallback model | Cost/usage limit | Notes |
-|---|---|---|---|---|
-| Orchestrator | TBD | TBD | TBD | Strong reasoning and integration |
-| Implementer | TBD | TBD | TBD | Bounded coding tasks |
-| Test engineer | TBD | TBD | TBD | Behavioral and edge-case focus |
-| Researcher | TBD | TBD | TBD | Prefer read-only and low cost |
-| Reviewer | TBD | TBD | TBD | Independent review |
-| Documentation | TBD | TBD | TBD | Lowest adequate capability |
-```
+### 15.2 Launch and escalation rules
 
-Route by task characteristics:
-
-### Use the strongest available role model for
-
-- Architecture discovery
-- Ambiguous or conflicting requirements
-- Public contracts
-- Security-sensitive work
-- Cross-cutting changes
-- Data migration and compatibility strategy
-- Distributed systems and concurrency
-- Integration failures
-- Repeated worker failure
-
-### Use a mid-tier coding/review model for
-
-- Well-defined component changes
-- Substantial code review
-- Nontrivial unit and integration tests
-- Refactors with clear invariants
-- Performance work with measurable targets
-
-### Use a lower-cost model for
-
-- Stable-pattern implementation
-- Mechanical refactors
-- Reference and call-site searches
-- Documentation updates tied to approved changes
-- Formatting and lint fixes
-- Fixture and configuration conversion
-- Logging or telemetry additions following an existing pattern
-
-Never choose a cheaper model solely by task length. Consider ambiguity, potential impact, detectability of error, and cost of rework.
+1. Before every launch, record the exact allowlisted model in the task contract and verify that the platform will run it. An agent name, role, or unspecified default does not establish which model will run.
+2. If the intended model is unavailable, choose another allowed worker only if it can meet the acceptance criteria. If the platform cannot guarantee an allowed model or none is suitable, do not launch. Handle the task directly, narrow it, or report the blocker.
+3. Keep architecture decisions, ambiguous requirements, high-risk approvals, and integration failures with the master. Delegate only bounded parts. If the allowlist cannot meet a required specialist or independent-review gate, stop and escalate to the user. Escalation alone never authorizes an off-list launch.
 
 ---
 
@@ -1015,7 +970,7 @@ Escalation report:
 - Recommended next action:
 ```
 
-The orchestrator should respond by clarifying, narrowing, revising, splitting, or reassigning the task. Repeatedly sending the unchanged task back to the same worker is not an escalation strategy.
+The orchestrator should respond by clarifying, narrowing, revising, splitting, or reassigning the task to an allowed worker. Repeatedly sending the unchanged task back to the same worker is not an escalation strategy. If no allowed route can satisfy the gate, keep the work blocked and escalate to the user.
 
 ---
 
@@ -1049,10 +1004,10 @@ When requirements change, update durable project records first. New sessions sho
 Implement controls supported by the selected platform:
 
 - Monthly or project usage ceiling
-- Per-role model limits
+- Enforceable per-role limits within the allowlist in section 15
 - Maximum concurrent agents
 - Hard stop or approval threshold for overage
-- Explicit escalation approval for premium models where desired
+- Human escalation when allowed workers cannot satisfy a required gate
 - Token- and context-conscious result formats
 - Direct handling of trivial tasks instead of unnecessary delegation
 
@@ -1173,7 +1128,7 @@ Present the proposal before performing consequential repository-wide changes. Sa
 The transition is complete when:
 
 - Every agent has a clear role, permission boundary, and escalation path.
-- The user has approved the role-to-model map or left explicit placeholders.
+- The master routes delegated work through the allowlist, and each delegated task records its exact worker model before launch.
 - Project goals, architecture, interfaces, and active milestones are stored in the repository.
 - Exact quality-gate commands are documented and runnable.
 - Delegated work uses bounded task contracts.

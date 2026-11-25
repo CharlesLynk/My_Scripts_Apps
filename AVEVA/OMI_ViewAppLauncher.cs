@@ -9,30 +9,39 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        const string ViewExe = @"C:\Program Files (x86)\ArchestrA\Framework\Bin\ViewAppFramework\View.exe";
-        const string ViewAppsDir = @"C:\Program Files (x86)\ArchestrA\Framework\Bin\ViewApps";
+        string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        if (String.IsNullOrEmpty(programFiles))
+            programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
 
-        if (!File.Exists(ViewExe))
+        string bin = Path.Combine(programFiles, @"ArchestrA\Framework\Bin");
+        string viewExe = Environment.GetEnvironmentVariable("AVEVA_OMI_VIEW_EXE");
+        if (String.IsNullOrWhiteSpace(viewExe))
+            viewExe = Path.Combine(bin, @"ViewAppFramework\View.exe");
+        string viewAppsDir = Environment.GetEnvironmentVariable("AVEVA_OMI_VIEWAPPS_DIR");
+        if (String.IsNullOrWhiteSpace(viewAppsDir))
+            viewAppsDir = Path.Combine(bin, "ViewApps");
+
+        if (!File.Exists(viewExe))
         {
             MessageBox.Show(
-                "View.exe not found:\n" + ViewExe,
+                "View.exe not found:\n" + viewExe + "\nFor a custom install, set AVEVA_OMI_VIEW_EXE.",
                 "OMI Launcher Error",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return 1;
         }
 
-        if (!Directory.Exists(ViewAppsDir))
+        if (!Directory.Exists(viewAppsDir))
         {
             MessageBox.Show(
-                "ViewApps folder not found:\n" + ViewAppsDir,
+                "ViewApps folder not found:\n" + viewAppsDir + "\nFor a custom install, set AVEVA_OMI_VIEWAPPS_DIR.",
                 "OMI Launcher Error",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return 1;
         }
 
-        DirectoryInfo latestViewApp = new DirectoryInfo(ViewAppsDir)
+        DirectoryInfo latestViewApp = new DirectoryInfo(viewAppsDir)
             .GetDirectories()
             .OrderByDescending(d => d.LastWriteTime)
             .FirstOrDefault();
@@ -40,7 +49,7 @@ internal static class Program
         if (latestViewApp == null)
         {
             MessageBox.Show(
-                "No ViewApp folders found under:\n" + ViewAppsDir,
+                "No ViewApp folders found under:\n" + viewAppsDir,
                 "OMI Launcher Error",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
@@ -51,9 +60,9 @@ internal static class Program
 
         var psi = new ProcessStartInfo
         {
-            FileName = ViewExe,
+            FileName = viewExe,
             Arguments = arg,
-            WorkingDirectory = Path.GetDirectoryName(ViewExe) ?? string.Empty,
+            WorkingDirectory = Path.GetDirectoryName(viewExe) ?? string.Empty,
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Maximized
         };

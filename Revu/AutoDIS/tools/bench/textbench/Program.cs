@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using PDFiumCore;
-byte[] bytes = File.ReadAllBytes(@"C:\Users\clynk\AppData\Local\Temp\bachdata\bach.pdf");
-string path = @"C:\Users\clynk\AppData\Local\Temp\bachdata\bach.pdf";
+string path = Path.Combine(Path.GetTempPath(), "bachdata", "bach.pdf");
+byte[] bytes = File.ReadAllBytes(path);
 double X1=1937, X2=2415, Y1=65, Y2=276; // union of the three template fields (page units, origin bottom-left)
 var pages = Enumerable.Range(0, 381).Where(i => i % 9 == 2).ToList();
 var sw = new Stopwatch();
@@ -33,4 +33,3 @@ foreach (var p in pages) {
 }
 Console.WriteLine($"PDFium: load doc {tLoad} ms, LoadPage+TextPage {tPage} ms, bounded text {tText} ms; agree on has-text {agree}, disagree {disagree}");
 foreach (var x in dis.Take(10)) Console.WriteLine(x);
-

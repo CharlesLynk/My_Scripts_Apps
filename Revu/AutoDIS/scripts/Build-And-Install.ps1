@@ -136,10 +136,15 @@ finally {
 Write-Host 'OCR models and native libraries are in the package.' -ForegroundColor Green
 
 if ($signingMode -eq 'Personal') {
-    $signtool = Get-ChildItem -Path "$env:USERPROFILE\.nuget\packages\microsoft.windows.sdk.buildtools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+    $nugetRoot = dotnet msbuild $project -getProperty:NuGetPackageRoot
+    if ($LASTEXITCODE -ne 0 -or -not $nugetRoot) {
+        throw 'Could not determine the restored NuGet packages directory.'
+    }
+    $buildTools = Join-Path $nugetRoot 'microsoft.windows.sdk.buildtools'
+    $signtool = Get-ChildItem -LiteralPath $buildTools -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -like '*\x64\*' } | Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $signtool) {
-        throw 'signtool.exe not found in the NuGet build tools cache.'
+        throw "signtool.exe not found in '$buildTools'."
     }
     & $signtool.FullName sign /fd SHA256 /sha1 $signingCert.Thumbprint $msix.FullName
     if ($LASTEXITCODE -ne 0) {
@@ -162,7 +167,7 @@ if (-not $trusted) {
         $personalCerPath
     }
     else {
-        'C:\Users\clynk\Documents\My_Scripts_Apps\Revu\AutoDIS\reference\MbrohDrawingIndexCreator.Package_1.3.4.0_Test\MbrohDrawingIndexCreator.Package_1.3.4.0_x64.cer'
+        Join-Path $projectDir 'reference\MbrohDrawingIndexCreator.Package_1.3.4.0_Test\MbrohDrawingIndexCreator.Package_1.3.4.0_x64.cer'
     }
     throw @"
 The signing certificate ($($signingCert.Subject), thumbprint $($signingCert.Thumbprint)) is not trusted on this machine, so the install would fail.

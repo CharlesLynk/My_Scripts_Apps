@@ -39,23 +39,43 @@ dtoverlay=imx519
 
 ## Homelab setup (Frigate)
 
-Run these on the Hyper-V Linux VM, in `camera/frigate/`.
+Run these on the Hyper-V Linux VM with Docker Engine and the Docker Compose plugin (`docker compose`). Work from `camera/frigate/` so Compose picks up the local `.env`, `config/`, and `mosquitto/` files. The checkout includes the configuration files, but not the credentials or writable media directory.
 
-1. Copy `.env.example` to `.env` and fill in:
+1. On a fresh checkout, copy `.env.example` to `.env`. On recovery, keep or restore the existing `.env` instead of overwriting it. Set:
    - `FRIGATE_RTSP_PASSWORD`: the password printed by `camera-setup.sh --stream`
-   - `FRIGATE_MQTT_PASSWORD`: a new value (for example, `openssl rand -hex 24`)
-2. Create the Mosquitto user. You will be prompted for the password from step 1:
+   - `FRIGATE_MQTT_PASSWORD`: the password matching the recovered broker file, or a new value for a fresh broker (for example, `openssl rand -hex 24`)
+2. Keep or restore an existing `mosquitto/passwd`. **Only if the file is absent on a fresh setup**, create it with the password from step 1. `-c` overwrites an existing file:
    ```bash
-   docker compose run --rm --entrypoint mosquitto_passwd mosquitto -c /mosquitto/config/passwd frigate
+   if [ ! -e ./mosquitto/passwd ] && [ ! -L ./mosquitto/passwd ]; then
+     docker compose run --rm --entrypoint mosquitto_passwd mosquitto -c /mosquitto/config/passwd frigate
+   fi
    ```
-3. In `config/config.yml`, replace `PI_ADDRESS` with the Pi's Tailscale IP.
-4. Start the stack:
+   The broker must be able to read `mosquitto/passwd` through the config bind mount. Keep the file private and preserve its ownership and permissions when restoring it.
+3. In `config/config.yml`, replace the `PI_ADDRESS` placeholder with the Pi's Tailscale IP if it has not already been set. On the default layout, ensure `./storage` exists and is writable by Frigate (`mkdir -p ./storage` on a fresh setup). For an external drive, see [Optional media location](#optional-media-location).
+4. Validate the Compose definition without starting containers or printing resolved credentials:
+   ```bash
+   docker compose config --quiet
+   ```
+   This checks the definition, not mount availability, credentials, or Frigate's application config.
+5. Start the stack:
    ```bash
    docker compose up -d
    ```
-5. Open `http://<vm-address>:5000`. The camera appears as `pi_zero_cam`.
+6. Open `http://<vm-address>:5000`. The camera appears as `pi_zero_cam`.
 
 Detection runs on the CPU detector in the current config. Frigate's current docs recommend the camera setup wizard and UI-based detector settings. Check `config.yml` against the version you pin before relying on it.
+
+### Optional media location
+
+Leave `FRIGATE_STORAGE_PATH` unset to keep using `camera/frigate/storage/`. To use an external filesystem, set it in `.env` to the absolute Linux VM path of an existing writable directory. Before starting Frigate, verify the intended filesystem is mounted and the directory is writable by Frigate. Compose's bind mount can otherwise create a directory on the VM's root filesystem and record there instead.
+
+To migrate existing media, stop Frigate, back up its media and `config/` (including the database), then copy the media tree to the new location, preserving ownership and permissions. Change only `FRIGATE_STORAGE_PATH`; `config/` and `mosquitto/` stay in place. Keep the original media until playback and new recordings have been verified. To roll back, stop Frigate before unsetting the override; reconcile recordings made after the switch with the saved database and media as needed.
+
+### Dependency versions
+
+Compose uses the checked-in Frigate `0.18.1` tag. The broker still defaults to the moving `eclipse-mosquitto:2` tag; the checkout does not identify a tested patch or digest. For repeatable recovery, record a verified `eclipse-mosquitto@sha256:…` reference from the working deployment and set `MOSQUITTO_IMAGE` in `.env`. This pins the broker image used by both password-file creation and the stack. The Frigate release tag is versioned, not an immutable digest.
+
+On the Pi, `camera-setup.sh` already defaults `MEDIAMTX_VERSION` to `1.21.4`. It installs `rpicam-apps`, `ffmpeg`, `curl`, and `ca-certificates` from the target Raspberry Pi OS repositories; exact package versions depend on that OS release and its repositories.
 
 ## Recording policy
 
@@ -77,5 +97,5 @@ Detection runs on the CPU detector in the current config. Frigate's current docs
 ## Known gaps (not yet tested)
 
 - `rpicam-vid | ffmpeg` publishing into MediaMTX through `runOnInit` has not been run on a Pi.
-- The Frigate config schema was written from the docs at the time of writing. Verify against the Frigate version you pin. `stable` is used in `docker-compose.yml`.
+- The Frigate config schema was written from the docs at the time of writing. Verify it against the `0.18.1` image configured in `docker-compose.yml`.
 - The IMX519 tuning file path (`/usr/share/libcamera/ipa/rpi/vc4/imx519.json`) is assumed. `--verify` warns if it is missing.

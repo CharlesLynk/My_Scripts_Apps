@@ -6,8 +6,10 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <AssemblyName>Plant3DProjectApiProbe</AssemblyName>
-    <AutoCADInstallDir>C:\Program Files\Autodesk\AutoCAD 2026</AutoCADInstallDir>
-    <Plant3DInstallDir>$(AutoCADInstallDir)\PLNT3D</Plant3DInstallDir>
+    <_AutodeskProgramFiles>$(ProgramW6432)</_AutodeskProgramFiles>
+    <_AutodeskProgramFiles Condition="'$(_AutodeskProgramFiles)' == ''">$(ProgramFiles)</_AutodeskProgramFiles>
+    <AutoCADInstallDir Condition="'$(AutoCADInstallDir)' == '' and '$(_AutodeskProgramFiles)' != ''">$(_AutodeskProgramFiles)\Autodesk\AutoCAD 2026</AutoCADInstallDir>
+    <Plant3DInstallDir Condition="'$(Plant3DInstallDir)' == '' and '$(AutoCADInstallDir)' != ''">$(AutoCADInstallDir)\PLNT3D</Plant3DInstallDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,4 +39,15 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="ValidateAutodeskReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(AutoCADInstallDir)' == '' or '$(Plant3DInstallDir)' == ''"
+           Text="AutoCAD Plant 3D 2026 reference directories could not be determined. Set AutoCADInstallDir and, if needed, Plant3DInstallDir." />
+    <ItemGroup>
+      <_MissingAutodeskReference Include="@(Reference->'%(HintPath)')"
+                                 Condition="'%(Reference.HintPath)' != '' and !Exists('%(Reference.HintPath)')" />
+    </ItemGroup>
+    <Error Condition="'@(_MissingAutodeskReference)' != ''"
+           Text="Missing AutoCAD Plant 3D 2026 assemblies: @(_MissingAutodeskReference, ', '). Set AutoCADInstallDir to the AutoCAD 2026 directory and Plant3DInstallDir if PLNT3D is elsewhere. Plain AutoCAD alone is not sufficient." />
+  </Target>
 </Project>
